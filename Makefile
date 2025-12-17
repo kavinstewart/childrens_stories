@@ -4,7 +4,7 @@
 #
 # This Makefile serves as executable documentation for common operations.
 
-.PHONY: help run run-fast run-illustrated debug optimize test clean
+.PHONY: help run run-fast run-illustrated debug optimize test clean api
 
 # Default target - show help
 help:
@@ -16,6 +16,9 @@ help:
 	@echo "  run GOAL=\"...\"        Generate a story with quality loop (default)"
 	@echo "  run-fast GOAL=\"...\"   Generate a story without quality iteration"
 	@echo "  run-illustrated GOAL=\"...\"  Generate a fully illustrated story"
+	@echo ""
+	@echo "API:"
+	@echo "  api                  Start the FastAPI server"
 	@echo ""
 	@echo "Development:"
 	@echo "  debug                Debug page generation"
@@ -59,6 +62,10 @@ story = gen.generate_illustrated('$(GOAL)', debug=True); \
 paths = story.save_illustrated('output/illustrated_' + story.title.replace(' ', '_')[:20]); \
 print(f'Saved to: {paths[\"output_dir\"]}')"
 
+# Run the FastAPI server
+api:
+	poetry run python scripts/run_api.py
+
 # Debug page generation
 debug:
 	poetry run python scripts/debug_page.py
@@ -67,10 +74,9 @@ debug:
 optimize:
 	poetry run python -m src.optimization.optimize_page_writer
 
-# Run tests (placeholder - tests not yet implemented)
+# Run tests
 test:
-	@echo "Tests not yet implemented. Add tests to tests/ directory."
-	@exit 0
+	poetry run pytest tests/ -v
 
 # Remove generated output files
 clean:

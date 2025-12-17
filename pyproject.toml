@@ -12,6 +12,9 @@ dependencies = [
     "python-dotenv (>=1.2.1,<2.0.0)",
     "google-genai (>=1.55.0,<2.0.0)",
     "clip (>=0.2.0,<0.3.0)",
+    "fastapi (>=0.115.0,<1.0.0)",
+    "uvicorn[standard] (>=0.32.0,<1.0.0)",
+    "aiosqlite (>=0.20.0,<1.0.0)",
 ]
 
 
@@ -21,3 +24,9 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.dependencies]
 clip = {source = "pypi"}
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^9.0.2"
+pytest-asyncio = "^1.3.0"
+httpx = "^0.28.1"
+
