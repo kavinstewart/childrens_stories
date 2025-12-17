@@ -10,23 +10,9 @@ Based on official Google documentation and proven production implementations:
 - Tiny Struggles blog (production children's book app)
 """
 
-from dataclasses import dataclass
 from enum import Enum
 
-
-@dataclass
-class StyleDefinition:
-    """Complete definition of an illustration style."""
-
-    name: str
-    description: str  # Human-readable description for LLM selection
-    prompt_prefix: str  # Added to start of illustration prompts
-    prompt_suffix: str  # Added to end of illustration prompts
-    best_for: list[str]  # Story types this style works well for
-
-    def apply_to_prompt(self, scene_prompt: str) -> str:
-        """Wrap a scene prompt with this style's formatting."""
-        return f"{self.prompt_prefix}\n\n{scene_prompt}\n\n{self.prompt_suffix}"
+from ..types import StyleDefinition
 
 
 class IllustrationStyleType(Enum):

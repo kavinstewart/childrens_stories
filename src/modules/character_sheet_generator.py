@@ -5,76 +5,15 @@ Generates simple portrait references for each character to ensure
 visual consistency across all story illustrations.
 """
 
-import os
 import base64
-from dataclasses import dataclass, field
-from typing import Optional
-from PIL import Image
-from io import BytesIO
 
 from ..config import get_image_client, get_image_model, get_image_config
-from .outline_generator import CharacterBible, StoryOutline
-
-
-@dataclass
-class CharacterReferenceSheet:
-    """Generated reference image for a character."""
-
-    character_name: str
-    reference_image: bytes  # PNG/JPEG bytes of the reference portrait
-    prompt_used: str = ""
-    character_description: str = ""  # Age, physical features, etc. from character bible
-
-    def save(self, output_dir: str) -> str:
-        """Save the reference image to a file."""
-        os.makedirs(output_dir, exist_ok=True)
-        safe_name = "".join(c if c.isalnum() else "_" for c in self.character_name)
-        path = os.path.join(output_dir, f"{safe_name}_reference.png")
-        with open(path, "wb") as f:
-            f.write(self.reference_image)
-        return path
-
-    def to_pil_image(self) -> Image.Image:
-        """Convert to PIL Image for passing to Nano Banana Pro."""
-        return Image.open(BytesIO(self.reference_image))
-
-
-@dataclass
-class StoryReferenceSheets:
-    """All reference sheets for a story."""
-
-    story_title: str
-    character_sheets: dict[str, CharacterReferenceSheet] = field(default_factory=dict)
-
-    def get_sheet(self, character_name: str) -> Optional[CharacterReferenceSheet]:
-        """Get reference sheet by character name (case-insensitive partial match)."""
-        name_lower = character_name.lower()
-        for name, sheet in self.character_sheets.items():
-            if name_lower in name.lower():
-                return sheet
-        return None
-
-    def get_all_pil_images(self) -> list[tuple[str, Image.Image]]:
-        """Get all reference images as PIL Images with their names."""
-        return [
-            (name, sheet.to_pil_image())
-            for name, sheet in self.character_sheets.items()
-        ]
-
-    def get_all_with_descriptions(self) -> list[tuple[str, Image.Image, str]]:
-        """Get all reference images with names and descriptions for QA."""
-        return [
-            (name, sheet.to_pil_image(), sheet.character_description)
-            for name, sheet in self.character_sheets.items()
-        ]
-
-    def save_all(self, output_dir: str) -> list[str]:
-        """Save all reference sheets to directory."""
-        paths = []
-        for sheet in self.character_sheets.values():
-            path = sheet.save(output_dir)
-            paths.append(path)
-        return paths
+from ..types import (
+    CharacterBible,
+    StoryOutline,
+    CharacterReferenceSheet,
+    StoryReferenceSheets,
+)
 
 
 class CharacterSheetGenerator:

@@ -3,31 +3,14 @@ DSPy Module for generating individual story pages with self-critique.
 """
 
 import dspy
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
+from ..types import StoryOutline, StoryPage
 from ..signatures.page_writer import (
     PageWriterSignature,
     PageCritiqueSignature,
     PageRevisionSignature,
 )
-from .outline_generator import StoryOutline
-
-
-@dataclass
-class StoryPage:
-    """Structured representation of a single story page."""
-
-    page_number: int
-    text: str
-    word_count: int
-    was_revised: bool = False
-    illustration_prompt: str = ""
-    illustration_image: Optional[bytes] = None  # Generated illustration
-
-    def __str__(self) -> str:
-        return f"Page {self.page_number}: {self.text}"
 
 
 class PageGenerator(dspy.Module):

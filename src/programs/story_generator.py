@@ -6,133 +6,15 @@ CharacterSheetGenerator, and PageIllustrator into a complete
 pipeline with quality iteration loop and illustration generation.
 """
 
-import os
 import dspy
-from dataclasses import dataclass, field
-from typing import Optional
 
-from ..modules.outline_generator import OutlineGenerator, StoryOutline
-from ..modules.page_generator import PageGenerator, StoryPage
-from ..modules.quality_judge import QualityJudge, QualityJudgment
-from ..modules.character_sheet_generator import CharacterSheetGenerator, StoryReferenceSheets
+from ..types import GeneratedStory
+from ..modules.outline_generator import OutlineGenerator
+from ..modules.page_generator import PageGenerator
+from ..modules.quality_judge import QualityJudge
+from ..modules.character_sheet_generator import CharacterSheetGenerator
 from ..modules.page_illustrator import PageIllustrator
-from ..config import STORY_CONSTANTS
-
-
-@dataclass
-class GeneratedStory:
-    """Complete generated story with all metadata."""
-
-    title: str
-    goal: str
-    outline: StoryOutline
-    pages: list[StoryPage]
-    judgment: Optional[QualityJudgment]
-    attempts: int
-    reference_sheets: Optional[StoryReferenceSheets] = None
-    is_illustrated: bool = False
-
-    @property
-    def full_text(self) -> str:
-        """Get the complete story text."""
-        return "\n\n".join(page.text for page in self.pages)
-
-    @property
-    def word_count(self) -> int:
-        """Total word count of the story."""
-        return sum(page.word_count for page in self.pages)
-
-    @property
-    def page_count(self) -> int:
-        """Number of pages in the story."""
-        return len(self.pages)
-
-    def to_formatted_string(self, include_illustration_prompts: bool = False) -> str:
-        """Format the story for display/output."""
-        lines = [
-            f"# {self.title}",
-            "",
-            f"*A story about: {self.goal}*",
-            "",
-            "---",
-            "",
-        ]
-
-        for page in self.pages:
-            lines.append(f"**Page {page.page_number}**")
-            lines.append("")
-            lines.append(page.text)
-
-            if include_illustration_prompts and page.illustration_prompt:
-                lines.append("")
-                lines.append(f"*[Illustration: {page.illustration_prompt}]*")
-
-            if page.illustration_image:
-                # Reference to saved image
-                lines.append("")
-                lines.append(f"![Page {page.page_number}](images/page_{page.page_number:02d}.png)")
-
-            lines.append("")
-            lines.append("---")
-            lines.append("")
-
-        lines.append(f"*The End*")
-        lines.append("")
-        lines.append(f"---")
-        lines.append(f"Word count: {self.word_count}")
-        lines.append(f"Pages: {self.page_count}")
-        lines.append(f"Illustrated: {'Yes' if self.is_illustrated else 'No'}")
-
-        if self.outline.illustration_style:
-            lines.append(f"Illustration style: {self.outline.illustration_style.name}")
-            if self.outline.style_rationale:
-                lines.append(f"Style rationale: {self.outline.style_rationale}")
-
-        if self.judgment:
-            lines.append(f"Quality score: {self.judgment.overall_score}/10")
-            lines.append(f"Verdict: {self.judgment.verdict}")
-
-        return "\n".join(lines)
-
-    def save_illustrated(self, output_dir: str) -> dict[str, str]:
-        """
-        Save the illustrated story to a directory.
-
-        Creates:
-        - story.md: The formatted story text
-        - images/: Directory with page illustrations
-        - character_refs/: Directory with character reference sheets
-
-        Returns:
-            Dict with paths to saved files
-        """
-        os.makedirs(output_dir, exist_ok=True)
-        paths = {"output_dir": output_dir}
-
-        # Save story markdown
-        story_path = os.path.join(output_dir, "story.md")
-        with open(story_path, "w") as f:
-            f.write(self.to_formatted_string(include_illustration_prompts=True))
-        paths["story_md"] = story_path
-
-        # Save page illustrations
-        images_dir = os.path.join(output_dir, "images")
-        os.makedirs(images_dir, exist_ok=True)
-        paths["images"] = []
-        for page in self.pages:
-            if page.illustration_image:
-                img_path = os.path.join(images_dir, f"page_{page.page_number:02d}.png")
-                with open(img_path, "wb") as f:
-                    f.write(page.illustration_image)
-                paths["images"].append(img_path)
-
-        # Save character reference sheets
-        if self.reference_sheets:
-            refs_dir = os.path.join(output_dir, "character_refs")
-            ref_paths = self.reference_sheets.save_all(refs_dir)
-            paths["character_refs"] = ref_paths
-
-        return paths
+from ..config import STORY_CONSTANTS, get_default_lm
 
 
 class StoryGenerator(dspy.Module):
@@ -144,6 +26,13 @@ class StoryGenerator(dspy.Module):
     2. Generate pages from outline
     3. Judge quality
     4. If quality < threshold, retry with feedback (up to max_attempts)
+
+    Args:
+        quality_threshold: Minimum score (0-10) to accept a story
+        max_attempts: Maximum generation attempts
+        words_per_page: Target words per page
+        lm: Optional explicit LM to use. If provided, bypasses global
+            dspy.configure() state. Useful for testing and explicit control.
     """
 
     def __init__(
@@ -151,6 +40,7 @@ class StoryGenerator(dspy.Module):
         quality_threshold: int = 7,
         max_attempts: int = 3,
         words_per_page: int = 35,
+        lm: dspy.LM = None,
     ):
         super().__init__()
         self.outline_generator = OutlineGenerator()
@@ -160,6 +50,7 @@ class StoryGenerator(dspy.Module):
         self.quality_threshold = quality_threshold
         self.max_attempts = max_attempts
         self.words_per_page = words_per_page
+        self._lm = lm  # Store explicit LM if provided
 
     def forward(
         self,
@@ -178,6 +69,20 @@ class StoryGenerator(dspy.Module):
         Returns:
             GeneratedStory with all components
         """
+        # Use explicit LM if provided, otherwise use global config
+        if self._lm is not None:
+            with dspy.context(lm=self._lm):
+                return self._generate_story(goal, target_age_range, skip_quality_loop)
+        else:
+            return self._generate_story(goal, target_age_range, skip_quality_loop)
+
+    def _generate_story(
+        self,
+        goal: str,
+        target_age_range: str,
+        skip_quality_loop: bool,
+    ) -> GeneratedStory:
+        """Internal method that does the actual generation."""
         best_story = None
         best_score = 0
 

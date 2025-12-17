@@ -9,16 +9,12 @@ Supports optional QA with automatic regeneration:
 - Detailed pass: VLM check for text-free, character consistency, etc.
 """
 
-import os
 import base64
 import re
 from typing import Optional, Tuple
-from PIL import Image
 
 from ..config import get_image_client, get_image_model, get_image_config, IMAGE_CONSTANTS
-from .outline_generator import StoryOutline
-from .page_generator import StoryPage
-from .character_sheet_generator import StoryReferenceSheets
+from ..types import StoryOutline, StoryPage, StoryReferenceSheets
 
 
 class PageIllustrator:

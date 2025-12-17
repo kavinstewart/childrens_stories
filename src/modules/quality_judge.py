@@ -3,75 +3,9 @@ DSPy Module for judging story quality.
 """
 
 import dspy
-from dataclasses import dataclass
-from typing import Optional
 
+from ..types import QualityJudgment
 from ..signatures.story_judge import StoryJudgeSignature
-
-
-@dataclass
-class QualityJudgment:
-    """Structured representation of a quality judgment."""
-
-    has_critical_failures: bool
-    critical_failure_reasons: str
-    engagement_score: int
-    read_aloud_score: int
-    emotional_truth_score: int
-    coherence_score: int
-    chekhov_violations: str
-    chekhov_score: int
-    overall_score: int
-    specific_problems: str
-    verdict: str
-
-    @property
-    def is_excellent(self) -> bool:
-        return self.verdict == "EXCELLENT" or self.overall_score >= 8
-
-    @property
-    def is_good(self) -> bool:
-        return self.verdict == "GOOD" or self.overall_score >= 6
-
-    @property
-    def needs_revision(self) -> bool:
-        return self.verdict in ("NEEDS_WORK", "REJECTED") or self.overall_score < 6
-
-    @property
-    def is_rejected(self) -> bool:
-        return self.verdict == "REJECTED" or self.overall_score <= 3
-
-    def get_summary(self) -> str:
-        """Get a summary of the judgment."""
-        summary = f"""
-Quality Assessment: {self.verdict}
-Overall Score: {self.overall_score}/10
-
-Scores:
-- Engagement: {self.engagement_score}/10
-- Read-Aloud Quality: {self.read_aloud_score}/10
-- Emotional Truth: {self.emotional_truth_score}/10
-- Coherence: {self.coherence_score}/10
-- Chekhov's Gun: {self.chekhov_score}/10
-"""
-
-        if self.has_critical_failures:
-            summary += f"""
-CRITICAL FAILURES:
-{self.critical_failure_reasons}
-"""
-
-        if self.chekhov_violations and self.chekhov_violations.lower() != "none":
-            summary += f"""
-CHEKHOV'S GUN VIOLATIONS:
-{self.chekhov_violations}
-"""
-
-        summary += f"""
-Specific Problems:
-{self.specific_problems}
-"""
-        return summary.strip()
 
 
 class QualityJudge(dspy.Module):

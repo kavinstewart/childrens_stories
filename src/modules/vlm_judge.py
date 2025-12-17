@@ -13,7 +13,7 @@ from typing import Union, Optional
 from PIL import Image
 from io import BytesIO
 
-from ...config import get_image_client
+from ..config import get_image_client
 
 
 @dataclass

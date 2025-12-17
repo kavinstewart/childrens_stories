@@ -4,116 +4,15 @@ DSPy Module for generating story outlines.
 
 import dspy
 import re
-from dataclasses import dataclass, field
-from typing import Optional, TYPE_CHECKING
 
+from ..types import CharacterBible, StoryOutline
 from ..signatures.story_outline import StoryOutlineSignature
 from ..signatures.character_bible import CharacterBibleSignature
 from ..signatures.illustration_style import IllustrationStyleSignature
 from .illustration_styles import (
-    IllustrationStyleType,
-    StyleDefinition,
     get_style_by_name,
     get_all_styles_for_selection,
-    ILLUSTRATION_STYLES,
 )
-
-
-@dataclass
-class CharacterBible:
-    """Visual definition for a single character."""
-
-    name: str
-    species: str = ""
-    age_appearance: str = ""
-    body: str = ""
-    face: str = ""
-    hair: str = ""
-    eyes: str = ""
-    clothing: str = ""
-    signature_item: str = ""
-    color_palette: list[str] = field(default_factory=list)
-    style_tags: list[str] = field(default_factory=list)
-
-    def to_prompt_string(self) -> str:
-        """Convert to a string suitable for image generation prompts."""
-        parts = [f"{self.name}:"]
-        if self.species:
-            parts.append(f"a {self.age_appearance} {self.species}" if self.age_appearance else self.species)
-        if self.body:
-            parts.append(self.body)
-        if self.face:
-            parts.append(f"face: {self.face}")
-        if self.hair:
-            parts.append(f"hair: {self.hair}")
-        if self.eyes:
-            parts.append(f"eyes: {self.eyes}")
-        if self.clothing:
-            parts.append(f"wearing {self.clothing}")
-        if self.signature_item:
-            parts.append(f"with {self.signature_item}")
-        return ", ".join(parts)
-
-
-@dataclass
-class StoryOutline:
-    """Structured representation of a story outline."""
-
-    title: str
-    protagonist_goal: str
-    stakes: str
-    characters: str
-    setting: str
-    emotional_arc: str
-    plot_summary: str
-    page_breakdown: str
-    moral: str
-    goal: str  # Original goal for reference
-    character_bibles: list[CharacterBible] = field(default_factory=list)
-    illustration_style: Optional[StyleDefinition] = None
-    style_rationale: str = ""
-
-    def get_pages(self) -> list[dict]:
-        """Parse page_breakdown into structured list."""
-        import re
-        pages = []
-        if not self.page_breakdown:
-            return pages
-        for line in self.page_breakdown.split("\n"):
-            line = line.strip()
-            # Remove markdown formatting like *Page 1* or **Page 1**
-            clean_line = re.sub(r"^\*+", "", line).strip()
-            clean_line = re.sub(r"\*+$", "", clean_line.split(":")[0] if ":" in clean_line else clean_line).strip()
-
-            if clean_line.lower().startswith("page"):
-                # Try to extract page number and content
-                parts = line.split(":", 1)
-                if len(parts) == 2:
-                    # Clean up the page identifier too
-                    page_num = re.sub(r"[\*_]", "", parts[0]).strip()
-                    content = parts[1].strip()
-                    pages.append({"page": page_num, "content": content})
-        return pages
-
-    @property
-    def page_count(self) -> int:
-        """Return the number of pages in the outline."""
-        return len(self.get_pages())
-
-    def get_character_bible(self, name: str) -> Optional[CharacterBible]:
-        """Find a character bible by name (case-insensitive partial match)."""
-        name_lower = name.lower()
-        for bible in self.character_bibles:
-            if name_lower in bible.name.lower():
-                return bible
-        return None
-
-    def get_all_style_tags(self) -> list[str]:
-        """Get unified style tags from all characters."""
-        all_tags = set()
-        for bible in self.character_bibles:
-            all_tags.update(bible.style_tags)
-        return list(all_tags)
 
 
 class OutlineGenerator(dspy.Module):

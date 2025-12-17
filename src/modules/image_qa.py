@@ -12,12 +12,12 @@ from typing import Union, Optional
 from PIL import Image
 from io import BytesIO
 
-from .qa_metrics.vlm_judge import VLMJudge, DetailedCheckResult
-from .character_sheet_generator import StoryReferenceSheets
+from .vlm_judge import VLMJudge, DetailedCheckResult
+from ..types import StoryReferenceSheets
 
 # Try to import VQAScore - it has heavy dependencies that may not be available
 try:
-    from .qa_metrics.vqa_scorer import VQAScorer, FastPassResult
+    from .vqa_scorer import VQAScorer, FastPassResult
     VQA_AVAILABLE = True
 except ImportError as e:
     VQA_AVAILABLE = False

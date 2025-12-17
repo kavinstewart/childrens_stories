@@ -1,17 +1,14 @@
 """
-DSPy configuration for the Children's Story Generator.
+LLM configuration for the Children's Story Generator.
 
 Uses dual-LM architecture:
 - inference_lm: Fast/cheap model for generation (high volume)
 - reflection_lm: Strong model for GEPA analysis (low volume)
-- image_client: Nano Banana Pro for illustration generation
 """
 
 import os
 from dotenv import load_dotenv
 import dspy
-from google import genai
-from google.genai.types import GenerateContentConfig, Modality
 
 # Load environment variables from .env file
 load_dotenv()
@@ -55,16 +52,9 @@ def get_inference_lm() -> dspy.LM:
             max_tokens=4096,
             temperature=0.7,
         )
-    elif os.getenv("ANTHROPIC_API_KEY"):
-        return dspy.LM(
-            "anthropic/claude-sonnet-4-20250514",
-            api_key=os.getenv("ANTHROPIC_API_KEY"),
-            max_tokens=4096,
-            temperature=0.7,
-        )
     else:
         raise ValueError(
-            "No API key found. Set OPENAI_API_KEY, ANTHROPIC_API_KEY, or OPENROUTER_API_KEY in .env"
+            "No API key found. Set ANTHROPIC_API_KEY, CEREBRAS_API_KEY, OPENROUTER_API_KEY, or OPENAI_API_KEY in .env"
         )
 
 
@@ -101,13 +91,28 @@ def get_reflection_lm() -> dspy.LM:
         )
 
 
+def get_default_lm() -> dspy.LM:
+    """
+    Get the default LM for story generation.
+
+    Alias for get_inference_lm() - use this when you need an explicit
+    LM reference instead of relying on global configuration.
+    """
+    return get_inference_lm()
+
+
 def configure_dspy(use_reflection_lm: bool = False) -> None:
     """
-    Configure DSPy with the appropriate LM.
+    Configure DSPy with the appropriate LM globally.
 
     Args:
         use_reflection_lm: If True, use the reflection LM (for GEPA).
                           If False, use the inference LM (default).
+
+    Note:
+        For testing or when you need explicit control, prefer passing
+        an LM directly to StoryGenerator(lm=...) instead of using
+        this global configuration.
     """
     if use_reflection_lm:
         lm = get_reflection_lm()
@@ -115,45 +120,3 @@ def configure_dspy(use_reflection_lm: bool = False) -> None:
         lm = get_inference_lm()
 
     dspy.configure(lm=lm)
-
-
-# Story generation constants
-STORY_CONSTANTS = {
-    "target_page_count": 16,  # Can be 16, 24, or 32
-    "target_word_count": 500,  # Sweet spot for picture books
-    "words_per_page_min": 20,
-    "words_per_page_max": 50,
-    "max_word_count": 1000,  # Industry standard limit
-}
-
-# Image generation constants
-IMAGE_CONSTANTS = {
-    "model": "gemini-3-pro-image-preview",  # Nano Banana Pro
-    "max_reference_images": 14,  # Nano Banana Pro supports up to 14
-    "max_faces": 5,  # 5-face memory system
-}
-
-
-def get_image_client() -> genai.Client:
-    """
-    Get the Nano Banana Pro (Gemini 3 Pro Image) client for illustration generation.
-
-    Uses GOOGLE_API_KEY from environment.
-    """
-    api_key = os.getenv("GOOGLE_API_KEY")
-    if not api_key:
-        raise ValueError("GOOGLE_API_KEY not found in environment. Set it in .env file.")
-
-    return genai.Client(api_key=api_key)
-
-
-def get_image_model() -> str:
-    """Get the image model ID."""
-    return IMAGE_CONSTANTS["model"]
-
-
-def get_image_config() -> GenerateContentConfig:
-    """Get the default config for image generation."""
-    return GenerateContentConfig(
-        response_modalities=[Modality.TEXT, Modality.IMAGE]
-    )
