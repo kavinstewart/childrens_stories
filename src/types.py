@@ -7,7 +7,6 @@ to make data flow explicit and avoid circular imports.
 
 from dataclasses import dataclass, field
 from typing import Optional, TYPE_CHECKING
-import os
 import re
 from io import BytesIO
 
@@ -86,15 +85,6 @@ class CharacterReferenceSheet:
     prompt_used: str = ""
     character_description: str = ""  # Age, physical features, etc. from character bible
 
-    def save(self, output_dir: str) -> str:
-        """Save the reference image to a file."""
-        os.makedirs(output_dir, exist_ok=True)
-        safe_name = "".join(c if c.isalnum() else "_" for c in self.character_name)
-        path = os.path.join(output_dir, f"{safe_name}_reference.png")
-        with open(path, "wb") as f:
-            f.write(self.reference_image)
-        return path
-
     def to_pil_image(self) -> "Image.Image":
         """Convert to PIL Image for passing to Nano Banana Pro."""
         from PIL import Image
@@ -129,14 +119,6 @@ class StoryReferenceSheets:
             (name, sheet.to_pil_image(), sheet.character_description)
             for name, sheet in self.character_sheets.items()
         ]
-
-    def save_all(self, output_dir: str) -> list[str]:
-        """Save all reference sheets to directory."""
-        paths = []
-        for sheet in self.character_sheets.values():
-            path = sheet.save(output_dir)
-            paths.append(path)
-        return paths
 
 
 # =============================================================================
@@ -368,43 +350,3 @@ class GeneratedStory:
             lines.append(f"Verdict: {self.judgment.verdict}")
 
         return "\n".join(lines)
-
-    def save_illustrated(self, output_dir: str) -> dict[str, str]:
-        """
-        Save the illustrated story to a directory.
-
-        Creates:
-        - story.md: The formatted story text
-        - images/: Directory with page illustrations
-        - character_refs/: Directory with character reference sheets
-
-        Returns:
-            Dict with paths to saved files
-        """
-        os.makedirs(output_dir, exist_ok=True)
-        paths = {"output_dir": output_dir}
-
-        # Save story markdown
-        story_path = os.path.join(output_dir, "story.md")
-        with open(story_path, "w") as f:
-            f.write(self.to_formatted_string(include_illustration_prompts=True))
-        paths["story_md"] = story_path
-
-        # Save page illustrations
-        images_dir = os.path.join(output_dir, "images")
-        os.makedirs(images_dir, exist_ok=True)
-        paths["images"] = []
-        for page in self.pages:
-            if page.illustration_image:
-                img_path = os.path.join(images_dir, f"page_{page.page_number:02d}.png")
-                with open(img_path, "wb") as f:
-                    f.write(page.illustration_image)
-                paths["images"].append(img_path)
-
-        # Save character reference sheets
-        if self.reference_sheets:
-            refs_dir = os.path.join(output_dir, "character_refs")
-            ref_paths = self.reference_sheets.save_all(refs_dir)
-            paths["character_refs"] = ref_paths
-
-        return paths

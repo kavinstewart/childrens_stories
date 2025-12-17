@@ -91,16 +91,6 @@ def get_reflection_lm() -> dspy.LM:
         )
 
 
-def get_default_lm() -> dspy.LM:
-    """
-    Get the default LM for story generation.
-
-    Alias for get_inference_lm() - use this when you need an explicit
-    LM reference instead of relying on global configuration.
-    """
-    return get_inference_lm()
-
-
 def configure_dspy(use_reflection_lm: bool = False) -> None:
     """
     Configure DSPy with the appropriate LM globally.

@@ -92,7 +92,6 @@ def outline_quality_metric(
 
     # 5. Check theme integration
     theme_integration = prediction.get("theme_integration", "")
-    goal_lower = goal.lower()
     if theme_integration and len(theme_integration) > 30:
         theme_score = 1.0
         feedback_parts.append("Theme integration is well-explained.")

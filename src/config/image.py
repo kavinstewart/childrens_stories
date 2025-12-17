@@ -43,3 +43,26 @@ def get_image_config() -> GenerateContentConfig:
     return GenerateContentConfig(
         response_modalities=[Modality.TEXT, Modality.IMAGE]
     )
+
+
+def extract_image_from_response(response) -> bytes:
+    """
+    Extract image bytes from a Gemini API response.
+
+    Args:
+        response: The response from genai.Client.models.generate_content()
+
+    Returns:
+        Image bytes (PNG/JPEG)
+
+    Raises:
+        ValueError: If no image found in response
+    """
+    import base64
+
+    for part in response.candidates[0].content.parts:
+        if hasattr(part, 'inline_data') and part.inline_data:
+            data = part.inline_data.data
+            return base64.b64decode(data) if isinstance(data, str) else data
+
+    raise ValueError("No image found in response")

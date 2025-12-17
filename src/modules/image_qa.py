@@ -14,18 +14,9 @@ from .vlm_judge import VLMJudge, DetailedCheckResult
 from ..types import StoryReferenceSheets
 
 
-@dataclass
-class FastPassResult:
-    """Result from VQAScore fast pass (VQA removed, using VLM-only flow)."""
-    vqa_score: float
-    passed: bool
-    threshold_used: float
-
-
 class QAVerdict(Enum):
     """Possible QA verdicts for an image."""
     PASS = "pass"
-    FAIL_ALIGNMENT = "fail_alignment"      # VQAScore too low
     FAIL_HAS_TEXT = "fail_has_text"        # Image contains text
     FAIL_CHARACTER = "fail_character"       # Characters don't match refs
     FAIL_COMPOSITION = "fail_composition"   # Poor composition/scene accuracy
@@ -38,10 +29,7 @@ class ImageQAResult:
     image_id: str              # e.g., "page_01" or "pepper_ref"
     prompt_used: str
 
-    # Fast pass
-    fast_pass: FastPassResult
-
-    # Detailed pass (only if fast pass succeeded)
+    # VLM detailed check result
     detailed_check: Optional[DetailedCheckResult] = None
 
     # Final verdict
@@ -58,7 +46,6 @@ class ImageQAResult:
         lines = [
             f"Image: {self.image_id}",
             f"Verdict: {self.verdict.value}",
-            f"VQAScore: {self.fast_pass.vqa_score:.2f} (threshold: {self.fast_pass.threshold_used})",
         ]
 
         if self.detailed_check:
@@ -149,11 +136,6 @@ class ImageQA:
         result = ImageQAResult(
             image_id=image_id,
             prompt_used=prompt,
-            fast_pass=FastPassResult(
-                vqa_score=-1.0,  # VQA removed, using VLM-only flow
-                passed=True,
-                threshold_used=0.0,
-            ),
             attempt_number=attempt_number,
             max_attempts=self.max_attempts,
         )
@@ -254,13 +236,6 @@ class ImageQA:
             avoid_instructions.append(
                 f"FIX CHARACTER ISSUES: {issues_str}. "
                 "Ensure characters exactly match the reference images provided."
-            )
-
-        if qa_result.verdict == QAVerdict.FAIL_ALIGNMENT:
-            avoid_instructions.append(
-                f"Ensure the image closely matches the scene description. "
-                f"Previous attempt scored {qa_result.fast_pass.vqa_score:.2f}/1.0 on alignment - "
-                "focus on including all described elements."
             )
 
         if qa_result.verdict == QAVerdict.FAIL_COMPOSITION:

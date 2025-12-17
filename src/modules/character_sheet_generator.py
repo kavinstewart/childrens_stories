@@ -5,9 +5,7 @@ Generates simple portrait references for each character to ensure
 visual consistency across all story illustrations.
 """
 
-import base64
-
-from ..config import get_image_client, get_image_model, get_image_config
+from ..config import get_image_client, get_image_model, get_image_config, extract_image_from_response
 from ..types import (
     CharacterBible,
     StoryOutline,
@@ -90,16 +88,9 @@ This model sheet will be used as reference to maintain character consistency acr
             config=self.config,
         )
 
-        # Extract image from response
-        image_data = None
-        for part in response.candidates[0].content.parts:
-            if hasattr(part, 'inline_data') and part.inline_data:
-                image_data = part.inline_data.data
-                if isinstance(image_data, str):
-                    image_data = base64.b64decode(image_data)
-                break
-
-        if not image_data:
+        try:
+            image_data = extract_image_from_response(response)
+        except ValueError:
             raise ValueError(f"No image generated for character: {bible.name}")
 
         # Build description for QA (age is critical for consistency checking)

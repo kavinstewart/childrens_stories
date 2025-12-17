@@ -9,11 +9,10 @@ Supports optional QA with automatic regeneration:
 - Detailed pass: VLM check for text-free, character consistency, etc.
 """
 
-import base64
 import re
 from typing import Optional, Tuple
 
-from ..config import get_image_client, get_image_model, get_image_config, IMAGE_CONSTANTS
+from ..config import get_image_client, get_image_model, get_image_config, IMAGE_CONSTANTS, extract_image_from_response
 from ..types import StoryOutline, StoryPage, StoryReferenceSheets
 
 
@@ -120,67 +119,20 @@ REQUIREMENTS:
         """
         import sys
 
-        # Build multimodal content list
-        contents = []
-
-        # Add character reference images first (if available)
-        if reference_sheets and reference_sheets.character_sheets:
-            # Get character names mentioned in this page
-            mentioned_names = self._extract_character_names(
-                page.illustration_prompt + " " + page.text
-            )
-
-            # Add reference images for mentioned characters
-            added_refs = 0
-            max_refs = IMAGE_CONSTANTS["max_reference_images"]
-
-            for bible in outline.character_bibles:
-                # Check if this character might be mentioned
-                is_mentioned = any(
-                    name.lower() in bible.name.lower()
-                    for name in mentioned_names
-                )
-
-                if is_mentioned or added_refs < 3:  # Always include main characters
-                    sheet = reference_sheets.get_sheet(bible.name)
-                    if sheet and added_refs < max_refs:
-                        # Add the reference image
-                        pil_image = sheet.to_pil_image()
-                        contents.append(pil_image)
-                        # Add description of who this character is
-                        contents.append(f"This is {bible.name} - {bible.to_prompt_string()}")
-                        added_refs += 1
-
-            if debug and added_refs > 0:
-                print(f"  Using {added_refs} character reference images", file=sys.stderr)
-
-        # Add the scene prompt
         scene_prompt = self._build_scene_prompt(page, outline)
-        contents.append(scene_prompt)
+        contents = self._build_contents(page, outline, reference_sheets, scene_prompt)
 
         if debug:
+            # Count reference images (every other item before the prompt is a ref image)
+            num_refs = sum(1 for c in contents[:-1] if not isinstance(c, str))
+            if num_refs > 0:
+                print(f"  Using {num_refs} character reference images", file=sys.stderr)
             print(f"  Prompt length: {len(scene_prompt)} chars", file=sys.stderr)
 
-        # Generate the illustration
-        response = self.client.models.generate_content(
-            model=self.model,
-            contents=contents,
-            config=self.config,
-        )
-
-        # Extract image from response
-        image_data = None
-        for part in response.candidates[0].content.parts:
-            if hasattr(part, 'inline_data') and part.inline_data:
-                image_data = part.inline_data.data
-                if isinstance(image_data, str):
-                    image_data = base64.b64decode(image_data)
-                break
-
-        if not image_data:
+        try:
+            return self._generate_image(contents)
+        except ValueError:
             raise ValueError(f"No image generated for page {page.page_number}")
-
-        return image_data
 
     def illustrate_story(
         self,
@@ -225,35 +177,6 @@ REQUIREMENTS:
                 page.illustration_image = None
 
         return pages
-
-    def save_illustrations(
-        self,
-        pages: list[StoryPage],
-        output_dir: str,
-        filename_prefix: str = "page",
-    ) -> list[str]:
-        """
-        Save all page illustrations to files.
-
-        Args:
-            pages: List of story pages with illustrations
-            output_dir: Directory to save images
-            filename_prefix: Prefix for image filenames
-
-        Returns:
-            List of saved file paths
-        """
-        os.makedirs(output_dir, exist_ok=True)
-        paths = []
-
-        for page in pages:
-            if page.illustration_image:
-                path = os.path.join(output_dir, f"{filename_prefix}_{page.page_number:02d}.png")
-                with open(path, "wb") as f:
-                    f.write(page.illustration_image)
-                paths.append(path)
-
-        return paths
 
     # === QA-ENABLED METHODS ===
 
@@ -302,19 +225,7 @@ REQUIREMENTS:
             contents=contents,
             config=self.config,
         )
-
-        image_data = None
-        for part in response.candidates[0].content.parts:
-            if hasattr(part, 'inline_data') and part.inline_data:
-                image_data = part.inline_data.data
-                if isinstance(image_data, str):
-                    image_data = base64.b64decode(image_data)
-                break
-
-        if not image_data:
-            raise ValueError("No image generated")
-
-        return image_data
+        return extract_image_from_response(response)
 
     def illustrate_page_with_qa(
         self,
@@ -368,7 +279,6 @@ REQUIREMENTS:
             )
 
             if debug:
-                print(f"    VQAScore: {qa_result.fast_pass.vqa_score:.2f}", file=sys.stderr)
                 print(f"    Verdict: {qa_result.verdict.value}", file=sys.stderr)
                 if qa_result.failure_reasons:
                     print(f"    Issues: {qa_result.failure_reasons}", file=sys.stderr)
