@@ -1,0 +1,23 @@
+[project]
+name = "childrens-stories"
+version = "0.1.0"
+description = "AI agent for generating children's picture books using DSPy and GEPA optimization"
+authors = [
+    {name = "Kavin Stewart"}
+]
+readme = "README.md"
+requires-python = ">=3.11,<3.14"
+dependencies = [
+    "dspy (>=3.0.4,<4.0.0)",
+    "python-dotenv (>=1.2.1,<2.0.0)",
+    "google-genai (>=1.55.0,<2.0.0)",
+    "clip (>=0.2.0,<0.3.0)",
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.dependencies]
+clip = {source = "pypi"}
