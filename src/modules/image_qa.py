@@ -1,9 +1,7 @@
 """
-Hybrid Image QA module for children's book illustrations.
+Image QA module for children's book illustrations.
 
-Two-pass system:
-1. Fast pass: VQAScore for prompt-image alignment (~$0.001, ~200ms)
-2. Detailed pass: VLM check for text-free, character consistency, etc. (~$0.01, ~2-3s)
+Uses VLM-based checking for text-free, character consistency, composition, and style.
 """
 
 from dataclasses import dataclass, field
@@ -15,19 +13,13 @@ from io import BytesIO
 from .vlm_judge import VLMJudge, DetailedCheckResult
 from ..types import StoryReferenceSheets
 
-# Try to import VQAScore - it has heavy dependencies that may not be available
-try:
-    from .vqa_scorer import VQAScorer, FastPassResult
-    VQA_AVAILABLE = True
-except ImportError as e:
-    VQA_AVAILABLE = False
-    VQAScorer = None
-    # Provide a stub FastPassResult for when VQA is unavailable
-    @dataclass
-    class FastPassResult:
-        vqa_score: float
-        passed: bool
-        threshold_used: float
+
+@dataclass
+class FastPassResult:
+    """Result from VQAScore fast pass (VQA removed, using VLM-only flow)."""
+    vqa_score: float
+    passed: bool
+    threshold_used: float
 
 
 class QAVerdict(Enum):
@@ -99,51 +91,32 @@ class RegenerationRequest:
 
 class ImageQA:
     """
-    Hybrid image quality assurance for children's book illustrations.
+    VLM-based image quality assurance for children's book illustrations.
 
-    Two-pass system:
-    1. Fast pass: VQAScore for prompt-image alignment
-    2. Detailed pass: VLM check for text-free, character consistency, etc.
+    Checks for text-free images, character consistency, composition, and style.
     """
 
     def __init__(
         self,
-        vqa_threshold: float = 0.7,
         require_text_free: bool = True,
         min_character_score: int = 4,
         min_scene_score: int = 3,
         max_regeneration_attempts: int = 3,
-        use_gpu: bool = True,
     ):
         """
         Args:
-            vqa_threshold: Minimum VQAScore to pass fast check (default 0.7)
             require_text_free: Whether to require no text in images (default True)
             min_character_score: Minimum character match score 1-5 (default 4)
             min_scene_score: Minimum scene accuracy score 1-5 (default 3)
             max_regeneration_attempts: Max retries before accepting (default 3)
-            use_gpu: Whether to use GPU for VQAScore (default True)
         """
-        self.vqa_threshold = vqa_threshold
         self.require_text_free = require_text_free
         self.min_character_score = min_character_score
         self.min_scene_score = min_scene_score
         self.max_attempts = max_regeneration_attempts
-        self._use_gpu = use_gpu
 
-        # Initialize scorers lazily
-        self._vqa_scorer = None
+        # Initialize VLM judge lazily
         self._vlm_judge = None
-
-    @property
-    def vqa_scorer(self) -> Optional[VQAScorer]:
-        """Lazy load VQAScorer (returns None if unavailable)."""
-        if not VQA_AVAILABLE:
-            return None
-        if self._vqa_scorer is None:
-            device = "cuda" if self._use_gpu else "cpu"
-            self._vqa_scorer = VQAScorer(model_name="clip-flant5-xl", device=device)
-        return self._vqa_scorer
 
     @property
     def vlm_judge(self) -> VLMJudge:
@@ -176,7 +149,11 @@ class ImageQA:
         result = ImageQAResult(
             image_id=image_id,
             prompt_used=prompt,
-            fast_pass=FastPassResult(0.0, False, self.vqa_threshold),
+            fast_pass=FastPassResult(
+                vqa_score=-1.0,  # VQA removed, using VLM-only flow
+                passed=True,
+                threshold_used=0.0,
+            ),
             attempt_number=attempt_number,
             max_attempts=self.max_attempts,
         )
@@ -191,37 +168,7 @@ class ImageQA:
         if pil_image.mode != "RGB":
             pil_image = pil_image.convert("RGB")
 
-        # === FAST PASS: VQAScore (if available) ===
-        vqa_ran = False
-        if VQA_AVAILABLE:
-            try:
-                result.fast_pass = self.vqa_scorer.check(
-                    image=pil_image,
-                    prompt=prompt,
-                    threshold=self.vqa_threshold,
-                )
-                vqa_ran = True
-
-                if not result.fast_pass.passed:
-                    result.verdict = QAVerdict.FAIL_ALIGNMENT
-                    result.should_regenerate = attempt_number < self.max_attempts
-                    result.failure_reasons.append(
-                        f"VQAScore {result.fast_pass.vqa_score:.2f} below threshold {self.vqa_threshold}"
-                    )
-                    return result
-            except (ImportError, RuntimeError) as e:
-                # VQA dependencies not working - fall back to VLM only
-                pass
-
-        if not vqa_ran:
-            # VQA unavailable - mark as passed and rely on VLM check
-            result.fast_pass = FastPassResult(
-                vqa_score=-1.0,  # Indicates VQA was skipped
-                passed=True,
-                threshold_used=self.vqa_threshold,
-            )
-
-        # === DETAILED PASS: VLM Check ===
+        # === VLM Check ===
         character_refs = None
         if reference_sheets:
             # Use descriptions for better age/feature checking

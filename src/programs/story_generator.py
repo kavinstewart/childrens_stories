@@ -14,7 +14,6 @@ from ..modules.page_generator import PageGenerator
 from ..modules.quality_judge import QualityJudge
 from ..modules.character_sheet_generator import CharacterSheetGenerator
 from ..modules.page_illustrator import PageIllustrator
-from ..config import STORY_CONSTANTS, get_default_lm
 
 
 class StoryGenerator(dspy.Module):
