@@ -1,7 +1,7 @@
 """
 Integration tests for image generation with real API calls.
 
-Run with: poetry run pytest llm_evals/test_image_generation.py -v
+Run with: poetry run pytest tests/integration/test_image_generation.py -v
 """
 
 import pytest
@@ -10,9 +10,9 @@ from io import BytesIO
 
 from backend.config import get_image_client, get_image_model, get_image_config, extract_image_from_response
 from backend.core.modules.character_sheet_generator import CharacterSheetGenerator
-from backend.core.modules.page_illustrator import PageIllustrator
+from backend.core.modules.spread_illustrator import SpreadIllustrator
 from backend.core.types import (
-    StoryPage,
+    StorySpread,
     StoryOutline,
     CharacterBible,
     StyleDefinition,
@@ -96,19 +96,19 @@ class TestCharacterSheetGeneratorReal:
 
 
 # =============================================================================
-# Test PageIllustrator with real API
+# Test SpreadIllustrator with real API
 # =============================================================================
 
 @pytest.mark.requires_google_api
 @pytest.mark.slow
-class TestPageIllustratorReal:
-    """Integration tests for page illustration."""
+class TestSpreadIllustratorReal:
+    """Integration tests for spread illustration."""
 
     @pytest.fixture
-    def simple_page(self):
-        """A simple page for testing."""
-        return StoryPage(
-            page_number=1,
+    def simple_spread(self):
+        """A simple spread for testing."""
+        return StorySpread(
+            spread_number=1,
             text="The little cat sat on the sunny windowsill.",
             word_count=8,
             was_revised=False,
@@ -126,7 +126,7 @@ class TestPageIllustratorReal:
             setting="A cozy house",
             emotional_arc="Content",
             plot_summary="A cat finds a sunny spot",
-            page_breakdown="Page 1: Cat sits in sun",
+            spread_breakdown="Spread 1: Cat sits in sun",
             moral="Simple pleasures are best",
             goal="Relaxation",
             character_bibles=[],
@@ -140,11 +140,11 @@ class TestPageIllustratorReal:
             style_rationale="Simple style for simple story",
         )
 
-    def test_illustrates_single_page(self, simple_page, simple_outline):
-        """Generates illustration for a single page."""
-        illustrator = PageIllustrator()
+    def test_illustrates_single_spread(self, simple_spread, simple_outline):
+        """Generates illustration for a single spread."""
+        illustrator = SpreadIllustrator()
 
-        image_bytes = illustrator.illustrate_page(simple_page, simple_outline)
+        image_bytes = illustrator.illustrate_spread(simple_spread, simple_outline)
 
         # Verify we got a valid image
         assert isinstance(image_bytes, bytes)
@@ -154,23 +154,23 @@ class TestPageIllustratorReal:
         assert img.size[0] > 100
         assert img.size[1] > 100
 
-    def test_illustrates_multiple_pages(self, simple_outline):
-        """Generates illustrations for multiple pages."""
-        pages = [
-            StoryPage(
-                page_number=i,
-                text=f"Page {i} text",
+    def test_illustrates_multiple_spreads(self, simple_outline):
+        """Generates illustrations for multiple spreads."""
+        spreads = [
+            StorySpread(
+                spread_number=i,
+                text=f"Spread {i} text",
                 word_count=3,
                 was_revised=False,
                 illustration_prompt=f"Scene {i}: A cat doing something cute.",
             )
-            for i in range(1, 3)  # Just 2 pages to save API costs
+            for i in range(1, 3)  # Just 2 spreads to save API costs
         ]
 
-        illustrator = PageIllustrator()
+        illustrator = SpreadIllustrator()
 
-        result = illustrator.illustrate_story(pages, simple_outline)
+        result = illustrator.illustrate_story(spreads, simple_outline)
 
         assert len(result) == 2
-        assert all(p.illustration_image is not None for p in result)
-        assert all(len(p.illustration_image) > 5000 for p in result)
+        assert all(s.illustration_image is not None for s in result)
+        assert all(len(s.illustration_image) > 5000 for s in result)

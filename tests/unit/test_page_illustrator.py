@@ -1,12 +1,12 @@
-"""Unit tests for PageIllustrator with mocked API client."""
+"""Unit tests for SpreadIllustrator with mocked API client."""
 
 import pytest
 from unittest.mock import MagicMock, patch
 from dataclasses import dataclass
 
-from backend.core.modules.page_illustrator import PageIllustrator
+from backend.core.modules.spread_illustrator import SpreadIllustrator
 from backend.core.types import (
-    StoryPage,
+    StorySpread,
     StoryOutline,
     StoryReferenceSheets,
     CharacterReferenceSheet,
@@ -20,10 +20,10 @@ from backend.core.types import (
 # =============================================================================
 
 @pytest.fixture
-def sample_page():
-    """A story page with illustration prompt."""
-    return StoryPage(
-        page_number=1,
+def sample_spread():
+    """A story spread with illustration prompt."""
+    return StorySpread(
+        spread_number=1,
         text="Luna looked up at the stars and smiled.",
         word_count=8,
         was_revised=False,
@@ -72,7 +72,7 @@ def sample_outline(sample_character_bible, sample_style):
         setting="A backyard on a summer night",
         emotional_arc="Wonder -> frustration -> discovery -> joy",
         plot_summary="Luna learns to find constellations",
-        page_breakdown="Page 1: Luna looks at the sky",
+        spread_breakdown="Spread 1: Luna looks at the sky",
         moral="Patience reveals hidden wonders",
         goal="Teach about stars",
         character_bibles=[sample_character_bible],
@@ -120,11 +120,11 @@ def mock_image_client():
 
 @pytest.fixture
 def illustrator(mock_image_client):
-    """PageIllustrator with mocked client."""
-    with patch('backend.core.modules.page_illustrator.get_image_client', return_value=mock_image_client):
-        with patch('backend.core.modules.page_illustrator.get_image_model', return_value='test-model'):
-            with patch('backend.core.modules.page_illustrator.get_image_config', return_value={}):
-                yield PageIllustrator()
+    """SpreadIllustrator with mocked client."""
+    with patch('backend.core.modules.spread_illustrator.get_image_client', return_value=mock_image_client):
+        with patch('backend.core.modules.spread_illustrator.get_image_model', return_value='test-model'):
+            with patch('backend.core.modules.spread_illustrator.get_image_config', return_value={}):
+                yield SpreadIllustrator()
 
 
 # =============================================================================
@@ -174,18 +174,18 @@ class TestExtractCharacterNames:
 class TestBuildContents:
     """Tests for multimodal content list construction."""
 
-    def test_includes_scene_prompt(self, illustrator, sample_page, sample_outline):
+    def test_includes_scene_prompt(self, illustrator, sample_spread, sample_outline):
         """Scene prompt is always included in contents."""
         scene_prompt = "Generate an illustration..."
 
         contents = illustrator._build_contents(
-            sample_page, sample_outline, None, scene_prompt
+            sample_spread, sample_outline, None, scene_prompt
         )
 
         assert scene_prompt in contents
 
     def test_adds_character_references_when_provided(
-        self, illustrator, sample_page, sample_outline, sample_reference_sheets
+        self, illustrator, sample_spread, sample_outline, sample_reference_sheets
     ):
         """Includes character reference images when available."""
         scene_prompt = "Generate an illustration..."
@@ -197,7 +197,7 @@ class TestBuildContents:
             return_value=MagicMock()
         ):
             contents = illustrator._build_contents(
-                sample_page, sample_outline, sample_reference_sheets, scene_prompt
+                sample_spread, sample_outline, sample_reference_sheets, scene_prompt
             )
 
         # Should have: [image, description, prompt]
@@ -206,20 +206,20 @@ class TestBuildContents:
         assert any("Luna" in str(c) for c in contents)
 
     def test_works_without_reference_sheets(
-        self, illustrator, sample_page, sample_outline
+        self, illustrator, sample_spread, sample_outline
     ):
         """Works correctly when no reference sheets provided."""
         scene_prompt = "Generate an illustration..."
 
         contents = illustrator._build_contents(
-            sample_page, sample_outline, None, scene_prompt
+            sample_spread, sample_outline, None, scene_prompt
         )
 
         # Should just have the prompt
         assert contents == [scene_prompt]
 
     def test_respects_max_references_limit(
-        self, illustrator, sample_page, sample_outline, sample_reference_sheets
+        self, illustrator, sample_spread, sample_outline, sample_reference_sheets
     ):
         """Doesn't exceed max_reference_images limit."""
         # Add many characters
@@ -253,7 +253,7 @@ class TestBuildContents:
             return_value=MagicMock()
         ):
             contents = illustrator._build_contents(
-                sample_page, sample_outline, sample_reference_sheets, scene_prompt
+                sample_spread, sample_outline, sample_reference_sheets, scene_prompt
             )
 
         # Count non-string items (images)
@@ -264,39 +264,39 @@ class TestBuildContents:
 
 
 # =============================================================================
-# Tests for illustrate_page
+# Tests for illustrate_spread
 # =============================================================================
 
-class TestIllustratePage:
-    """Tests for single page illustration."""
+class TestIllustrateSpread:
+    """Tests for single spread illustration."""
 
     def test_returns_image_bytes(
-        self, illustrator, mock_image_client, sample_page, sample_outline
+        self, illustrator, mock_image_client, sample_spread, sample_outline
     ):
         """Returns image bytes from API response."""
-        result = illustrator.illustrate_page(sample_page, sample_outline)
+        result = illustrator.illustrate_spread(sample_spread, sample_outline)
 
         assert result == b"generated image bytes"
 
     def test_calls_api_with_correct_model(
-        self, illustrator, mock_image_client, sample_page, sample_outline
+        self, illustrator, mock_image_client, sample_spread, sample_outline
     ):
         """Uses configured model for API call."""
-        illustrator.illustrate_page(sample_page, sample_outline)
+        illustrator.illustrate_spread(sample_spread, sample_outline)
 
         mock_image_client.models.generate_content.assert_called_once()
         call_kwargs = mock_image_client.models.generate_content.call_args
         assert call_kwargs.kwargs['model'] == 'test-model'
 
-    def test_raises_with_page_number_on_failure(
-        self, illustrator, mock_image_client, sample_page, sample_outline
+    def test_raises_with_spread_number_on_failure(
+        self, illustrator, mock_image_client, sample_spread, sample_outline
     ):
-        """Error message includes page number for debugging."""
+        """Error message includes spread number for debugging."""
         # Make API return no image
         mock_image_client.models.generate_content.return_value.candidates[0].content.parts = []
 
-        with pytest.raises(ValueError, match="page 1"):
-            illustrator.illustrate_page(sample_page, sample_outline)
+        with pytest.raises(ValueError, match="spread 1"):
+            illustrator.illustrate_spread(sample_spread, sample_outline)
 
 
 # =============================================================================
@@ -304,30 +304,30 @@ class TestIllustratePage:
 # =============================================================================
 
 class TestIllustrateStory:
-    """Tests for multi-page illustration."""
+    """Tests for multi-spread illustration."""
 
-    def test_illustrates_all_pages(
+    def test_illustrates_all_spreads(
         self, illustrator, mock_image_client, sample_outline
     ):
-        """Generates illustration for each page."""
-        pages = [
-            StoryPage(page_number=1, text="Page 1", word_count=2, was_revised=False, illustration_prompt="Scene 1"),
-            StoryPage(page_number=2, text="Page 2", word_count=2, was_revised=False, illustration_prompt="Scene 2"),
-            StoryPage(page_number=3, text="Page 3", word_count=2, was_revised=False, illustration_prompt="Scene 3"),
+        """Generates illustration for each spread."""
+        spreads = [
+            StorySpread(spread_number=1, text="Spread 1", word_count=2, was_revised=False, illustration_prompt="Scene 1"),
+            StorySpread(spread_number=2, text="Spread 2", word_count=2, was_revised=False, illustration_prompt="Scene 2"),
+            StorySpread(spread_number=3, text="Spread 3", word_count=2, was_revised=False, illustration_prompt="Scene 3"),
         ]
 
-        result = illustrator.illustrate_story(pages, sample_outline)
+        result = illustrator.illustrate_story(spreads, sample_outline)
 
         assert len(result) == 3
-        assert all(p.illustration_image == b"generated image bytes" for p in result)
+        assert all(s.illustration_image == b"generated image bytes" for s in result)
 
     def test_continues_on_failure(
         self, illustrator, mock_image_client, sample_outline
     ):
-        """Continues illustrating other pages if one fails."""
-        pages = [
-            StoryPage(page_number=1, text="Page 1", word_count=2, was_revised=False, illustration_prompt="Scene 1"),
-            StoryPage(page_number=2, text="Page 2", word_count=2, was_revised=False, illustration_prompt="Scene 2"),
+        """Continues illustrating other spreads if one fails."""
+        spreads = [
+            StorySpread(spread_number=1, text="Spread 1", word_count=2, was_revised=False, illustration_prompt="Scene 1"),
+            StorySpread(spread_number=2, text="Spread 2", word_count=2, was_revised=False, illustration_prompt="Scene 2"),
         ]
 
         # Fail on first call, succeed on second
@@ -340,7 +340,7 @@ class TestIllustrateStory:
             MagicMock(candidates=[MagicMock(content=MagicMock(parts=[fake_part]))]),
         ]
 
-        result = illustrator.illustrate_story(pages, sample_outline)
+        result = illustrator.illustrate_story(spreads, sample_outline)
 
         assert result[0].illustration_image is None  # Failed
         assert result[1].illustration_image == b"image bytes"  # Succeeded
