@@ -3,6 +3,7 @@ from .page_writer import PageWriterSignature, PageCritiqueSignature, PageRevisio
 from .story_judge import StoryJudgeSignature
 from .character_bible import CharacterBibleSignature
 from .illustration_style import IllustrationStyleSignature
+from .full_story import FullStorySignature, FullStoryWithPromptsSignature
 
 __all__ = [
     "StoryOutlineSignature",
@@ -12,4 +13,6 @@ __all__ = [
     "StoryJudgeSignature",
     "CharacterBibleSignature",
     "IllustrationStyleSignature",
+    "FullStorySignature",
+    "FullStoryWithPromptsSignature",
 ]

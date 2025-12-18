@@ -32,7 +32,11 @@ class StoryService:
 
         Returns the job/story ID which can be used to poll for status.
         """
+        # Import here to avoid circular imports
+        from backend.config import get_inference_model_name
+
         story_id = str(uuid.uuid4())
+        llm_model = get_inference_model_name()
 
         # Create pending record in database
         await self.repo.create_story(
@@ -40,6 +44,7 @@ class StoryService:
             goal=goal,
             target_age_range=target_age_range,
             generation_type=generation_type,
+            llm_model=llm_model,
         )
 
         # Submit background job
@@ -156,27 +161,28 @@ class StoryService:
         story_dir = STORIES_DIR / story_id
         story_dir.mkdir(parents=True, exist_ok=True)
 
-        # Prepare pages data
-        pages_data = []
-        for page in story.pages:
-            page_data = {
-                "page_number": page.page_number,
-                "text": page.text,
-                "word_count": page.word_count,
-                "was_revised": page.was_revised,
-                "illustration_prompt": page.illustration_prompt,
+        # Prepare spreads data
+        spreads_data = []
+        for spread in story.spreads:
+            spread_data = {
+                "spread_number": spread.spread_number,
+                "text": spread.text,
+                "word_count": spread.word_count,
+                "was_revised": spread.was_revised,
+                "page_turn_note": getattr(spread, 'page_turn_note', ''),
+                "illustration_prompt": spread.illustration_prompt,
                 "illustration_path": None,
             }
 
             # Save illustration if present
-            if page.illustration_image:
+            if spread.illustration_image:
                 images_dir = story_dir / "images"
                 images_dir.mkdir(exist_ok=True)
-                img_path = images_dir / f"page_{page.page_number:02d}.png"
-                img_path.write_bytes(page.illustration_image)
-                page_data["illustration_path"] = str(img_path)
+                img_path = images_dir / f"spread_{spread.spread_number:02d}.png"
+                img_path.write_bytes(spread.illustration_image)
+                spread_data["illustration_path"] = str(img_path)
 
-            pages_data.append(page_data)
+            spreads_data.append(spread_data)
 
         # Prepare character refs data
         char_refs_data = None
@@ -205,7 +211,7 @@ class StoryService:
             "emotional_arc": story.outline.emotional_arc,
             "plot_summary": story.outline.plot_summary,
             "moral": story.outline.moral,
-            "page_count": story.outline.page_count,
+            "spread_count": story.outline.spread_count,
         }
 
         # Serialize judgment if present
@@ -228,12 +234,12 @@ class StoryService:
             story_id=story_id,
             title=story.title,
             word_count=story.word_count,
-            page_count=story.page_count,
+            spread_count=story.spread_count,
             attempts=story.attempts,
             is_illustrated=story.is_illustrated,
             outline_json=json.dumps(outline_dict),
             judgment_json=json.dumps(judgment_dict) if judgment_dict else None,
-            pages=pages_data,
+            spreads=spreads_data,
             character_refs=char_refs_data,
         )
 

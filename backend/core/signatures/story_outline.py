@@ -60,8 +60,8 @@ class StoryOutlineSignature(dspy.Signature):
         desc="Three-act structure: Beginning (goal established, ~25%), Middle (2-3 failures that each teach something, plus ONE quiet vulnerability moment, ~50%), End (earned success that feels different from start, ~25%). Humor comes from character, not chaos."
     )
 
-    page_breakdown: str = dspy.OutputField(
-        desc="12-16 pages. Format: 'Page N: [ONE event] + [emotion shown]'. ONE thing happens per page. Final page shows how protagonist FEELS now—no shrugs, hedges, or jokes that undercut the landing."
+    spread_breakdown: str = dspy.OutputField(
+        desc="12 spreads (a spread = two facing pages). Format: 'Spread N: [event] + [emotion] + [page turn hook]'. Each spread ends with something that makes readers WANT to turn the page—a question, suspense, 'but then...'. Final spread shows how protagonist FEELS now—earned, not hedged."
     )
 
     moral: str = dspy.OutputField(

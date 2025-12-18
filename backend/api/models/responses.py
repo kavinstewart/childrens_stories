@@ -7,15 +7,24 @@ from datetime import datetime
 from .enums import GenerationType, JobStatus
 
 
-class StoryPageResponse(BaseModel):
-    """A single page of the story."""
+class StorySpreadResponse(BaseModel):
+    """A single spread (two facing pages) of the story.
 
-    page_number: int
+    A picture book has 12 spreads for story content.
+    Each spread has 25-40 words and one illustration.
+    """
+
+    spread_number: int
     text: str
     word_count: int
-    was_revised: bool
+    was_revised: bool = False
+    page_turn_note: Optional[str] = None  # What makes reader want to turn
     illustration_prompt: Optional[str] = None
     illustration_url: Optional[str] = None
+
+
+# Backwards compatibility alias
+StoryPageResponse = StorySpreadResponse
 
 
 class QualityJudgmentResponse(BaseModel):
@@ -43,7 +52,7 @@ class StoryOutlineResponse(BaseModel):
     emotional_arc: str
     plot_summary: str
     moral: str
-    page_count: int
+    spread_count: int  # Number of spreads (typically 12)
 
 
 class CharacterReferenceResponse(BaseModel):
@@ -62,6 +71,7 @@ class StoryResponse(BaseModel):
     goal: str
     target_age_range: str
     generation_type: GenerationType
+    llm_model: Optional[str] = None  # Model used for generation
     created_at: Optional[datetime] = None
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
@@ -69,11 +79,11 @@ class StoryResponse(BaseModel):
     # Populated when completed
     title: Optional[str] = None
     word_count: Optional[int] = None
-    page_count: Optional[int] = None
+    spread_count: Optional[int] = None  # Number of spreads (typically 12)
     attempts: Optional[int] = None
 
     outline: Optional[StoryOutlineResponse] = None
-    pages: Optional[list[StoryPageResponse]] = None
+    spreads: Optional[list[StorySpreadResponse]] = None
     judgment: Optional[QualityJudgmentResponse] = None
     character_references: Optional[list[CharacterReferenceResponse]] = None
 
@@ -85,6 +95,19 @@ class StoryResponse(BaseModel):
     def is_illustrated(self) -> bool:
         """Derived from generation_type - True when generation_type is ILLUSTRATED."""
         return self.generation_type == GenerationType.ILLUSTRATED
+
+    # Backwards compatibility aliases
+    @computed_field
+    @property
+    def page_count(self) -> Optional[int]:
+        """Alias for spread_count (backwards compatibility)."""
+        return self.spread_count
+
+    @computed_field
+    @property
+    def pages(self) -> Optional[list[StorySpreadResponse]]:
+        """Alias for spreads (backwards compatibility)."""
+        return self.spreads
 
 
 class StoryListResponse(BaseModel):

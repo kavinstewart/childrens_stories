@@ -1,19 +1,23 @@
 """
 Main DSPy Program for generating children's stories.
 
-Composes OutlineGenerator, PageGenerator, QualityJudge,
-CharacterSheetGenerator, and PageIllustrator into a complete
+Composes OutlineGenerator, SpreadGenerator, QualityJudge,
+CharacterSheetGenerator, and SpreadIllustrator into a complete
 pipeline with quality iteration loop and illustration generation.
+
+A spread = two facing pages when the book is open. A 32-page picture book
+has 12 spreads of story content. This approach generates more coherent
+narratives than page-by-page generation.
 """
 
 import dspy
 
 from ..types import GeneratedStory
 from ..modules.outline_generator import OutlineGenerator
-from ..modules.page_generator import PageGenerator
+from ..modules.spread_generator import SpreadGenerator
 from ..modules.quality_judge import QualityJudge
 from ..modules.character_sheet_generator import CharacterSheetGenerator
-from ..modules.page_illustrator import PageIllustrator
+from ..modules.spread_illustrator import SpreadIllustrator
 
 
 class StoryGenerator(dspy.Module):
@@ -21,15 +25,14 @@ class StoryGenerator(dspy.Module):
     Complete story generation pipeline.
 
     Pipeline:
-    1. Generate outline from goal
-    2. Generate pages from outline
+    1. Generate outline from goal (includes spread breakdown)
+    2. Generate all 12 spreads from outline in a single LLM call
     3. Judge quality
     4. If quality < threshold, retry with feedback (up to max_attempts)
 
     Args:
         quality_threshold: Minimum score (0-10) to accept a story
         max_attempts: Maximum generation attempts
-        words_per_page: Target words per page
         lm: Optional explicit LM to use. If provided, bypasses global
             dspy.configure() state. Useful for testing and explicit control.
     """
@@ -38,17 +41,15 @@ class StoryGenerator(dspy.Module):
         self,
         quality_threshold: int = 7,
         max_attempts: int = 3,
-        words_per_page: int = 35,
         lm: dspy.LM = None,
     ):
         super().__init__()
         self.outline_generator = OutlineGenerator()
-        self.page_generator = PageGenerator()
+        self.spread_generator = SpreadGenerator(include_illustration_prompts=True)
         self.quality_judge = QualityJudge()
 
         self.quality_threshold = quality_threshold
         self.max_attempts = max_attempts
-        self.words_per_page = words_per_page
         self._lm = lm  # Store explicit LM if provided
 
     def forward(
@@ -94,18 +95,18 @@ class StoryGenerator(dspy.Module):
                     f"AVOID THESE PROBLEMS from previous attempt:\n{best_story.judgment.specific_problems}"
                 )
 
-            # Step 1: Generate outline
+            # Step 1: Generate outline (includes spread breakdown)
             outline = self.outline_generator(goal=current_goal, debug=True)
 
-            # Step 2: Generate all pages
-            pages = self.page_generator.generate_all_pages(
+            # Step 2: Generate all 12 spreads in a single LLM call
+            spreads = self.spread_generator.generate_all_spreads(
                 outline=outline,
-                words_per_page=self.words_per_page,
+                debug=True,
             )
 
             # Compile story text for judging
             story_text = "\n\n".join(
-                f"Page {p.page_number}: {p.text}" for p in pages
+                f"Spread {s.spread_number}: {s.text}" for s in spreads
             )
 
             # Step 3: Judge quality (unless skipped)
@@ -121,7 +122,7 @@ class StoryGenerator(dspy.Module):
                 title=outline.title,
                 goal=goal,
                 outline=outline,
-                pages=pages,
+                spreads=spreads,
                 judgment=judgment,
                 attempts=attempt,
             )
@@ -164,11 +165,11 @@ class StoryGenerator(dspy.Module):
         Generate a complete illustrated children's story using Nano Banana Pro.
 
         Full pipeline:
-        1. Generate story outline (with character bibles)
-        2. Generate story pages (with illustration prompts)
+        1. Generate story outline (with character bibles and spread breakdown)
+        2. Generate all 12 spreads in a single LLM call (with illustration prompts)
         3. Judge quality and iterate
         4. Generate character reference portraits
-        5. Generate page illustrations using reference images (with QA)
+        5. Generate 12 spread illustrations using reference images (with QA)
 
         Args:
             goal: The learning goal or theme for the story
@@ -183,9 +184,9 @@ class StoryGenerator(dspy.Module):
         """
         import sys
 
-        # Step 1-3: Generate the story text
+        # Step 1-3: Generate the story text (outline + 12 spreads)
         if debug:
-            print("Step 1: Generating story text...", file=sys.stderr)
+            print("Step 1: Generating story text (12 spreads)...", file=sys.stderr)
         story = self.forward(
             goal=goal,
             target_age_range=target_age_range,
@@ -207,30 +208,30 @@ class StoryGenerator(dspy.Module):
         )
         story.reference_sheets = reference_sheets
 
-        # Step 5: Generate page illustrations (with QA if enabled)
+        # Step 5: Generate spread illustrations (12 images, with QA if enabled)
         if debug:
-            print(f"Step 3: Generating {len(story.pages)} page illustrations...", file=sys.stderr)
+            print(f"Step 3: Generating {len(story.spreads)} spread illustrations...", file=sys.stderr)
             if use_image_qa:
                 print(f"  QA enabled: max {max_image_attempts} attempts per image", file=sys.stderr)
 
-        illustrator = PageIllustrator()
+        illustrator = SpreadIllustrator()
 
         if use_image_qa:
-            story.pages, qa_summary = illustrator.illustrate_story_with_qa(
-                pages=story.pages,
+            story.spreads, qa_summary = illustrator.illustrate_story_with_qa(
+                spreads=story.spreads,
                 outline=story.outline,
                 reference_sheets=reference_sheets,
-                max_attempts_per_page=max_image_attempts,
+                max_attempts_per_spread=max_image_attempts,
                 debug=debug,
             )
             if debug:
-                print(f"\nQA Results: {qa_summary['passed']}/{qa_summary['total_pages']} passed", file=sys.stderr)
+                print(f"\nQA Results: {qa_summary['passed']}/{qa_summary['total_spreads']} passed", file=sys.stderr)
                 print(f"  Total regenerations: {qa_summary['regenerations']}", file=sys.stderr)
                 if qa_summary['issues_by_type']:
                     print(f"  Issues: {qa_summary['issues_by_type']}", file=sys.stderr)
         else:
-            story.pages = illustrator.illustrate_story(
-                pages=story.pages,
+            story.spreads = illustrator.illustrate_story(
+                spreads=story.spreads,
                 outline=story.outline,
                 reference_sheets=reference_sheets,
                 debug=debug,
@@ -239,7 +240,7 @@ class StoryGenerator(dspy.Module):
         story.is_illustrated = True
 
         if debug:
-            illustrated_count = sum(1 for p in story.pages if p.illustration_image)
-            print(f"Done! {illustrated_count}/{len(story.pages)} pages illustrated.", file=sys.stderr)
+            illustrated_count = sum(1 for s in story.spreads if s.illustration_image)
+            print(f"Done! {illustrated_count}/{len(story.spreads)} spreads illustrated.", file=sys.stderr)
 
         return story

@@ -129,7 +129,7 @@ class OutlineGenerator(dspy.Module):
             setting=result.setting,
             emotional_arc=result.emotional_arc,
             plot_summary=result.plot_summary,
-            page_breakdown=result.page_breakdown,
+            spread_breakdown=result.spread_breakdown,
             moral=result.moral,
             goal=goal,
             character_bibles=character_bibles,
@@ -138,8 +138,8 @@ class OutlineGenerator(dspy.Module):
         )
 
         if debug:
-            print(f"DEBUG Outline page_breakdown:\n{result.page_breakdown}", file=sys.stderr)
-            print(f"DEBUG Parsed pages: {outline.get_pages()}", file=sys.stderr)
+            print(f"DEBUG Outline spread_breakdown:\n{result.spread_breakdown}", file=sys.stderr)
+            print(f"DEBUG Parsed spreads: {outline.get_spreads()}", file=sys.stderr)
             print(f"DEBUG Character bibles: {len(character_bibles)} characters", file=sys.stderr)
             for cb in character_bibles:
                 print(f"  - {cb.name}: {cb.to_prompt_string()[:100]}...", file=sys.stderr)

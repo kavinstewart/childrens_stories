@@ -85,25 +85,52 @@ async def get_story(story_id: str, repo: Repository):
 
 
 @router.get(
-    "/{story_id}/pages/{page_number}/image",
-    summary="Get page illustration",
-    description="Get the illustration image for a specific page.",
+    "/{story_id}/spreads/{spread_number}/image",
+    summary="Get spread illustration",
+    description="Get the illustration image for a specific spread (two facing pages).",
     responses={
         200: {"content": {"image/png": {}}},
         404: {"description": "Image not found"},
     },
 )
-async def get_page_image(story_id: str, page_number: int):
-    """Get a page illustration image."""
-    image_path = STORIES_DIR / story_id / "images" / f"page_{page_number:02d}.png"
+async def get_spread_image(story_id: str, spread_number: int):
+    """Get a spread illustration image."""
+    image_path = STORIES_DIR / story_id / "images" / f"spread_{spread_number:02d}.png"
 
     if not image_path.exists():
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Image for page {page_number} not found",
+            detail=f"Image for spread {spread_number} not found",
         )
 
     return FileResponse(image_path, media_type="image/png")
+
+
+@router.get(
+    "/{story_id}/pages/{page_number}/image",
+    summary="Get page illustration (deprecated)",
+    description="Deprecated: Use /spreads/{spread_number}/image instead. Get the illustration image for a specific page.",
+    responses={
+        200: {"content": {"image/png": {}}},
+        404: {"description": "Image not found"},
+    },
+    deprecated=True,
+)
+async def get_page_image(story_id: str, page_number: int):
+    """Get a page illustration image (backwards compatibility alias for spreads)."""
+    # Try spread path first (new format), then page path (old format)
+    spread_path = STORIES_DIR / story_id / "images" / f"spread_{page_number:02d}.png"
+    page_path = STORIES_DIR / story_id / "images" / f"page_{page_number:02d}.png"
+
+    if spread_path.exists():
+        return FileResponse(spread_path, media_type="image/png")
+    elif page_path.exists():
+        return FileResponse(page_path, media_type="image/png")
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Image for page/spread {page_number} not found",
+        )
 
 
 @router.get(

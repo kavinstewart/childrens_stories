@@ -1,0 +1,74 @@
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { api, Story, CreateStoryRequest, JobStatus } from '@/lib/api';
+
+// Query keys
+export const storyKeys = {
+  all: ['stories'] as const,
+  lists: () => [...storyKeys.all, 'list'] as const,
+  list: (filters: { status?: JobStatus }) => [...storyKeys.lists(), filters] as const,
+  details: () => [...storyKeys.all, 'detail'] as const,
+  detail: (id: string) => [...storyKeys.details(), id] as const,
+};
+
+// Hook to fetch all stories
+export function useStories(status?: JobStatus) {
+  return useQuery({
+    queryKey: storyKeys.list({ status }),
+    queryFn: () => api.listStories({ status, limit: 100 }),
+    select: (data) => data.stories,
+  });
+}
+
+// Hook to fetch a single story
+export function useStory(id: string | undefined) {
+  return useQuery({
+    queryKey: storyKeys.detail(id!),
+    queryFn: () => api.getStory(id!),
+    enabled: !!id,
+  });
+}
+
+// Hook to poll a story while it's generating
+export function useStoryPolling(id: string | undefined) {
+  return useQuery({
+    queryKey: storyKeys.detail(id!),
+    queryFn: () => api.getStory(id!),
+    enabled: !!id,
+    refetchInterval: (query) => {
+      const story = query.state.data as Story | undefined;
+      // Poll every 2 seconds while pending/running
+      if (story?.status === 'pending' || story?.status === 'running') {
+        return 2000;
+      }
+      // Stop polling when completed or failed
+      return false;
+    },
+  });
+}
+
+// Hook to create a new story
+export function useCreateStory() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (request: CreateStoryRequest) => api.createStory(request),
+    onSuccess: () => {
+      // Invalidate story lists to refetch
+      queryClient.invalidateQueries({ queryKey: storyKeys.lists() });
+    },
+  });
+}
+
+// Hook to delete a story
+export function useDeleteStory() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id: string) => api.deleteStory(id),
+    onSuccess: (_, id) => {
+      // Remove from cache and invalidate lists
+      queryClient.removeQueries({ queryKey: storyKeys.detail(id) });
+      queryClient.invalidateQueries({ queryKey: storyKeys.lists() });
+    },
+  });
+}

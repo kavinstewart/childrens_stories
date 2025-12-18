@@ -5,7 +5,8 @@ from .responses import (
     StoryResponse,
     StoryListResponse,
     CreateStoryResponse,
-    StoryPageResponse,
+    StorySpreadResponse,
+    StoryPageResponse,  # Backwards compatibility alias
     StoryOutlineResponse,
     QualityJudgmentResponse,
     CharacterReferenceResponse,
@@ -18,7 +19,8 @@ __all__ = [
     "StoryResponse",
     "StoryListResponse",
     "CreateStoryResponse",
-    "StoryPageResponse",
+    "StorySpreadResponse",
+    "StoryPageResponse",  # Backwards compatibility alias
     "StoryOutlineResponse",
     "QualityJudgmentResponse",
     "CharacterReferenceResponse",

@@ -137,38 +137,38 @@ class StoryOutline:
     setting: str
     emotional_arc: str
     plot_summary: str
-    page_breakdown: str
+    spread_breakdown: str  # 12 spreads with page-turn moments
     moral: str
     goal: str  # Original goal for reference
     character_bibles: list[CharacterBible] = field(default_factory=list)
     illustration_style: Optional[StyleDefinition] = None
     style_rationale: str = ""
 
-    def get_pages(self) -> list[dict]:
-        """Parse page_breakdown into structured list."""
-        pages = []
-        if not self.page_breakdown:
-            return pages
-        for line in self.page_breakdown.split("\n"):
+    def get_spreads(self) -> list[dict]:
+        """Parse spread_breakdown into structured list."""
+        spreads = []
+        if not self.spread_breakdown:
+            return spreads
+        for line in self.spread_breakdown.split("\n"):
             line = line.strip()
-            # Remove markdown formatting like *Page 1* or **Page 1**
+            # Remove markdown formatting like *Spread 1* or **Spread 1**
             clean_line = re.sub(r"^\*+", "", line).strip()
             clean_line = re.sub(r"\*+$", "", clean_line.split(":")[0] if ":" in clean_line else clean_line).strip()
 
-            if clean_line.lower().startswith("page"):
-                # Try to extract page number and content
+            if clean_line.lower().startswith("spread"):
+                # Try to extract spread number and content
                 parts = line.split(":", 1)
                 if len(parts) == 2:
-                    # Clean up the page identifier too
-                    page_num = re.sub(r"[\*_]", "", parts[0]).strip()
+                    # Clean up the spread identifier too
+                    spread_num = re.sub(r"[\*_]", "", parts[0]).strip()
                     content = parts[1].strip()
-                    pages.append({"page": page_num, "content": content})
-        return pages
+                    spreads.append({"spread": spread_num, "content": content})
+        return spreads
 
     @property
-    def page_count(self) -> int:
-        """Return the number of pages in the outline."""
-        return len(self.get_pages())
+    def spread_count(self) -> int:
+        """Return the number of spreads in the outline."""
+        return len(self.get_spreads())
 
     def get_character_bible(self, name: str) -> Optional[CharacterBible]:
         """Find a character bible by name (case-insensitive partial match)."""
@@ -187,18 +187,32 @@ class StoryOutline:
 
 
 @dataclass
-class StoryPage:
-    """Structured representation of a single story page."""
+class StorySpread:
+    """Structured representation of a single story spread (two facing pages).
 
-    page_number: int
+    A spread is a double-page unit in a picture book. Standard picture books
+    have 12 spreads for story content, with 25-40 words per spread.
+    """
+
+    spread_number: int
     text: str
     word_count: int
-    was_revised: bool = False
+    page_turn_note: str = ""  # What makes reader want to turn the page
     illustration_prompt: str = ""
-    illustration_image: Optional[bytes] = None  # Generated illustration
+    illustration_image: Optional[bytes] = None  # Generated illustration for this spread
+    was_revised: bool = False  # Backwards compatibility
+
+    @property
+    def page_number(self) -> int:
+        """Alias for spread_number (backwards compatibility)."""
+        return self.spread_number
 
     def __str__(self) -> str:
-        return f"Page {self.page_number}: {self.text}"
+        return f"Spread {self.spread_number}: {self.text}"
+
+
+# Backwards compatibility alias
+StoryPage = StorySpread
 
 
 # =============================================================================
@@ -283,7 +297,7 @@ class GeneratedStory:
     title: str
     goal: str
     outline: StoryOutline
-    pages: list[StoryPage]
+    spreads: list[StorySpread]
     judgment: Optional[QualityJudgment]
     attempts: int
     reference_sheets: Optional[StoryReferenceSheets] = None
@@ -292,17 +306,28 @@ class GeneratedStory:
     @property
     def full_text(self) -> str:
         """Get the complete story text."""
-        return "\n\n".join(page.text for page in self.pages)
+        return "\n\n".join(spread.text for spread in self.spreads)
 
     @property
     def word_count(self) -> int:
         """Total word count of the story."""
-        return sum(page.word_count for page in self.pages)
+        return sum(spread.word_count for spread in self.spreads)
+
+    @property
+    def spread_count(self) -> int:
+        """Number of spreads in the story."""
+        return len(self.spreads)
+
+    # Backwards compatibility
+    @property
+    def pages(self) -> list[StorySpread]:
+        """Alias for spreads (backwards compatibility)."""
+        return self.spreads
 
     @property
     def page_count(self) -> int:
-        """Number of pages in the story."""
-        return len(self.pages)
+        """Alias for spread_count (backwards compatibility)."""
+        return self.spread_count
 
     def to_formatted_string(self, include_illustration_prompts: bool = False) -> str:
         """Format the story for display/output."""
@@ -315,19 +340,19 @@ class GeneratedStory:
             "",
         ]
 
-        for page in self.pages:
-            lines.append(f"**Page {page.page_number}**")
+        for spread in self.spreads:
+            lines.append(f"**Spread {spread.spread_number}**")
             lines.append("")
-            lines.append(page.text)
+            lines.append(spread.text)
 
-            if include_illustration_prompts and page.illustration_prompt:
+            if include_illustration_prompts and spread.illustration_prompt:
                 lines.append("")
-                lines.append(f"*[Illustration: {page.illustration_prompt}]*")
+                lines.append(f"*[Illustration: {spread.illustration_prompt}]*")
 
-            if page.illustration_image:
+            if spread.illustration_image:
                 # Reference to saved image
                 lines.append("")
-                lines.append(f"![Page {page.page_number}](images/page_{page.page_number:02d}.png)")
+                lines.append(f"![Spread {spread.spread_number}](images/spread_{spread.spread_number:02d}.png)")
 
             lines.append("")
             lines.append("---")
@@ -337,7 +362,7 @@ class GeneratedStory:
         lines.append("")
         lines.append(f"---")
         lines.append(f"Word count: {self.word_count}")
-        lines.append(f"Pages: {self.page_count}")
+        lines.append(f"Spreads: {self.spread_count}")
         lines.append(f"Illustrated: {'Yes' if self.is_illustrated else 'No'}")
 
         if self.outline.illustration_style:

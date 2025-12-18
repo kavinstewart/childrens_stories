@@ -1,8 +1,11 @@
 """
-Module for generating page illustrations using Nano Banana Pro.
+Module for generating spread illustrations using Nano Banana Pro.
 
 Uses character reference images and illustration prompts in multimodal
-prompts to generate consistent illustrations for each page of the story.
+prompts to generate consistent illustrations for each spread of the story.
+
+A spread = two facing pages when the book is open. A 32-page picture book
+has 12 spreads of story content (after cover, title page, etc.).
 
 Supports optional QA with automatic regeneration:
 - Fast pass: VQAScore for prompt-image alignment
@@ -13,15 +16,16 @@ import re
 from typing import Optional, Tuple
 
 from backend.config import get_image_client, get_image_model, get_image_config, IMAGE_CONSTANTS, extract_image_from_response
-from ..types import StoryOutline, StoryPage, StoryReferenceSheets
+from ..types import StoryOutline, StorySpread, StoryReferenceSheets
 
 
-class PageIllustrator:
+class SpreadIllustrator:
     """
-    Generate illustrations for story pages using Nano Banana Pro.
+    Generate illustrations for story spreads using Nano Banana Pro.
 
+    Generates 12 illustrations (one per spread) for a complete picture book.
     Uses character reference images as visual anchors in multimodal prompts
-    to maintain consistency across all page illustrations.
+    to maintain consistency across all spread illustrations.
     """
 
     def __init__(self):
@@ -37,7 +41,7 @@ class PageIllustrator:
 
     def _build_scene_prompt(
         self,
-        page: StoryPage,
+        spread: StorySpread,
         outline: StoryOutline,
     ) -> str:
         """Build the scene description part of the prompt."""
@@ -46,20 +50,21 @@ class PageIllustrator:
             style = outline.illustration_style
             prompt = f"""{style.prompt_prefix}
 
-Generate illustration for Page {page.page_number}.
+Generate illustration for Spread {spread.spread_number} (two facing pages).
 
 SCENE DESCRIPTION:
-{page.illustration_prompt}
+{spread.illustration_prompt}
 
-STORY TEXT FOR THIS PAGE:
-"{page.text}"
+STORY TEXT FOR THIS SPREAD:
+"{spread.text}"
 
 SETTING: {outline.setting}
 
 {style.prompt_suffix}
 
 ADDITIONAL REQUIREMENTS:
-- Single cohesive illustration suitable for a picture book page
+- Single cohesive illustration spanning a double-page spread
+- Horizontal composition suitable for two facing pages
 - Leave space for text (typically top or bottom 20% of image)
 - Characters should be expressive and appealing to children
 - Clear focal point as described in the scene
@@ -71,20 +76,21 @@ ADDITIONAL REQUIREMENTS:
             style_tags = outline.get_all_style_tags()
             style_str = ", ".join(style_tags) if style_tags else "children's book illustration, warm colors, soft lighting"
 
-            prompt = f"""Generate a children's picture book illustration for Page {page.page_number}.
+            prompt = f"""Generate a children's picture book illustration for Spread {spread.spread_number} (two facing pages).
 
 SCENE DESCRIPTION:
-{page.illustration_prompt}
+{spread.illustration_prompt}
 
-STORY TEXT FOR THIS PAGE:
-"{page.text}"
+STORY TEXT FOR THIS SPREAD:
+"{spread.text}"
 
 SETTING: {outline.setting}
 
 STYLE: {style_str}
 
 REQUIREMENTS:
-- Single cohesive illustration suitable for a picture book page
+- Single cohesive illustration spanning a double-page spread
+- Horizontal composition suitable for two facing pages
 - Leave space for text (typically top or bottom 20% of image)
 - Characters should be expressive and appealing to children
 - Warm, inviting color palette
@@ -95,21 +101,21 @@ REQUIREMENTS:
 
         return prompt
 
-    def illustrate_page(
+    def illustrate_spread(
         self,
-        page: StoryPage,
+        spread: StorySpread,
         outline: StoryOutline,
         reference_sheets: Optional[StoryReferenceSheets] = None,
         debug: bool = False,
     ) -> bytes:
         """
-        Generate an illustration for a single page using Nano Banana Pro.
+        Generate an illustration for a single spread using Nano Banana Pro.
 
         Uses multimodal prompting: passes all character reference images
         along with the scene description in a single API call.
 
         Args:
-            page: The story page to illustrate
+            spread: The story spread to illustrate
             outline: The story outline with character bibles
             reference_sheets: Character reference images for consistency
             debug: Print debug info
@@ -119,8 +125,8 @@ REQUIREMENTS:
         """
         import sys
 
-        scene_prompt = self._build_scene_prompt(page, outline)
-        contents = self._build_contents(page, outline, reference_sheets, scene_prompt)
+        scene_prompt = self._build_scene_prompt(spread, outline)
+        contents = self._build_contents(spread, outline, reference_sheets, scene_prompt)
 
         if debug:
             # Count reference images (every other item before the prompt is a ref image)
@@ -132,57 +138,57 @@ REQUIREMENTS:
         try:
             return self._generate_image(contents)
         except ValueError:
-            raise ValueError(f"No image generated for page {page.page_number}")
+            raise ValueError(f"No image generated for spread {spread.spread_number}")
 
     def illustrate_story(
         self,
-        pages: list[StoryPage],
+        spreads: list[StorySpread],
         outline: StoryOutline,
         reference_sheets: Optional[StoryReferenceSheets] = None,
         debug: bool = False,
-    ) -> list[StoryPage]:
+    ) -> list[StorySpread]:
         """
-        Generate illustrations for all pages in a story.
+        Generate illustrations for all spreads in a story (typically 12).
 
         Args:
-            pages: List of story pages
+            spreads: List of story spreads
             outline: The story outline with character bibles
             reference_sheets: Character reference images
             debug: Print progress info
 
         Returns:
-            List of StoryPage objects with illustration_image populated
+            List of StorySpread objects with illustration_image populated
         """
         import sys
 
-        for i, page in enumerate(pages):
+        for i, spread in enumerate(spreads):
             if debug:
-                print(f"Illustrating page {page.page_number} of {len(pages)}...", file=sys.stderr)
+                print(f"Illustrating spread {spread.spread_number} of {len(spreads)}...", file=sys.stderr)
 
             try:
-                image_bytes = self.illustrate_page(
-                    page=page,
+                image_bytes = self.illustrate_spread(
+                    spread=spread,
                     outline=outline,
                     reference_sheets=reference_sheets,
                     debug=debug,
                 )
-                page.illustration_image = image_bytes
+                spread.illustration_image = image_bytes
 
                 if debug:
-                    print(f"  Page {page.page_number}: Generated {len(image_bytes)} bytes", file=sys.stderr)
+                    print(f"  Spread {spread.spread_number}: Generated {len(image_bytes)} bytes", file=sys.stderr)
 
             except Exception as e:
                 if debug:
-                    print(f"  Page {page.page_number}: FAILED - {e}", file=sys.stderr)
-                page.illustration_image = None
+                    print(f"  Spread {spread.spread_number}: FAILED - {e}", file=sys.stderr)
+                spread.illustration_image = None
 
-        return pages
+        return spreads
 
     # === QA-ENABLED METHODS ===
 
     def _build_contents(
         self,
-        page: StoryPage,
+        spread: StorySpread,
         outline: StoryOutline,
         reference_sheets: Optional[StoryReferenceSheets],
         scene_prompt: str,
@@ -192,9 +198,9 @@ REQUIREMENTS:
 
         # Add character reference images first (if available)
         if reference_sheets and reference_sheets.character_sheets:
-            # Get character names mentioned in this page
+            # Get character names mentioned in this spread
             mentioned_names = self._extract_character_names(
-                page.illustration_prompt + " " + page.text
+                spread.illustration_prompt + " " + spread.text
             )
 
             # Add reference images for mentioned characters
@@ -227,9 +233,9 @@ REQUIREMENTS:
         )
         return extract_image_from_response(response)
 
-    def illustrate_page_with_qa(
+    def illustrate_spread_with_qa(
         self,
-        page: StoryPage,
+        spread: StorySpread,
         outline: StoryOutline,
         reference_sheets: Optional[StoryReferenceSheets] = None,
         max_attempts: int = 3,
@@ -239,7 +245,7 @@ REQUIREMENTS:
         Generate illustration with QA loop for automatic regeneration.
 
         Args:
-            page: The story page to illustrate
+            spread: The story spread to illustrate
             outline: The story outline with character bibles
             reference_sheets: Character reference images for consistency
             max_attempts: Maximum regeneration attempts
@@ -252,14 +258,14 @@ REQUIREMENTS:
         from .image_qa import ImageQA, QAVerdict
 
         qa = ImageQA(max_regeneration_attempts=max_attempts)
-        prompt = self._build_scene_prompt(page, outline)
+        prompt = self._build_scene_prompt(spread, outline)
 
         for attempt in range(1, max_attempts + 1):
             if debug:
                 print(f"  Attempt {attempt}/{max_attempts}...", file=sys.stderr)
 
             # Build contents with current prompt
-            contents = self._build_contents(page, outline, reference_sheets, prompt)
+            contents = self._build_contents(spread, outline, reference_sheets, prompt)
 
             # Generate image
             try:
@@ -272,8 +278,8 @@ REQUIREMENTS:
             # Run QA
             qa_result = qa.evaluate(
                 image=image_bytes,
-                prompt=page.illustration_prompt,  # Use original prompt for QA
-                image_id=f"page_{page.page_number:02d}",
+                prompt=spread.illustration_prompt,  # Use original prompt for QA
+                image_id=f"spread_{spread.spread_number:02d}",
                 reference_sheets=reference_sheets,
                 attempt_number=attempt,
             )
@@ -305,30 +311,30 @@ REQUIREMENTS:
 
     def illustrate_story_with_qa(
         self,
-        pages: list[StoryPage],
+        spreads: list[StorySpread],
         outline: StoryOutline,
         reference_sheets: Optional[StoryReferenceSheets] = None,
-        max_attempts_per_page: int = 3,
+        max_attempts_per_spread: int = 3,
         debug: bool = False,
-    ) -> Tuple[list[StoryPage], dict]:
+    ) -> Tuple[list[StorySpread], dict]:
         """
-        Generate illustrations for all pages with QA.
+        Generate illustrations for all spreads with QA (typically 12 images).
 
         Args:
-            pages: List of story pages
+            spreads: List of story spreads
             outline: The story outline with character bibles
             reference_sheets: Character reference images
-            max_attempts_per_page: Max regeneration attempts per page
+            max_attempts_per_spread: Max regeneration attempts per spread
             debug: Print progress info
 
         Returns:
-            Tuple of (pages with illustrations, qa_summary dict)
+            Tuple of (spreads with illustrations, qa_summary dict)
         """
         import sys
         from .image_qa import QAVerdict
 
         qa_summary = {
-            "total_pages": len(pages),
+            "total_spreads": len(spreads),
             "passed": 0,
             "failed": 0,
             "total_attempts": 0,
@@ -336,19 +342,19 @@ REQUIREMENTS:
             "issues_by_type": {},
         }
 
-        for i, page in enumerate(pages):
+        for i, spread in enumerate(spreads):
             if debug:
-                print(f"Illustrating page {page.page_number} of {len(pages)}...", file=sys.stderr)
+                print(f"Illustrating spread {spread.spread_number} of {len(spreads)}...", file=sys.stderr)
 
             try:
-                image_bytes, qa_result = self.illustrate_page_with_qa(
-                    page=page,
+                image_bytes, qa_result = self.illustrate_spread_with_qa(
+                    spread=spread,
                     outline=outline,
                     reference_sheets=reference_sheets,
-                    max_attempts=max_attempts_per_page,
+                    max_attempts=max_attempts_per_spread,
                     debug=debug,
                 )
-                page.illustration_image = image_bytes
+                spread.illustration_image = image_bytes
 
                 # Update summary
                 qa_summary["total_attempts"] += qa_result.attempt_number
@@ -365,20 +371,24 @@ REQUIREMENTS:
                     )
 
                 if debug:
-                    print(f"  Page {page.page_number}: {qa_result.verdict.value} "
+                    print(f"  Spread {spread.spread_number}: {qa_result.verdict.value} "
                           f"(attempt {qa_result.attempt_number})", file=sys.stderr)
 
             except Exception as e:
                 if debug:
-                    print(f"  Page {page.page_number}: FAILED - {e}", file=sys.stderr)
-                page.illustration_image = None
+                    print(f"  Spread {spread.spread_number}: FAILED - {e}", file=sys.stderr)
+                spread.illustration_image = None
                 qa_summary["failed"] += 1
 
         if debug:
             print(f"\nQA Summary:", file=sys.stderr)
-            print(f"  Passed: {qa_summary['passed']}/{qa_summary['total_pages']}", file=sys.stderr)
+            print(f"  Passed: {qa_summary['passed']}/{qa_summary['total_spreads']}", file=sys.stderr)
             print(f"  Regenerations: {qa_summary['regenerations']}", file=sys.stderr)
             if qa_summary["issues_by_type"]:
                 print(f"  Issues: {qa_summary['issues_by_type']}", file=sys.stderr)
 
-        return pages, qa_summary
+        return spreads, qa_summary
+
+
+# Backwards compatibility alias
+PageIllustrator = SpreadIllustrator

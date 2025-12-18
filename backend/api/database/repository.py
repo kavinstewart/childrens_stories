@@ -9,7 +9,7 @@ from .db import get_db
 from ..models.enums import GenerationType, JobStatus
 from ..models.responses import (
     StoryResponse,
-    StoryPageResponse,
+    StorySpreadResponse,
     StoryOutlineResponse,
     QualityJudgmentResponse,
     CharacterReferenceResponse,
@@ -25,15 +25,16 @@ class StoryRepository:
         goal: str,
         target_age_range: str,
         generation_type: str,
+        llm_model: Optional[str] = None,
     ) -> None:
         """Create a new story record in pending status."""
         async with get_db() as db:
             await db.execute(
                 """
-                INSERT INTO stories (id, goal, target_age_range, generation_type, status)
-                VALUES (?, ?, ?, ?, 'pending')
+                INSERT INTO stories (id, goal, target_age_range, generation_type, llm_model, status)
+                VALUES (?, ?, ?, ?, ?, 'pending')
                 """,
-                (story_id, goal, target_age_range, generation_type),
+                (story_id, goal, target_age_range, generation_type, llm_model),
             )
             await db.commit()
 
@@ -73,12 +74,12 @@ class StoryRepository:
         story_id: str,
         title: str,
         word_count: int,
-        page_count: int,
+        spread_count: int,
         attempts: int,
         is_illustrated: bool,
         outline_json: str,
         judgment_json: Optional[str],
-        pages: list[dict],
+        spreads: list[dict],
         character_refs: Optional[list[dict]] = None,
     ) -> None:
         """Save completed story data."""
@@ -89,7 +90,7 @@ class StoryRepository:
                 UPDATE stories SET
                     title = ?,
                     word_count = ?,
-                    page_count = ?,
+                    spread_count = ?,
                     attempts = ?,
                     is_illustrated = ?,
                     outline_json = ?,
@@ -101,7 +102,7 @@ class StoryRepository:
                 (
                     title,
                     word_count,
-                    page_count,
+                    spread_count,
                     attempts,
                     1 if is_illustrated else 0,
                     outline_json,
@@ -111,23 +112,24 @@ class StoryRepository:
                 ),
             )
 
-            # Insert pages
-            for page in pages:
+            # Insert spreads
+            for spread in spreads:
                 await db.execute(
                     """
-                    INSERT INTO story_pages
-                    (story_id, page_number, text, word_count, was_revised,
-                     illustration_prompt, illustration_path)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO story_spreads
+                    (story_id, spread_number, text, word_count, was_revised,
+                     page_turn_note, illustration_prompt, illustration_path)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         story_id,
-                        page["page_number"],
-                        page["text"],
-                        page["word_count"],
-                        1 if page.get("was_revised") else 0,
-                        page.get("illustration_prompt"),
-                        page.get("illustration_path"),
+                        spread["spread_number"],
+                        spread["text"],
+                        spread["word_count"],
+                        1 if spread.get("was_revised") else 0,
+                        spread.get("page_turn_note"),
+                        spread.get("illustration_prompt"),
+                        spread.get("illustration_path"),
                     ),
                 )
 
@@ -163,12 +165,12 @@ class StoryRepository:
             if not row:
                 return None
 
-            # Get pages
-            pages_cursor = await db.execute(
-                "SELECT * FROM story_pages WHERE story_id = ? ORDER BY page_number",
+            # Get spreads
+            spreads_cursor = await db.execute(
+                "SELECT * FROM story_spreads WHERE story_id = ? ORDER BY spread_number",
                 (story_id,),
             )
-            pages_rows = await pages_cursor.fetchall()
+            spreads_rows = await spreads_cursor.fetchall()
 
             # Get character refs
             refs_cursor = await db.execute(
@@ -177,7 +179,7 @@ class StoryRepository:
             )
             refs_rows = await refs_cursor.fetchall()
 
-            return self._row_to_response(row, pages_rows, refs_rows)
+            return self._row_to_response(row, spreads_rows, refs_rows)
 
     async def list_stories(
         self,
@@ -234,7 +236,7 @@ class StoryRepository:
     def _row_to_response(
         self,
         row,
-        pages_rows: list,
+        spreads_rows: list,
         refs_rows: list,
     ) -> StoryResponse:
         """Convert database rows to response model."""
@@ -250,21 +252,22 @@ class StoryRepository:
             judgment_data = json.loads(row["judgment_json"])
             judgment = QualityJudgmentResponse(**judgment_data)
 
-        # Convert pages
-        pages = None
-        if pages_rows:
-            pages = [
-                StoryPageResponse(
-                    page_number=p["page_number"],
-                    text=p["text"],
-                    word_count=p["word_count"],
-                    was_revised=bool(p["was_revised"]),
-                    illustration_prompt=p["illustration_prompt"],
-                    illustration_url=f"/stories/{row['id']}/pages/{p['page_number']}/image"
-                    if p["illustration_path"]
+        # Convert spreads
+        spreads = None
+        if spreads_rows:
+            spreads = [
+                StorySpreadResponse(
+                    spread_number=s["spread_number"],
+                    text=s["text"],
+                    word_count=s["word_count"],
+                    was_revised=bool(s["was_revised"]),
+                    page_turn_note=s.get("page_turn_note"),
+                    illustration_prompt=s["illustration_prompt"],
+                    illustration_url=f"/stories/{row['id']}/spreads/{s['spread_number']}/image"
+                    if s["illustration_path"]
                     else None,
                 )
-                for p in pages_rows
+                for s in spreads_rows
             ]
 
         # Convert character refs
@@ -292,15 +295,16 @@ class StoryRepository:
             goal=row["goal"],
             target_age_range=row["target_age_range"],
             generation_type=GenerationType(row["generation_type"]),
+            llm_model=row["llm_model"],
             created_at=created_at,
             started_at=started_at,
             completed_at=completed_at,
             title=row["title"],
             word_count=row["word_count"],
-            page_count=row["page_count"],
+            spread_count=row["spread_count"],
             attempts=row["attempts"],
             outline=outline,
-            pages=pages,
+            spreads=spreads,
             judgment=judgment,
             character_references=character_refs,
             error_message=row["error_message"],
