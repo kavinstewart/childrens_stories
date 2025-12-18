@@ -4,18 +4,19 @@ An AI-powered pipeline for generating illustrated children's picture books from 
 
 ## Features
 
-- **Story Generation**: Creates complete 12-16 page children's stories from learning goals or themes
-- **Character Consistency**: Generates multi-view character model sheets (turnarounds + expressions) for visual consistency
+- **Story Generation**: Creates complete 15-16 page children's stories from learning goals or themes
+- **Character Consistency**: Generates character reference portraits for visual consistency across illustrations
 - **Illustration Styles**: LLM-selected art styles based on story tone (watercolor, digital cartoon, pastel, gouache, Ghibli-inspired, claymation)
-- **Image QA**: Automatic quality checking with regeneration for text detection, character consistency, and age matching
+- **Image QA**: Automatic quality checking with regeneration for text detection and character consistency
 - **Quality Iteration**: Story text is judged and refined through multiple passes
+- **REST API**: FastAPI server for async story generation with job management
 
 ## Architecture
 
 ```
 Goal → OutlineGenerator → PageGenerator → QualityJudge
                 ↓
-        CharacterSheetGenerator (model sheets)
+        CharacterSheetGenerator (reference portraits)
                 ↓
         PageIllustrator (with QA loop)
                 ↓
@@ -41,31 +42,83 @@ Create a `.env` file with your API keys:
 # Required: Gemini API for image generation
 GOOGLE_API_KEY=your_google_api_key
 
-# Required: LLM for story generation (one of these)
-CEREBRAS_API_KEY=your_cerebras_key  # Recommended: fastest
+# Required: LLM for story generation (priority order)
+ANTHROPIC_API_KEY=your_anthropic_key  # Recommended: Claude Opus 4.5 (highest quality)
+# OR
+CEREBRAS_API_KEY=your_cerebras_key    # Fallback: Qwen3-235B (fastest)
 # OR
 OPENROUTER_API_KEY=your_openrouter_key
 # OR
 OPENAI_API_KEY=your_openai_key
 ```
 
+Check your configuration:
+```bash
+make config
+```
+
 ## Usage
 
-### Generate an Illustrated Story
+### Command Line (Recommended)
+
+```bash
+# Generate a story with quality iteration (~$0.10-0.30)
+make run GOAL="teach about sharing"
+
+# Fast mode - no quality iteration (~$0.05)
+make run-fast GOAL="explain photosynthesis to kids"
+
+# Fully illustrated story (~$2-5, requires GOOGLE_API_KEY)
+make run-illustrated GOAL="the importance of kindness"
+```
+
+Or use the Python script directly:
+```bash
+python scripts/generate_story.py "teach about sharing" --verbose
+python scripts/generate_story.py "kindness" --fast --stdout
+```
+
+### REST API
+
+Start the API server:
+```bash
+make api
+# or: python scripts/run_api.py
+```
+
+The API runs at `http://localhost:8000` with auto-generated docs at `/docs`.
+
+```bash
+# Create a story job
+curl -X POST http://localhost:8000/stories \
+  -H "Content-Type: application/json" \
+  -d '{"goal": "teach about sharing"}'
+
+# Poll for status
+curl http://localhost:8000/stories/{story_id}
+
+# Get page illustration
+curl http://localhost:8000/stories/{story_id}/pages/1/image --output page1.png
+```
+
+### Python API
 
 ```python
-from src.programs.story_generator import StoryGenerator
 from src.config import configure_dspy
+from src.programs.story_generator import StoryGenerator
 
 configure_dspy()
 
 generator = StoryGenerator()
+
+# Text-only story
+story = generator.forward(goal="teach about sharing")
+
+# Illustrated story
 story = generator.generate_illustrated(
     goal="teach children about the importance of curiosity",
     debug=True,
 )
-
-# Save to directory
 story.save_illustrated("output/my_story")
 ```
 
@@ -87,19 +140,37 @@ The LLM automatically selects the best style based on story content:
 ```
 childrens_stories/
 ├── src/
+│   ├── api/              # FastAPI REST server
+│   │   ├── routes/       # API endpoints
+│   │   ├── models/       # Request/response schemas
+│   │   ├── services/     # Business logic & job management
+│   │   └── database/     # SQLite persistence
+│   ├── config/           # Configuration modules
+│   │   ├── llm.py        # LLM setup (Claude, Cerebras, etc.)
+│   │   ├── image.py      # Image generation config
+│   │   └── story.py      # Story constants
 │   ├── signatures/       # DSPy Signatures (input/output contracts)
 │   ├── modules/          # DSPy Modules (reusable components)
 │   │   ├── outline_generator.py
 │   │   ├── page_generator.py
 │   │   ├── quality_judge.py
+│   │   ├── vlm_judge.py  # VLM-based image quality judge
 │   │   ├── character_sheet_generator.py
 │   │   ├── page_illustrator.py
 │   │   ├── illustration_styles.py
 │   │   └── image_qa.py
 │   ├── programs/         # DSPy Programs (composed pipelines)
 │   │   └── story_generator.py
-│   └── config.py         # API and model configuration
+│   ├── metrics/          # Evaluation metrics for GEPA optimization
+│   └── types.py          # Domain types (Story, Page, Character, etc.)
+├── scripts/              # CLI entry points
+│   ├── generate_story.py # Main CLI
+│   └── run_api.py        # API server launcher
+├── examples/             # Sample generated stories
+├── data/                 # Training data & SQLite database
+├── tests/                # Unit tests
 ├── output/               # Generated stories (gitignored)
+├── Makefile              # Common commands
 └── pyproject.toml        # Dependencies
 ```
 
@@ -108,10 +179,20 @@ childrens_stories/
 The QA system checks generated illustrations for:
 
 1. **Text Detection**: Ensures no text/words appear in illustrations
-2. **Character Consistency**: Compares hair style, face shape, and apparent age against reference sheets
+2. **Character Consistency**: Compares hair style, face shape, and apparent age against reference portraits
 3. **Scene Accuracy**: Validates the illustration matches the prompt
 
 Failed images are automatically regenerated with enhanced prompts (up to 3 attempts).
+
+## Development
+
+```bash
+# Run tests
+make test
+
+# Show all available commands
+make help
+```
 
 ## License
 

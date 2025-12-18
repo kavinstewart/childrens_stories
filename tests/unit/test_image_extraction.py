@@ -4,7 +4,7 @@ import pytest
 from unittest.mock import MagicMock
 import base64
 
-from src.config.image import extract_image_from_response
+from backend.config.image import extract_image_from_response
 
 
 class FakePart:

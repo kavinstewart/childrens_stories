@@ -11,15 +11,36 @@ An AI agent that generates high-quality children's picture books from brief goal
 ## Project Structure
 ```
 childrens_stories/
-├── src/
-│   ├── signatures/       # DSPy Signatures (inputs/outputs)
-│   ├── modules/          # DSPy Modules (reusable components)
-│   ├── programs/         # DSPy Programs (composed pipelines)
-│   ├── metrics/          # Evaluation metrics with feedback for GEPA
-│   └── optimization/     # GEPA optimization scripts
-├── data/                 # Training goals and evaluation sets
-├── optimized/            # Saved optimized programs
-└── scripts/              # CLI entry points
+├── backend/                  # Python backend
+│   ├── api/                  # FastAPI HTTP layer
+│   │   ├── routes/
+│   │   ├── models/
+│   │   ├── services/
+│   │   └── database/
+│   ├── core/                 # Domain logic (DSPy)
+│   │   ├── signatures/       # DSPy Signatures (inputs/outputs)
+│   │   ├── modules/          # DSPy Modules (reusable components)
+│   │   ├── programs/         # DSPy Programs (composed pipelines)
+│   │   └── types.py          # Domain types
+│   ├── config/               # LLM and image configuration
+│   ├── metrics/              # Evaluation metrics with feedback for GEPA
+│   └── optimization/         # GEPA optimization scripts
+├── frontend/                 # React Native app (Expo) - iPad + web
+│   ├── app/                  # Expo Router screens
+│   ├── components/           # UI components
+│   ├── features/             # Feature modules (data layer)
+│   └── lib/                  # Utilities
+├── cli/                      # CLI entry points
+│   ├── generate_story.py
+│   ├── run_api.py
+│   └── debug_page.py
+├── tests/                    # All tests
+│   ├── unit/                 # Fast unit tests
+│   └── integration/          # Slow LLM integration tests
+├── data/                     # Runtime data (database, stories)
+├── docs/                     # Documentation
+│   └── prototypes/           # UI prototypes (JSX mockups)
+└── output/                   # Generated story outputs
 ```
 
 ## Environment & API Keys
@@ -93,9 +114,11 @@ optimized = optimizer.compile(program, trainset=train, valset=val)
 5. **Compose & test** - Integrate optimized modules
 
 ## Key Files to Know
-- `src/signatures/` - Define input/output contracts
-- `src/metrics/` - Quality metrics with feedback for GEPA
-- `data/training_goals.json` - Training examples
+- `backend/core/signatures/` - Define input/output contracts
+- `backend/core/types.py` - Domain types (Story, Page, etc.)
+- `backend/metrics/` - Quality metrics with feedback for GEPA
+- `backend/api/` - FastAPI routes and services
+- `cli/` - Command-line entry points
 - `.env` - API keys (never read directly!)
 
 ## Prohibited Behaviors

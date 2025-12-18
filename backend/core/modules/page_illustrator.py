@@ -12,7 +12,7 @@ Supports optional QA with automatic regeneration:
 import re
 from typing import Optional, Tuple
 
-from ..config import get_image_client, get_image_model, get_image_config, IMAGE_CONSTANTS, extract_image_from_response
+from backend.config import get_image_client, get_image_model, get_image_config, IMAGE_CONSTANTS, extract_image_from_response
 from ..types import StoryOutline, StoryPage, StoryReferenceSheets
 
 

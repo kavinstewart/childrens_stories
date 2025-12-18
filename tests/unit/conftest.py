@@ -8,12 +8,12 @@ from unittest.mock import AsyncMock, MagicMock
 
 from fastapi.testclient import TestClient
 
-from src.api.main import app
-from src.api.database.db import init_db
-from src.api.database.repository import StoryRepository
-from src.api.services.story_service import StoryService
-from src.api.dependencies import get_repository, get_story_service
-from src.api import config
+from backend.api.main import app
+from backend.api.database.db import init_db
+from backend.api.database.repository import StoryRepository
+from backend.api.services.story_service import StoryService
+from backend.api.dependencies import get_repository, get_story_service
+from backend.api import config
 
 
 @pytest.fixture

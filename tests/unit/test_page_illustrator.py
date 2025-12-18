@@ -4,8 +4,8 @@ import pytest
 from unittest.mock import MagicMock, patch
 from dataclasses import dataclass
 
-from src.modules.page_illustrator import PageIllustrator
-from src.types import (
+from backend.core.modules.page_illustrator import PageIllustrator
+from backend.core.types import (
     StoryPage,
     StoryOutline,
     StoryReferenceSheets,
@@ -121,9 +121,9 @@ def mock_image_client():
 @pytest.fixture
 def illustrator(mock_image_client):
     """PageIllustrator with mocked client."""
-    with patch('src.modules.page_illustrator.get_image_client', return_value=mock_image_client):
-        with patch('src.modules.page_illustrator.get_image_model', return_value='test-model'):
-            with patch('src.modules.page_illustrator.get_image_config', return_value={}):
+    with patch('backend.core.modules.page_illustrator.get_image_client', return_value=mock_image_client):
+        with patch('backend.core.modules.page_illustrator.get_image_model', return_value='test-model'):
+            with patch('backend.core.modules.page_illustrator.get_image_config', return_value={}):
                 yield PageIllustrator()
 
 

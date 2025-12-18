@@ -12,10 +12,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 import dspy
-from src.config import configure_dspy, get_inference_lm, get_reflection_lm
-from src.modules.outline_generator import OutlineGenerator
-from src.modules.page_generator import PageGenerator
-from src.signatures.page_writer import PageWriterSignature
+from backend.config import configure_dspy, get_inference_lm, get_reflection_lm
+from backend.core.modules.outline_generator import OutlineGenerator
+from backend.core.modules.page_generator import PageGenerator
+from backend.core.signatures.page_writer import PageWriterSignature
 
 
 # Training examples - just goals about science topics kids ask about

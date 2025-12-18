@@ -18,8 +18,8 @@ from pathlib import Path
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.config import configure_dspy, STORY_CONSTANTS
-from src.programs.story_generator import StoryGenerator
+from backend.config import configure_dspy, STORY_CONSTANTS
+from backend.core.programs.story_generator import StoryGenerator
 
 
 def main():

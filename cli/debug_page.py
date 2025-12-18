@@ -6,9 +6,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.config import configure_dspy
-from src.modules.outline_generator import OutlineGenerator
-from src.signatures.page_writer import PageWriterSignature
+from backend.config import configure_dspy
+from backend.core.modules.outline_generator import OutlineGenerator
+from backend.core.signatures.page_writer import PageWriterSignature
 import dspy
 
 # Configure

@@ -98,8 +98,9 @@ class StoryService:
     ) -> None:
         """Actual story generation with DB updates."""
         # Import here to avoid circular imports and slow startup
-        from ...programs.story_generator import StoryGenerator
-        from ...config import configure_dspy
+        # Using absolute imports to survive directory restructure
+        from backend.core.programs.story_generator import StoryGenerator
+        from backend.config import configure_dspy
 
         # Update status to running
         await self.repo.update_status(

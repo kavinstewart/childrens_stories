@@ -114,8 +114,8 @@ class TestGetStory:
         """Existing story should be returned."""
         client, mock_repo, _ = client_with_mocks
 
-        from src.api.models.enums import GenerationType, JobStatus
-        from src.api.models.responses import StoryResponse
+        from backend.api.models.enums import GenerationType, JobStatus
+        from backend.api.models.responses import StoryResponse
 
         mock_story = StoryResponse(
             id="test-id",

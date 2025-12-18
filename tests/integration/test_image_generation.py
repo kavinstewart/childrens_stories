@@ -8,10 +8,10 @@ import pytest
 from PIL import Image
 from io import BytesIO
 
-from src.config import get_image_client, get_image_model, get_image_config, extract_image_from_response
-from src.modules.character_sheet_generator import CharacterSheetGenerator
-from src.modules.page_illustrator import PageIllustrator
-from src.types import (
+from backend.config import get_image_client, get_image_model, get_image_config, extract_image_from_response
+from backend.core.modules.character_sheet_generator import CharacterSheetGenerator
+from backend.core.modules.page_illustrator import PageIllustrator
+from backend.core.types import (
     StoryPage,
     StoryOutline,
     CharacterBible,

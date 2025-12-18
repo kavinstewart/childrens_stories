@@ -5,7 +5,7 @@ Generates simple portrait references for each character to ensure
 visual consistency across all story illustrations.
 """
 
-from ..config import get_image_client, get_image_model, get_image_config, extract_image_from_response
+from backend.config import get_image_client, get_image_model, get_image_config, extract_image_from_response
 from ..types import (
     CharacterBible,
     StoryOutline,

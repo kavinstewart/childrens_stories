@@ -7,8 +7,8 @@ from pathlib import Path
 
 # Base directories
 API_DIR = Path(__file__).parent
-SRC_DIR = API_DIR.parent
-PROJECT_DIR = SRC_DIR.parent
+BACKEND_DIR = API_DIR.parent
+PROJECT_DIR = BACKEND_DIR.parent
 DATA_DIR = PROJECT_DIR / "data"
 
 # Database

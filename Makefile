@@ -37,7 +37,7 @@ ifndef GOAL
 	@echo "Error: GOAL is required. Usage: make run GOAL=\"your story goal\""
 	@exit 1
 endif
-	poetry run python scripts/generate_story.py "$(GOAL)" --verbose
+	poetry run python cli/generate_story.py "$(GOAL)" --verbose
 
 # Generate a story without quality iteration (faster, cheaper)
 run-fast:
@@ -45,7 +45,7 @@ ifndef GOAL
 	@echo "Error: GOAL is required. Usage: make run-fast GOAL=\"your story goal\""
 	@exit 1
 endif
-	poetry run python scripts/generate_story.py "$(GOAL)" --fast --verbose
+	poetry run python cli/generate_story.py "$(GOAL)" --fast --verbose
 
 # Generate a fully illustrated story
 run-illustrated:
@@ -54,8 +54,8 @@ ifndef GOAL
 	@exit 1
 endif
 	poetry run python -c "\
-from src.config import configure_dspy; \
-from src.programs.story_generator import StoryGenerator; \
+from backend.config import configure_dspy; \
+from backend.core.programs.story_generator import StoryGenerator; \
 configure_dspy(); \
 gen = StoryGenerator(); \
 story = gen.generate_illustrated('$(GOAL)', debug=True); \
@@ -64,15 +64,15 @@ print(f'Saved to: {paths[\"output_dir\"]}')"
 
 # Run the FastAPI server
 api:
-	poetry run python scripts/run_api.py
+	poetry run python cli/run_api.py
 
 # Debug page generation
 debug:
-	poetry run python scripts/debug_page.py
+	poetry run python cli/debug_page.py
 
 # Run GEPA optimization on PageWriter
 optimize:
-	poetry run python -m src.optimization.optimize_page_writer
+	poetry run python -m backend.optimization.optimize_page_writer
 
 # Run tests
 test:
