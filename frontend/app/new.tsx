@@ -18,12 +18,12 @@ import { FloatingElement } from '@/components/animations';
 
 // Themes with gradient colors for selected state
 const themes = [
-  { id: 'kindness', label: 'Kindness', icon: '\u{1F495}', hint: 'being kind and helpful', colors: ['#F472B6', '#E11D48'] },
-  { id: 'bravery', label: 'Bravery', icon: '\u{1F981}', hint: 'overcoming fears', colors: ['#FBBF24', '#F97316'] },
-  { id: 'sharing', label: 'Sharing', icon: '\u{1F91D}', hint: 'learning to share with others', colors: ['#34D399', '#14B8A6'] },
-  { id: 'creativity', label: 'Creativity', icon: '\u{1F3A8}', hint: 'using imagination', colors: ['#A78BFA', '#8B5CF6'] },
-  { id: 'friendship', label: 'Friendship', icon: '\u{1F31F}', hint: 'making and keeping friends', colors: ['#38BDF8', '#3B82F6'] },
-  { id: 'patience', label: 'Patience', icon: '\u{1F422}', hint: 'learning to wait', colors: ['#A3E635', '#22C55E'] },
+  { id: 'kindness', label: 'Kindness', icon: '💕', hint: 'being kind and helpful', colors: ['#F472B6', '#E11D48'] },
+  { id: 'bravery', label: 'Bravery', icon: '🦁', hint: 'overcoming fears', colors: ['#FBBF24', '#F97316'] },
+  { id: 'sharing', label: 'Sharing', icon: '🤝', hint: 'learning to share with others', colors: ['#34D399', '#14B8A6'] },
+  { id: 'creativity', label: 'Creativity', icon: '🎨', hint: 'using imagination', colors: ['#A78BFA', '#8B5CF6'] },
+  { id: 'friendship', label: 'Friendship', icon: '🌟', hint: 'making and keeping friends', colors: ['#38BDF8', '#3B82F6'] },
+  { id: 'patience', label: 'Patience', icon: '🐢', hint: 'learning to wait', colors: ['#A3E635', '#22C55E'] },
 ];
 
 const generationTypes: { id: GenerationType; label: string; description: string }[] = [
@@ -119,16 +119,16 @@ export default function NewStory() {
     >
       {/* Floating decorations */}
       <FloatingElement delay={0} duration={4} style={{ top: 80, left: 24 }}>
-        <Text style={{ fontSize: 24, opacity: 0.3 }}>{'\u2728'}</Text>
+        <Text style={{ fontSize: 24, opacity: 0.3 }}>✨</Text>
       </FloatingElement>
       <FloatingElement delay={1} duration={5} style={{ top: 128, right: 32 }}>
-        <Text style={{ fontSize: 20, opacity: 0.25 }}>{'\u{1F4DD}'}</Text>
+        <Text style={{ fontSize: 20, opacity: 0.25 }}>📝</Text>
       </FloatingElement>
       <FloatingElement delay={2} duration={4.5} style={{ bottom: 128, right: 48 }}>
-        <Text style={{ fontSize: 24, opacity: 0.3 }}>{'\u{1F308}'}</Text>
+        <Text style={{ fontSize: 24, opacity: 0.3 }}>🌈</Text>
       </FloatingElement>
       <FloatingElement delay={0.5} duration={5} style={{ bottom: 96, left: 40 }}>
-        <Text style={{ fontSize: 20, opacity: 0.25 }}>{'\u{1F4AB}'}</Text>
+        <Text style={{ fontSize: 20, opacity: 0.25 }}>💫</Text>
       </FloatingElement>
 
       <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right']}>
@@ -144,7 +144,7 @@ export default function NewStory() {
                 marginRight: 16,
               }}
             >
-              <Text style={{ fontSize: 20 }}>{'\u2190'}</Text>
+              <Text style={{ fontSize: 20 }}>←</Text>
             </Pressable>
             <Text
               style={{
@@ -156,7 +156,7 @@ export default function NewStory() {
               {/* Gradient text workaround - we'll use a solid color with emoji */}
             </Text>
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <Text style={{ fontSize: 24, marginRight: 8 }}>{'\u2728'}</Text>
+              <Text style={{ fontSize: 24, marginRight: 8 }}>✨</Text>
               <Text
                 style={{
                   fontFamily: fontFamily.baloo,
@@ -308,7 +308,7 @@ export default function NewStory() {
             }}
           >
             <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12 }}>
-              <Text style={{ fontSize: 24 }}>{'\u{1F4A1}'}</Text>
+              <Text style={{ fontSize: 24 }}>💡</Text>
               <View style={{ flex: 1 }}>
                 <Text
                   style={{
@@ -387,7 +387,7 @@ export default function NewStory() {
                     </Text>
                   </View>
                   {generationType === type.id && (
-                    <Text style={{ fontSize: 20 }}>{'\u2713'}</Text>
+                    <Text style={{ fontSize: 20 }}>✓</Text>
                   )}
                 </Pressable>
               ))}
@@ -470,7 +470,7 @@ export default function NewStory() {
                 </>
               ) : (
                 <>
-                  <Text style={{ fontSize: 20 }}>{'\u{1FA84}'}</Text>
+                  <Text style={{ fontSize: 20 }}>🪄</Text>
                   <Text
                     style={{
                       fontFamily: fontFamily.nunitoBold,

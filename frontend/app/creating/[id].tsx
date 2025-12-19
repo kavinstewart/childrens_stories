@@ -15,23 +15,23 @@ import {
 
 // Whimsical creation stages that cycle through during generation
 const creationStages = [
-  { message: 'Opening the story vault', icon: '\u{1F4D6}' },
-  { message: 'Gathering magical ingredients', icon: '\u2728' },
-  { message: 'Waking up the characters', icon: '\u{1F31F}' },
-  { message: 'Sprinkling in some adventure', icon: '\u{1F5FA}\uFE0F' },
-  { message: 'Mixing in a pinch of wonder', icon: '\u{1F52E}' },
-  { message: 'Painting the scenes', icon: '\u{1F3A8}' },
-  { message: 'Adding a twist', icon: '\u{1F300}' },
-  { message: 'Polishing the ending', icon: '\u{1F48E}' },
-  { message: 'Your story is ready!', icon: '\u{1F389}' },
+  { message: 'Opening the story vault', icon: '📖' },
+  { message: 'Gathering magical ingredients', icon: '✨' },
+  { message: 'Waking up the characters', icon: '🌟' },
+  { message: 'Sprinkling in some adventure', icon: '🗺️' },
+  { message: 'Mixing in a pinch of wonder', icon: '🔮' },
+  { message: 'Painting the scenes', icon: '🎨' },
+  { message: 'Adding a twist', icon: '🌀' },
+  { message: 'Polishing the ending', icon: '💎' },
+  { message: 'Your story is ready!', icon: '🎉' },
 ];
 
 // Status mapping to handle API status transitions
 const statusStages = {
-  pending: { label: 'Getting ready...', icon: '\u{1F31F}' },
+  pending: { label: 'Getting ready...', icon: '🌟' },
   running: null, // Will use cycling stages
-  completed: { label: 'Your story is ready!', icon: '\u{1F389}' },
-  failed: { label: 'Oops, something went wrong', icon: '\u{1F622}' },
+  completed: { label: 'Your story is ready!', icon: '🎉' },
+  failed: { label: 'Oops, something went wrong', icon: '😢' },
 };
 
 export default function CreatingStory() {
@@ -121,13 +121,13 @@ export default function CreatingStory() {
     >
       {/* Floating decorations */}
       <FloatingElement delay={1.5} duration={5} style={{ top: 96, right: 48 }}>
-        <Text style={{ fontSize: 20, opacity: 0.3 }}>{'\u2B50'}</Text>
+        <Text style={{ fontSize: 20, opacity: 0.3 }}>⭐</Text>
       </FloatingElement>
       <FloatingElement delay={0.5} duration={4.5} style={{ bottom: 128, left: 48 }}>
-        <Text style={{ fontSize: 24, opacity: 0.35 }}>{'\u{1F319}'}</Text>
+        <Text style={{ fontSize: 24, opacity: 0.35 }}>🌙</Text>
       </FloatingElement>
       <FloatingElement delay={2} duration={5} style={{ bottom: 96, right: 32 }}>
-        <Text style={{ fontSize: 20, opacity: 0.3 }}>{'\u2728'}</Text>
+        <Text style={{ fontSize: 20, opacity: 0.3 }}>✨</Text>
       </FloatingElement>
 
       {/* Fireflies */}
@@ -193,7 +193,7 @@ export default function CreatingStory() {
           }}
         >
           <StageIcon
-            emoji={currentStage?.icon ?? '\u{1F31F}'}
+            emoji={currentStage?.icon ?? '🌟'}
             size={36}
             stageKey={currentStageIndex}
           />
@@ -335,7 +335,7 @@ export default function CreatingStory() {
                   elevation: 8,
                 }}
               >
-                <Text style={{ fontSize: 24 }}>{'\u{1F4D6}'}</Text>
+                <Text style={{ fontSize: 24 }}>📖</Text>
                 <Text
                   style={{
                     fontFamily: fontFamily.nunitoBold,
@@ -345,7 +345,7 @@ export default function CreatingStory() {
                 >
                   Read Your Story!
                 </Text>
-                <Text style={{ fontSize: 24 }}>{'\u2728'}</Text>
+                <Text style={{ fontSize: 24 }}>✨</Text>
               </LinearGradient>
             </Pressable>
           </CompletePop>

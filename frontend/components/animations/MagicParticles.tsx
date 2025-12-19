@@ -100,10 +100,10 @@ interface MagicParticlesProps {
 export function MagicParticles({ style }: MagicParticlesProps) {
   return (
     <View style={[{ position: 'absolute', width: '100%', height: '100%' }, style]}>
-      <Particle emoji="\u2728" size={24} delay={0} top={-32} left={-32} />
-      <Particle emoji="\u2B50" size={20} delay={500} top={-24} right={-40} />
-      <Particle emoji="\u2728" size={20} delay={1000} bottom={-24} left={-40} />
-      <Particle emoji="\u{1F31F}" size={24} delay={1500} bottom={32} right={-32} />
+      <Particle emoji="✨" size={24} delay={0} top={-32} left={-32} />
+      <Particle emoji="⭐" size={20} delay={500} top={-24} right={-40} />
+      <Particle emoji="✨" size={20} delay={1000} bottom={-24} left={-40} />
+      <Particle emoji="🌟" size={24} delay={1500} bottom={32} right={-32} />
     </View>
   );
 }
