@@ -261,7 +261,7 @@ class StoryRepository:
                     text=s["text"],
                     word_count=s["word_count"],
                     was_revised=bool(s["was_revised"]),
-                    page_turn_note=s.get("page_turn_note"),
+                    page_turn_note=s["page_turn_note"],
                     illustration_prompt=s["illustration_prompt"],
                     illustration_url=f"/stories/{row['id']}/spreads/{s['spread_number']}/image"
                     if s["illustration_path"]

@@ -104,8 +104,9 @@ class StoryService:
         """Actual story generation with DB updates."""
         # Import here to avoid circular imports and slow startup
         # Using absolute imports to survive directory restructure
+        import dspy
         from backend.core.programs.story_generator import StoryGenerator
-        from backend.config import configure_dspy
+        from backend.config import get_inference_lm
 
         # Update status to running
         await self.repo.update_status(
@@ -115,13 +116,14 @@ class StoryService:
         )
 
         try:
-            # Configure DSPy for this thread
-            configure_dspy(use_reflection_lm=False)
+            # Get the LM for this generation
+            lm = get_inference_lm()
 
-            # Create generator
+            # Create generator with explicit LM
             generator = StoryGenerator(
                 quality_threshold=quality_threshold,
                 max_attempts=max_attempts,
+                lm=lm,
             )
 
             # Generate based on type
