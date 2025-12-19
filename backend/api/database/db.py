@@ -21,6 +21,17 @@ async def init_db() -> None:
         # Execute schema
         schema = SCHEMA_PATH.read_text()
         await db.executescript(schema)
+
+        # Migrations: Add columns if they don't exist
+        cursor = await db.execute("PRAGMA table_info(stories)")
+        columns = [row[1] for row in await cursor.fetchall()]
+
+        if "llm_model" not in columns:
+            await db.execute("ALTER TABLE stories ADD COLUMN llm_model TEXT")
+
+        if "progress_json" not in columns:
+            await db.execute("ALTER TABLE stories ADD COLUMN progress_json TEXT")
+
         await db.commit()
 
 

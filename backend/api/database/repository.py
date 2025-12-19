@@ -13,6 +13,7 @@ from ..models.responses import (
     StoryOutlineResponse,
     QualityJudgmentResponse,
     CharacterReferenceResponse,
+    StoryProgressResponse,
 )
 
 
@@ -66,6 +67,30 @@ class StoryRepository:
             await db.execute(
                 f"UPDATE stories SET {', '.join(updates)} WHERE id = ?",
                 params,
+            )
+            await db.commit()
+
+    async def update_progress(
+        self,
+        story_id: str,
+        stage: str,
+        stage_detail: str,
+        percentage: int,
+        **kwargs,
+    ) -> None:
+        """Update story progress."""
+        progress_data = {
+            "stage": stage,
+            "stage_detail": stage_detail,
+            "percentage": percentage,
+            "updated_at": datetime.utcnow().isoformat(),
+            **kwargs,
+        }
+
+        async with get_db() as db:
+            await db.execute(
+                "UPDATE stories SET progress_json = ? WHERE id = ?",
+                (json.dumps(progress_data), story_id),
             )
             await db.commit()
 
@@ -289,6 +314,16 @@ class StoryRepository:
         started_at = datetime.fromisoformat(row["started_at"]) if row["started_at"] else None
         completed_at = datetime.fromisoformat(row["completed_at"]) if row["completed_at"] else None
 
+        # Parse progress JSON
+        progress = None
+        progress_json = row["progress_json"] if "progress_json" in row.keys() else None
+        if progress_json:
+            progress_data = json.loads(progress_json)
+            # Parse updated_at if present
+            if progress_data.get("updated_at"):
+                progress_data["updated_at"] = datetime.fromisoformat(progress_data["updated_at"])
+            progress = StoryProgressResponse(**progress_data)
+
         return StoryResponse(
             id=row["id"],
             status=JobStatus(row["status"]),
@@ -307,5 +342,6 @@ class StoryRepository:
             spreads=spreads,
             judgment=judgment,
             character_references=character_refs,
+            progress=progress,
             error_message=row["error_message"],
         )

@@ -8,10 +8,13 @@ pipeline with quality iteration loop and illustration generation.
 A spread = two facing pages when the book is open. A 32-page picture book
 has 12 spreads of story content. This approach generates more coherent
 narratives than page-by-page generation.
+
+Includes retry with exponential backoff for transient network errors.
 """
 
 import dspy
 
+from backend.config import llm_retry
 from ..types import GeneratedStory
 from ..modules.outline_generator import OutlineGenerator
 from ..modules.spread_generator import SpreadGenerator
@@ -95,11 +98,11 @@ class StoryGenerator(dspy.Module):
                     f"AVOID THESE PROBLEMS from previous attempt:\n{best_story.judgment.specific_problems}"
                 )
 
-            # Step 1: Generate outline (includes spread breakdown)
-            outline = self.outline_generator(goal=current_goal, debug=True)
+            # Step 1: Generate outline (with retry for network errors)
+            outline = llm_retry(self.outline_generator)(goal=current_goal, debug=True)
 
-            # Step 2: Generate all 12 spreads in a single LLM call
-            spreads = self.spread_generator.generate_all_spreads(
+            # Step 2: Generate all 12 spreads (with retry for network errors)
+            spreads = llm_retry(self.spread_generator.generate_all_spreads)(
                 outline=outline,
                 debug=True,
             )
@@ -109,10 +112,10 @@ class StoryGenerator(dspy.Module):
                 f"Spread {s.spread_number}: {s.text}" for s in spreads
             )
 
-            # Step 3: Judge quality (unless skipped)
+            # Step 3: Judge quality (with retry for network errors)
             judgment = None
             if not skip_quality_loop:
-                judgment = self.quality_judge(
+                judgment = llm_retry(self.quality_judge)(
                     story_text=story_text,
                     original_goal=goal,
                     target_age_range=target_age_range,

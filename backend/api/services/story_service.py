@@ -3,14 +3,16 @@
 import uuid
 import json
 import asyncio
+import time
 from datetime import datetime
 from pathlib import Path
 from dataclasses import asdict
 from typing import Optional
 
 from ..database.repository import StoryRepository
-from ..config import STORIES_DIR
+from ..config import STORIES_DIR, story_logger
 from .job_manager import job_manager
+from .progress_tracker import ProgressTracker
 
 
 class StoryService:
@@ -78,6 +80,9 @@ class StoryService:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
 
+        # Create progress tracker with access to event loop
+        tracker = ProgressTracker(story_id, self.repo, loop=loop)
+
         try:
             loop.run_until_complete(
                 self._generate_story(
@@ -87,6 +92,7 @@ class StoryService:
                     generation_type,
                     quality_threshold,
                     max_attempts,
+                    tracker,
                 )
             )
         finally:
@@ -100,13 +106,19 @@ class StoryService:
         generation_type: str,
         quality_threshold: int,
         max_attempts: int,
+        tracker: ProgressTracker,
     ) -> None:
-        """Actual story generation with DB updates."""
+        """Actual story generation with DB updates and progress tracking."""
         # Import here to avoid circular imports and slow startup
         # Using absolute imports to survive directory restructure
         import dspy
         from backend.core.programs.story_generator import StoryGenerator
         from backend.config import get_inference_lm
+
+        start_time = time.time()
+
+        # Log generation start
+        story_logger.generation_started(story_id, generation_type)
 
         # Update status to running
         await self.repo.update_status(
@@ -114,6 +126,9 @@ class StoryService:
             "running",
             started_at=datetime.utcnow(),
         )
+
+        # Initial progress update
+        tracker.update("outline", "Crafting your story outline...")
 
         try:
             # Get the LM for this generation
@@ -128,26 +143,53 @@ class StoryService:
 
             # Generate based on type
             if generation_type == "simple":
+                tracker.update("outline", "Crafting your story outline...")
                 story = generator.generate_simple(goal)
+                tracker.update("spreads", "Story complete", completed=1, total=1)
+
             elif generation_type == "illustrated":
+                # For illustrated, we track progress at a high level
+                # The generator handles the detailed steps
+                tracker.update("outline", "Crafting your story outline...")
+
                 story = generator.generate_illustrated(
                     goal,
                     target_age_range,
                     skip_quality_loop=False,
                     use_image_qa=True,
                     max_image_attempts=3,
+                    debug=True,  # Enable debug output
                 )
+
+                # Update final progress
+                tracker.update(
+                    "illustrations",
+                    "All illustrations complete",
+                    completed=len(story.spreads),
+                    total=len(story.spreads),
+                )
+
             else:  # standard
+                tracker.update("outline", "Crafting your story outline...")
                 story = generator.forward(
                     goal,
                     target_age_range,
                     skip_quality_loop=False,
                 )
+                tracker.update("quality", "Story generation complete")
 
             # Save to database and filesystem
             await self._save_story(story_id, story)
 
+            # Log completion
+            duration = time.time() - start_time
+            story_logger.generation_completed(story_id, duration)
+
         except Exception as e:
+            # Log and track failure
+            story_logger.generation_failed(story_id, e)
+            tracker.update("failed", f"Generation failed: {type(e).__name__}")
+
             # Update status to failed with error message
             await self.repo.update_status(
                 story_id,

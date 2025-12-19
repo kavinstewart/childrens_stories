@@ -4,7 +4,7 @@ Configuration module for the Children's Story Generator.
 Re-exports all configuration for backwards compatibility.
 """
 
-from .llm import configure_dspy, get_inference_lm, get_reflection_lm
+from .llm import configure_dspy, get_inference_lm, get_reflection_lm, get_inference_model_name, llm_retry, LLM_TIMEOUT
 from .story import STORY_CONSTANTS
 from .image import (
     IMAGE_CONSTANTS,
@@ -19,6 +19,9 @@ __all__ = [
     "configure_dspy",
     "get_inference_lm",
     "get_reflection_lm",
+    "get_inference_model_name",
+    "llm_retry",
+    "LLM_TIMEOUT",
     # Story
     "STORY_CONSTANTS",
     # Image

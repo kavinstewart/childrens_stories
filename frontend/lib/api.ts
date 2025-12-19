@@ -50,6 +50,21 @@ export interface QualityJudgment {
   specific_problems: string;
 }
 
+export interface StoryProgress {
+  stage: 'outline' | 'spreads' | 'quality' | 'character_refs' | 'illustrations' | 'failed';
+  stage_detail: string;
+  percentage: number;
+  characters_total?: number;
+  characters_completed?: number;
+  spreads_total?: number;
+  spreads_completed?: number;
+  quality_attempt?: number;
+  quality_attempts_max?: number;
+  quality_score?: number;
+  warnings?: string[];
+  updated_at?: string;
+}
+
 export interface Story {
   id: string;
   status: JobStatus;
@@ -68,6 +83,7 @@ export interface Story {
   judgment?: QualityJudgment;
   is_illustrated: boolean;
   error_message?: string;
+  progress?: StoryProgress;
 
   // Backwards compatibility (API returns both for now)
   page_count?: number;

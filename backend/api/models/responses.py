@@ -63,6 +63,28 @@ class CharacterReferenceResponse(BaseModel):
     reference_image_url: Optional[str] = None
 
 
+class StoryProgressResponse(BaseModel):
+    """Progress tracking for story generation."""
+
+    stage: str  # outline, spreads, quality, character_refs, illustrations, failed
+    stage_detail: str  # Human-readable message
+    percentage: int  # 0-100, weighted by stage
+
+    # Granular counters (populated when relevant)
+    characters_total: Optional[int] = None
+    characters_completed: Optional[int] = None
+    spreads_total: Optional[int] = None
+    spreads_completed: Optional[int] = None
+    quality_attempt: Optional[int] = None
+    quality_attempts_max: Optional[int] = None
+    quality_score: Optional[int] = None
+
+    # Error context
+    warnings: list[str] = Field(default_factory=list)
+
+    updated_at: Optional[datetime] = None
+
+
 class StoryResponse(BaseModel):
     """Full story response with all data."""
 
@@ -86,6 +108,9 @@ class StoryResponse(BaseModel):
     spreads: Optional[list[StorySpreadResponse]] = None
     judgment: Optional[QualityJudgmentResponse] = None
     character_references: Optional[list[CharacterReferenceResponse]] = None
+
+    # Progress tracking (populated while running)
+    progress: Optional[StoryProgressResponse] = None
 
     # Error info
     error_message: Optional[str] = None
