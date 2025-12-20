@@ -45,14 +45,10 @@ class StoryOutlineResponse(BaseModel):
     """Story outline metadata."""
 
     title: str
-    protagonist_goal: str
-    stakes: str
-    characters: str
-    setting: str
-    emotional_arc: str
-    plot_summary: str
-    moral: str
-    spread_count: int  # Number of spreads (typically 12)
+    characters: str = ""
+    setting: str = ""
+    plot_summary: str = ""
+    spread_count: int = 12  # Number of spreads (typically 12)
 
 
 class CharacterReferenceResponse(BaseModel):

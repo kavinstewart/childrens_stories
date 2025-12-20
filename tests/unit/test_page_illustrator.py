@@ -66,14 +66,10 @@ def sample_outline(sample_character_bible, sample_style):
     """A story outline with character bibles."""
     return StoryOutline(
         title="Luna and the Stars",
-        protagonist_goal="Learn about constellations",
-        stakes="Missing the meteor shower",
         characters="Luna - a curious 7-year-old girl",
         setting="A backyard on a summer night",
-        emotional_arc="Wonder -> frustration -> discovery -> joy",
         plot_summary="Luna learns to find constellations",
         spread_breakdown="Spread 1: Luna looks at the sky",
-        moral="Patience reveals hidden wonders",
         goal="Teach about stars",
         character_bibles=[sample_character_bible],
         illustration_style=sample_style,

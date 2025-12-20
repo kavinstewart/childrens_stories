@@ -248,13 +248,9 @@ class StoryService:
         # Serialize outline
         outline_dict = {
             "title": story.outline.title,
-            "protagonist_goal": story.outline.protagonist_goal,
-            "stakes": story.outline.stakes,
             "characters": story.outline.characters,
             "setting": story.outline.setting,
-            "emotional_arc": story.outline.emotional_arc,
             "plot_summary": story.outline.plot_summary,
-            "moral": story.outline.moral,
             "spread_count": story.outline.spread_count,
         }
 

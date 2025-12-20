@@ -81,8 +81,9 @@ class TestListStories:
         response = client.get("/stories/?limit=10&offset=20")
 
         assert response.status_code == 200
+        # API defaults to completed status when not specified
         mock_repo.list_stories.assert_called_once_with(
-            limit=10, offset=20, status=None
+            limit=10, offset=20, status="completed"
         )
 
     def test_list_stories_status_filter(self, client_with_mocks):

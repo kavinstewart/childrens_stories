@@ -120,14 +120,10 @@ class TestSpreadIllustratorReal:
         """A minimal outline for testing."""
         return StoryOutline(
             title="The Sunny Cat",
-            protagonist_goal="Find a warm spot",
-            stakes="Being cold",
             characters="Pip - an orange kitten",
             setting="A cozy house",
-            emotional_arc="Content",
             plot_summary="A cat finds a sunny spot",
             spread_breakdown="Spread 1: Cat sits in sun",
-            moral="Simple pleasures are best",
             goal="Relaxation",
             character_bibles=[],
             illustration_style=StyleDefinition(
