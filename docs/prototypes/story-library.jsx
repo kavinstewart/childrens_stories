@@ -1,3 +1,14 @@
+/**
+ * Story Library Screen
+ * 
+ * PRODUCTION SETUP:
+ * 1. Move @keyframes (float, floatIn, wiggle) to tailwind.config.js under theme.extend.keyframes
+ * 2. Add corresponding animation utilities under theme.extend.animation
+ * 3. Move Google Fonts import to <head> or configure via next/font (Next.js)
+ * 4. The line-clamp-2 utility is built into Tailwind 3.3+ (remove from <style> if using modern Tailwind)
+ * 5. scrollbar-hide can be added via tailwind-scrollbar-hide plugin
+ */
+
 import { useState } from 'react';
 
 const stories = [

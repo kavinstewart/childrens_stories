@@ -157,21 +157,19 @@ export default function StoryReader() {
         {/* Library Button */}
         <Pressable
           onPress={() => router.back()}
-          style={({ pressed }) => ({
-            backgroundColor: 'rgba(255,255,255,0.85)',
-            paddingVertical: 14,
+          style={{
+            backgroundColor: '#ffffff4D',
+            paddingVertical: 16,
             paddingHorizontal: 22,
-            borderRadius: 16,
-            flexDirection: 'row',
+            borderRadius: 22,
+            borderWidth: 2,
+            borderColor: '#ffffff66',
             alignItems: 'center',
-            gap: 8,
-            opacity: pressed ? 0.8 : 1,
-          })}
+            justifyContent: 'center',
+            overflow: 'hidden',
+          }}
         >
-          <Text style={{ fontSize: 20 }}>←</Text>
-          <Text style={{ fontSize: 18, fontFamily: fontFamily.nunitoBold, color: '#374151' }}>
-            Library
-          </Text>
+          <Text style={{ fontSize: 32 }}>🏠</Text>
         </Pressable>
 
         {/* Progress Indicator */}
@@ -214,17 +212,6 @@ export default function StoryReader() {
           </Text>
         </View>
 
-        {/* Settings Button */}
-        <Pressable
-          style={({ pressed }) => ({
-            backgroundColor: 'rgba(255,255,255,0.85)',
-            padding: 14,
-            borderRadius: 16,
-            opacity: pressed ? 0.8 : 1,
-          })}
-        >
-          <Text style={{ fontSize: 20 }}>⚙️</Text>
-        </Pressable>
       </View>
 
       {/* Story Text */}
@@ -276,24 +263,25 @@ export default function StoryReader() {
         <Pressable
           onPress={goBack}
           disabled={isFirstSpread}
-          style={({ pressed }) => ({
-            backgroundColor: 'rgba(255,255,255,0.25)',
+          style={{
+            backgroundColor: '#ffffff40',
             paddingVertical: 18,
             paddingHorizontal: 30,
             borderRadius: 22,
             borderWidth: 2,
-            borderColor: 'rgba(255,255,255,0.35)',
+            borderColor: '#ffffff59',
             flexDirection: 'row',
             alignItems: 'center',
             gap: 12,
-            opacity: isFirstSpread ? 0.5 : pressed ? 0.8 : 1,
-          })}
+            overflow: 'hidden',
+            opacity: isFirstSpread ? 0.5 : 1,
+          }}
         >
           <Text style={{ fontSize: 26 }}>👈</Text>
           <Text style={{
             fontSize: 20,
             fontFamily: fontFamily.nunitoExtraBold,
-            color: isFirstSpread ? 'rgba(255,255,255,0.45)' : 'white',
+            color: isFirstSpread ? '#ffffff73' : 'white',
           }}>
             Back
           </Text>

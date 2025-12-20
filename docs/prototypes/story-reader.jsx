@@ -1,3 +1,14 @@
+/**
+ * Story Reader Screen
+ * 
+ * PRODUCTION SETUP:
+ * 1. Move @keyframes (float, pageIn, pulse-soft) to tailwind.config.js under theme.extend.keyframes
+ * 2. Add corresponding animation utilities under theme.extend.animation
+ * 3. Move Google Fonts import to <head> or configure via next/font (Next.js)
+ * 4. scrollbar-hide can be added via tailwind-scrollbar-hide plugin
+ * 5. The .page-content and .nav-btn classes can become Tailwind utilities or component classes
+ */
+
 import { useState } from 'react';
 
 const storyData = {

@@ -1,3 +1,14 @@
+/**
+ * New Story Screen
+ * 
+ * PRODUCTION SETUP:
+ * 1. Move @keyframes (float, pulse-ring, wiggle, sparkle-pop) to tailwind.config.js under theme.extend.keyframes
+ * 2. Add corresponding animation utilities under theme.extend.animation
+ * 3. Move Google Fonts import to <head> or configure via next/font (Next.js)
+ * 4. The .voice-wave, .create-btn, .theme-pill classes can become Tailwind utilities or component classes
+ * 5. Connect actual speech recognition API (Web Speech API) to replace simulated voice input
+ */
+
 import { useState, useEffect } from 'react';
 
 function FloatingElement({ children, delay, duration, className }) {
