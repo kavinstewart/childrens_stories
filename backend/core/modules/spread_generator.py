@@ -1,11 +1,13 @@
 """
 DSPy Module for generating all story spreads in a single call.
 
-This replaces the page-by-page generation approach with a more coherent
-single-call approach that generates all 12 spreads at once.
+DEPRECATED: This module is part of the outline-first workflow. Use
+DirectStoryGenerator instead for the story-first workflow that generates
+stories directly from a goal without an intermediate outline step.
 """
 
 import re
+import warnings
 import dspy
 
 from ..types import StoryOutline, StorySpread
@@ -17,13 +19,9 @@ class SpreadGenerator(dspy.Module):
     """
     Generate all spreads of a children's story in a single LLM call.
 
-    This approach produces more coherent narratives than page-by-page
-    generation because the model can see and plan the entire story arc.
-
-    Args:
-        include_illustration_prompts: Whether to generate illustration prompts
-        include_examples: Whether to include reference story examples in prompt
-        example_count: Number of reference examples to include (1-2 recommended)
+    DEPRECATED: Use DirectStoryGenerator instead for the story-first workflow.
+    This module requires an outline from OutlineGenerator which can invent
+    characters that don't appear in the final story.
     """
 
     def __init__(
@@ -32,6 +30,11 @@ class SpreadGenerator(dspy.Module):
         include_examples: bool = True,
         example_count: int = 1,
     ):
+        warnings.warn(
+            "SpreadGenerator is deprecated. Use DirectStoryGenerator for the story-first workflow.",
+            DeprecationWarning,
+            stacklevel=2
+        )
         super().__init__()
         self.include_illustration_prompts = include_illustration_prompts
         self.include_examples = include_examples

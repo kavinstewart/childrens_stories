@@ -33,14 +33,19 @@ class CharacterBibleSignature(dspy.Signature):
     - Clothing colors must be exact: "mustard yellow raincoat" not "yellow coat"
     - Include ONE signature item that makes the character instantly recognizable
     - All characters in a story should share the same STYLE_TAGS for visual consistency
+    - ONLY create bibles for characters listed in extracted_characters
     """
 
     story_title: str = dspy.InputField(desc="The title of the story")
-    characters_description: str = dspy.InputField(
-        desc="The character descriptions from the story outline (names, quirks, roles)"
+
+    story_text: str = dspy.InputField(
+        desc="The complete story text - use this for context about what characters do"
     )
-    setting: str = dspy.InputField(desc="The story setting for context")
+
+    extracted_characters: str = dspy.InputField(
+        desc="Characters extracted from the story: 'NAME: [name] | DETAILS: [description]' format, one per line"
+    )
 
     character_bibles: str = dspy.OutputField(
-        desc="Detailed visual bibles for each character following the exact format above. One character per section, blank line between characters."
+        desc="Detailed visual bibles for each extracted character following the exact format above. One character per section, blank line between characters."
     )

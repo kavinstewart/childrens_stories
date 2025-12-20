@@ -1,7 +1,12 @@
 """
 DSPy Module for generating story outlines.
+
+DEPRECATED: This module uses the outline-first workflow which can invent
+characters before the story exists. Use DirectStoryGenerator instead for
+the story-first workflow that extracts characters from what was written.
 """
 
+import warnings
 import dspy
 import re
 
@@ -19,11 +24,16 @@ class OutlineGenerator(dspy.Module):
     """
     Generate a structured story outline from a learning goal.
 
-    Uses Chain of Thought reasoning to create comprehensive outlines
-    that follow children's picture book conventions.
+    DEPRECATED: Use DirectStoryGenerator instead for the story-first workflow.
+    This outline-first approach can invent characters that don't appear in the story.
     """
 
     def __init__(self):
+        warnings.warn(
+            "OutlineGenerator is deprecated. Use DirectStoryGenerator for the story-first workflow.",
+            DeprecationWarning,
+            stacklevel=2
+        )
         super().__init__()
         self.generate = dspy.ChainOfThought(StoryOutlineSignature)
         self.generate_bibles = dspy.ChainOfThought(CharacterBibleSignature)

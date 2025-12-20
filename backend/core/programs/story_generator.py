@@ -1,13 +1,15 @@
 """
 Main DSPy Program for generating children's stories.
 
-Composes OutlineGenerator, SpreadGenerator, QualityJudge,
-CharacterSheetGenerator, and SpreadIllustrator into a complete
-pipeline with quality iteration loop and illustration generation.
+Story-first workflow:
+1. Generate the complete story directly from the goal (one LLM call)
+2. Extract characters from what was written
+3. Generate character bibles for illustration consistency
+4. Select illustration style
+5. (Optional) Judge quality and iterate
 
 A spread = two facing pages when the book is open. A 32-page picture book
-has 12 spreads of story content. This approach generates more coherent
-narratives than page-by-page generation.
+has 12 spreads of story content.
 
 Includes retry with exponential backoff for transient network errors.
 """
@@ -15,23 +17,27 @@ Includes retry with exponential backoff for transient network errors.
 import dspy
 
 from backend.config import llm_retry
-from ..types import GeneratedStory
-from ..modules.outline_generator import OutlineGenerator
-from ..modules.spread_generator import SpreadGenerator
+from ..types import GeneratedStory, StoryOutline
+from ..modules.direct_story_generator import DirectStoryGenerator
+from ..modules.character_extractor import CharacterExtractor
+from ..modules.bible_generator import BibleGenerator
 from ..modules.quality_judge import QualityJudge
 from ..modules.character_sheet_generator import CharacterSheetGenerator
 from ..modules.spread_illustrator import SpreadIllustrator
+from ..modules.illustration_styles import get_style_by_name, get_all_styles_for_selection
+from ..signatures.illustration_style import IllustrationStyleSignature
 
 
 class StoryGenerator(dspy.Module):
     """
-    Complete story generation pipeline.
+    Complete story generation pipeline using story-first workflow.
 
     Pipeline:
-    1. Generate outline from goal (includes spread breakdown)
-    2. Generate all 12 spreads from outline in a single LLM call
-    3. Judge quality
-    4. If quality < threshold, retry with feedback (up to max_attempts)
+    1. Generate complete story from goal (title + 12 spreads in one call)
+    2. Extract characters from the written story
+    3. Generate character bibles for illustration consistency
+    4. Select illustration style based on story content
+    5. (Optional) Judge quality and retry if needed
 
     Args:
         quality_threshold: Minimum score (0-10) to accept a story
@@ -51,12 +57,13 @@ class StoryGenerator(dspy.Module):
         example_count: int = 1,
     ):
         super().__init__()
-        self.outline_generator = OutlineGenerator()
-        self.spread_generator = SpreadGenerator(
-            include_illustration_prompts=True,
+        self.story_generator = DirectStoryGenerator(
             include_examples=include_examples,
             example_count=example_count,
         )
+        self.character_extractor = CharacterExtractor()
+        self.bible_generator = BibleGenerator()
+        self.style_selector = dspy.ChainOfThought(IllustrationStyleSignature)
         self.quality_judge = QualityJudge()
 
         self.quality_threshold = quality_threshold
@@ -94,6 +101,8 @@ class StoryGenerator(dspy.Module):
         skip_quality_loop: bool,
     ) -> GeneratedStory:
         """Internal method that does the actual generation."""
+        import sys
+
         best_story = None
         best_score = 0
 
@@ -106,21 +115,57 @@ class StoryGenerator(dspy.Module):
                     f"AVOID THESE PROBLEMS from previous attempt:\n{best_story.judgment.specific_problems}"
                 )
 
-            # Step 1: Generate outline (with retry for network errors)
-            outline = llm_retry(self.outline_generator)(goal=current_goal, debug=True)
-
-            # Step 2: Generate all 12 spreads (with retry for network errors)
-            spreads = llm_retry(self.spread_generator.generate_all_spreads)(
-                outline=outline,
+            # Step 1: Generate complete story (with retry for network errors)
+            title, spreads = llm_retry(self.story_generator)(
+                goal=current_goal,
                 debug=True,
             )
 
-            # Compile story text for judging
+            # Compile story text for downstream processing
             story_text = "\n\n".join(
                 f"Spread {s.spread_number}: {s.text}" for s in spreads
             )
 
-            # Step 3: Judge quality (with retry for network errors)
+            # Step 2: Extract characters from the story
+            extracted_characters = llm_retry(self.character_extractor)(
+                title=title,
+                story_text=story_text,
+                debug=True,
+            )
+
+            # Step 3: Generate character bibles
+            character_bibles = llm_retry(self.bible_generator)(
+                title=title,
+                story_text=story_text,
+                extracted_characters=extracted_characters,
+                debug=True,
+            )
+
+            # Step 4: Select illustration style
+            story_summary = f"{title}. {story_text[:500]}..."
+            style_result = llm_retry(self.style_selector)(
+                story_summary=story_summary,
+                available_styles=get_all_styles_for_selection(),
+            )
+            selected_style_name = style_result.selected_style.strip().lower()
+            illustration_style = get_style_by_name(selected_style_name)
+
+            print(f"DEBUG Selected style: {selected_style_name}", file=sys.stderr)
+
+            # Build outline object for downstream compatibility
+            outline = StoryOutline(
+                title=title,
+                characters="",  # Not used in story-first workflow
+                setting="",  # Extracted from story context in illustrations
+                plot_summary="",  # Not used in story-first workflow
+                spread_breakdown="",  # Not used in story-first workflow
+                goal=goal,
+                character_bibles=character_bibles,
+                illustration_style=illustration_style,
+                style_rationale=style_result.style_rationale,
+            )
+
+            # Step 5: Judge quality (with retry for network errors)
             judgment = None
             if not skip_quality_loop:
                 judgment = llm_retry(self.quality_judge)(
@@ -130,7 +175,7 @@ class StoryGenerator(dspy.Module):
                 )
 
             story = GeneratedStory(
-                title=outline.title,
+                title=title,
                 goal=goal,
                 outline=outline,
                 spreads=spreads,
