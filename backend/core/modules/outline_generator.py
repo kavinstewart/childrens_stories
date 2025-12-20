@@ -105,11 +105,9 @@ class OutlineGenerator(dspy.Module):
         character_bibles = self._parse_character_bibles(bibles_result.character_bibles)
 
         # Select illustration style based on story content
+        story_summary = f"{result.title}. Setting: {result.setting}. Plot: {result.plot_summary}"
         style_result = self.select_style(
-            story_title=result.title,
-            story_summary=result.plot_summary,
-            setting=result.setting,
-            emotional_arc=result.emotional_arc,
+            story_summary=story_summary,
             available_styles=get_all_styles_for_selection(),
         )
 
@@ -123,14 +121,10 @@ class OutlineGenerator(dspy.Module):
 
         outline = StoryOutline(
             title=result.title,
-            protagonist_goal=result.protagonist_goal,
-            stakes=result.stakes,
             characters=result.characters,
             setting=result.setting,
-            emotional_arc=result.emotional_arc,
             plot_summary=result.plot_summary,
             spread_breakdown=result.spread_breakdown,
-            moral=result.moral,
             goal=goal,
             character_bibles=character_bibles,
             illustration_style=illustration_style,

@@ -10,6 +10,7 @@ import dspy
 
 from ..types import StoryOutline, StorySpread
 from ..signatures.full_story import FullStorySignature, FullStoryWithPromptsSignature
+from ..reference_stories import get_random_examples
 
 
 class SpreadGenerator(dspy.Module):
@@ -18,11 +19,23 @@ class SpreadGenerator(dspy.Module):
 
     This approach produces more coherent narratives than page-by-page
     generation because the model can see and plan the entire story arc.
+
+    Args:
+        include_illustration_prompts: Whether to generate illustration prompts
+        include_examples: Whether to include reference story examples in prompt
+        example_count: Number of reference examples to include (1-2 recommended)
     """
 
-    def __init__(self, include_illustration_prompts: bool = True):
+    def __init__(
+        self,
+        include_illustration_prompts: bool = True,
+        include_examples: bool = True,
+        example_count: int = 1,
+    ):
         super().__init__()
         self.include_illustration_prompts = include_illustration_prompts
+        self.include_examples = include_examples
+        self.example_count = example_count
 
         if include_illustration_prompts:
             self.generate = dspy.ChainOfThought(FullStoryWithPromptsSignature)
@@ -31,17 +44,27 @@ class SpreadGenerator(dspy.Module):
 
     def _format_outline_for_generation(self, outline: StoryOutline) -> str:
         """Format the outline as context for story generation."""
-        parts = [
-            f"TITLE: {outline.title}",
-            f"\nPROTAGONIST GOAL: {outline.protagonist_goal}",
-            f"\nSTAKES: {outline.stakes}",
-            f"\nCHARACTERS:\n{outline.characters}",
-            f"\nSETTING: {outline.setting}",
-            f"\nEMOTIONAL ARC: {outline.emotional_arc}",
-            f"\nPLOT SUMMARY:\n{outline.plot_summary}",
-            f"\nSPREAD-BY-SPREAD PLAN:\n{outline.spread_breakdown}",
-            f"\nIMPLICIT MORAL (never state aloud): {outline.moral}",
-        ]
+        parts = []
+
+        # Include reference examples at the start if enabled
+        if self.include_examples and self.example_count > 0:
+            examples = get_random_examples(count=self.example_count)
+            parts.append("REFERENCE EXAMPLES OF EXCELLENT CHILDREN'S PICTURE BOOK PROSE:")
+            parts.append("Study these examples for rhythm, sentence length, and read-aloud quality.\n")
+            for example in examples:
+                parts.append(f'--- "{example.title}" by {example.author} ---')
+                parts.append(example.text)
+                parts.append(f"--- End of example ({example.word_count} words) ---\n")
+            parts.append("=" * 60)
+            parts.append("NOW WRITE YOUR STORY BASED ON THIS OUTLINE:")
+            parts.append("=" * 60 + "\n")
+
+        # Add the story outline
+        parts.append(f"TITLE: {outline.title}")
+        parts.append(f"\nCHARACTERS:\n{outline.characters}")
+        parts.append(f"\nSETTING: {outline.setting}")
+        parts.append(f"\nPLOT:\n{outline.plot_summary}")
+        parts.append(f"\nSPREAD-BY-SPREAD PLAN:\n{outline.spread_breakdown}")
 
         # Add character visual descriptions if available
         if outline.character_bibles:

@@ -131,14 +131,10 @@ class StoryOutline:
     """Structured representation of a story outline."""
 
     title: str
-    protagonist_goal: str
-    stakes: str
     characters: str
     setting: str
-    emotional_arc: str
     plot_summary: str
-    spread_breakdown: str  # 12 spreads with page-turn moments
-    moral: str
+    spread_breakdown: str  # 12 spreads
     goal: str  # Original goal for reference
     character_bibles: list[CharacterBible] = field(default_factory=list)
     illustration_style: Optional[StyleDefinition] = None

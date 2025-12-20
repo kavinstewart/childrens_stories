@@ -38,6 +38,8 @@ class StoryGenerator(dspy.Module):
         max_attempts: Maximum generation attempts
         lm: Optional explicit LM to use. If provided, bypasses global
             dspy.configure() state. Useful for testing and explicit control.
+        include_examples: Whether to include reference story examples in prompt
+        example_count: Number of reference examples to include (1-2 recommended)
     """
 
     def __init__(
@@ -45,10 +47,16 @@ class StoryGenerator(dspy.Module):
         quality_threshold: int = 7,
         max_attempts: int = 3,
         lm: dspy.LM = None,
+        include_examples: bool = True,
+        example_count: int = 1,
     ):
         super().__init__()
         self.outline_generator = OutlineGenerator()
-        self.spread_generator = SpreadGenerator(include_illustration_prompts=True)
+        self.spread_generator = SpreadGenerator(
+            include_illustration_prompts=True,
+            include_examples=include_examples,
+            example_count=example_count,
+        )
         self.quality_judge = QualityJudge()
 
         self.quality_threshold = quality_threshold
