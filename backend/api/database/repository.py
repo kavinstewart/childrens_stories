@@ -210,9 +210,12 @@ class StoryRepository:
         self,
         limit: int = 20,
         offset: int = 0,
-        status: Optional[str] = None,
+        status: Optional[str] = "completed",
     ) -> tuple[list[StoryResponse], int]:
-        """List stories with pagination and optional status filter."""
+        """List stories with pagination and optional status filter.
+
+        By default, only returns completed stories. Pass status=None to get all.
+        """
         async with get_db() as db:
             # Build query
             where_clause = ""

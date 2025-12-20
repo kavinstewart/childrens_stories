@@ -46,16 +46,18 @@ async def create_story(request: CreateStoryRequest, service: Service):
     "/",
     response_model=StoryListResponse,
     summary="List all stories",
-    description="Get a paginated list of all stories, optionally filtered by status.",
+    description="Get a paginated list of stories. By default returns only completed stories.",
 )
 async def list_stories(
     repo: Repository,
     limit: int = Query(default=20, ge=1, le=100, description="Maximum number of stories to return"),
     offset: int = Query(default=0, ge=0, description="Number of stories to skip"),
-    status: Optional[str] = Query(default=None, description="Filter by status (pending, running, completed, failed)"),
+    status: Optional[str] = Query(default="completed", description="Filter by status (pending, running, completed, failed, or 'all' for no filter)"),
 ):
-    """List all stories with pagination and optional status filter."""
-    stories, total = await repo.list_stories(limit=limit, offset=offset, status=status)
+    """List stories with pagination. Defaults to completed stories only."""
+    # Allow 'all' to bypass the filter
+    filter_status = None if status == "all" else status
+    stories, total = await repo.list_stories(limit=limit, offset=offset, status=filter_status)
 
     return StoryListResponse(
         stories=stories,
