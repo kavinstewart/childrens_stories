@@ -1,10 +1,12 @@
-import { View, Text, Pressable, Image, ActivityIndicator } from 'react-native';
+import { View, Text, Pressable, Image, ActivityIndicator, Dimensions } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useState } from 'react';
 import { useStory } from '@/features/stories/hooks';
 import { api } from '@/lib/api';
+import { fontFamily } from '@/lib/fonts';
+
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 export default function StoryReader() {
   const router = useRouter();
@@ -12,41 +14,41 @@ export default function StoryReader() {
   const { data: story, isLoading, error } = useStory(id);
   const [currentSpread, setCurrentSpread] = useState(0);
 
+  // Use spreads (new format) or fall back to pages (backwards compatibility)
+  const spreads = story?.spreads || story?.pages || [];
+  const totalSpreads = spreads.length;
+
+  const goBack = () => setCurrentSpread(Math.max(0, currentSpread - 1));
+  const goForward = () => setCurrentSpread(Math.min(totalSpreads - 1, currentSpread + 1));
+
   if (isLoading) {
     return (
-      <LinearGradient
-        colors={['#FEF3C7', '#FDE68A']}
-        style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}
-      >
-        <ActivityIndicator size="large" color="#92400E" />
-        <Text className="text-amber-800 mt-4">Loading story...</Text>
-      </LinearGradient>
+      <View style={{ flex: 1, backgroundColor: '#1a1a2e', alignItems: 'center', justifyContent: 'center' }}>
+        <ActivityIndicator size="large" color="#FBBF24" />
+        <Text style={{ color: 'white', marginTop: 16, fontFamily: fontFamily.nunito }}>
+          Loading story...
+        </Text>
+      </View>
     );
   }
 
   if (error || !story) {
     return (
-      <LinearGradient
-        colors={['#FEF3C7', '#FDE68A']}
-        style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}
-      >
-        <Text className="text-6xl mb-4">😕</Text>
-        <Text className="text-amber-800 text-xl font-bold mb-4">
+      <View style={{ flex: 1, backgroundColor: '#1a1a2e', alignItems: 'center', justifyContent: 'center' }}>
+        <Text style={{ fontSize: 64, marginBottom: 16 }}>😕</Text>
+        <Text style={{ color: 'white', fontSize: 20, fontFamily: fontFamily.nunitoBold, marginBottom: 16 }}>
           Couldn't load story
         </Text>
         <Pressable
           onPress={() => router.back()}
-          className="bg-amber-600 px-6 py-3 rounded-xl"
+          style={{ backgroundColor: '#8B5CF6', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 16 }}
         >
-          <Text className="text-white font-bold">Go Back</Text>
+          <Text style={{ color: 'white', fontFamily: fontFamily.nunitoBold }}>Go Back</Text>
         </Pressable>
-      </LinearGradient>
+      </View>
     );
   }
 
-  // Use spreads (new format) or fall back to pages (backwards compatibility)
-  const spreads = story.spreads || story.pages || [];
-  const totalSpreads = spreads.length;
   const currentSpreadData = spreads[currentSpread];
 
   // Get image URL for current spread if it has an illustration
@@ -54,112 +56,287 @@ export default function StoryReader() {
     ? api.getSpreadImageUrl(story.id, currentSpreadData.spread_number)
     : null;
 
+  const isFirstSpread = currentSpread === 0;
+  const isLastSpread = currentSpread >= totalSpreads - 1;
+  const progressPercent = totalSpreads > 0 ? ((currentSpread + 1) / totalSpreads) * 100 : 0;
+
   return (
-    <LinearGradient
-      colors={['#FEF3C7', '#FDE68A']}
-      style={{ flex: 1 }}
-    >
-      <SafeAreaView className="flex-1" edges={['top', 'left', 'right']}>
-        {/* Top Bar */}
-        <View className="flex-row items-center justify-between px-6 py-4">
-          <Pressable
-            onPress={() => router.back()}
-            className="bg-white/80 p-3 rounded-full"
-          >
-            <Text className="text-xl">←</Text>
-          </Pressable>
+    <View style={{ flex: 1, backgroundColor: '#1a1a2e' }}>
+      {/* Full-bleed Illustration */}
+      {imageUrl ? (
+        <Image
+          source={{ uri: imageUrl }}
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            width: SCREEN_WIDTH,
+            height: SCREEN_HEIGHT,
+          }}
+          resizeMode="cover"
+        />
+      ) : (
+        <View style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: '#2d1f1a',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}>
+          <Text style={{ fontSize: 80 }}>📖</Text>
+          <Text style={{ color: 'rgba(255,255,255,0.6)', marginTop: 16, fontFamily: fontFamily.nunito }}>
+            {story.is_illustrated ? 'Illustration loading...' : 'Text-only story'}
+          </Text>
+        </View>
+      )}
 
-          <View className="items-center">
-            <Text className="text-lg font-bold text-amber-800">
-              {story.title || 'Untitled Story'}
+      {/* Dark gradient overlay at bottom for text */}
+      <LinearGradient
+        colors={['transparent', 'rgba(30, 20, 10, 0.3)', 'rgba(30, 20, 10, 0.85)', 'rgba(30, 20, 10, 0.95)']}
+        locations={[0, 0.25, 0.6, 1]}
+        style={{
+          position: 'absolute',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          height: '45%',
+        }}
+      />
+
+      {/* Top gradient for header */}
+      <LinearGradient
+        colors={['rgba(0,0,0,0.4)', 'transparent']}
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          height: 100,
+        }}
+      />
+
+      {/* Tap zones for gesture navigation */}
+      <Pressable
+        onPress={goBack}
+        disabled={isFirstSpread}
+        style={{
+          position: 'absolute',
+          top: 100,
+          left: 0,
+          width: '25%',
+          height: SCREEN_HEIGHT - 220,
+        }}
+      />
+      <Pressable
+        onPress={goForward}
+        disabled={isLastSpread}
+        style={{
+          position: 'absolute',
+          top: 100,
+          right: 0,
+          width: '25%',
+          height: SCREEN_HEIGHT - 220,
+        }}
+      />
+
+      {/* Top Bar */}
+      <View style={{
+        position: 'absolute',
+        top: 48,
+        left: 32,
+        right: 32,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+      }}>
+        {/* Library Button */}
+        <Pressable
+          onPress={() => router.back()}
+          style={({ pressed }) => ({
+            backgroundColor: 'rgba(255,255,255,0.85)',
+            paddingVertical: 14,
+            paddingHorizontal: 22,
+            borderRadius: 16,
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 8,
+            opacity: pressed ? 0.8 : 1,
+          })}
+        >
+          <Text style={{ fontSize: 20 }}>←</Text>
+          <Text style={{ fontSize: 18, fontFamily: fontFamily.nunitoBold, color: '#374151' }}>
+            Library
+          </Text>
+        </Pressable>
+
+        {/* Progress Indicator */}
+        <View style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 16,
+          backgroundColor: 'rgba(255,255,255,0.2)',
+          paddingVertical: 12,
+          paddingHorizontal: 24,
+          borderRadius: 20,
+        }}>
+          <View style={{
+            width: 180,
+            height: 8,
+            backgroundColor: 'rgba(255,255,255,0.3)',
+            borderRadius: 4,
+            overflow: 'hidden',
+          }}>
+            <LinearGradient
+              colors={['#FBBF24', '#F97316']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={{
+                width: `${progressPercent}%`,
+                height: '100%',
+                borderRadius: 4,
+              }}
+            />
+          </View>
+          <Text style={{
+            color: 'white',
+            fontFamily: fontFamily.nunitoBold,
+            fontSize: 16,
+            textShadowColor: 'rgba(0,0,0,0.3)',
+            textShadowOffset: { width: 0, height: 1 },
+            textShadowRadius: 4,
+          }}>
+            {currentSpread + 1} / {totalSpreads}
+          </Text>
+        </View>
+
+        {/* Settings Button */}
+        <Pressable
+          style={({ pressed }) => ({
+            backgroundColor: 'rgba(255,255,255,0.85)',
+            padding: 14,
+            borderRadius: 16,
+            opacity: pressed ? 0.8 : 1,
+          })}
+        >
+          <Text style={{ fontSize: 20 }}>⚙️</Text>
+        </Pressable>
+      </View>
+
+      {/* Story Text */}
+      <View style={{
+        position: 'absolute',
+        bottom: 140,
+        left: 100,
+        right: 100,
+      }}>
+        {currentSpreadData ? (
+          <Text style={{
+            fontSize: 26,
+            lineHeight: 40,
+            color: 'white',
+            textAlign: 'center',
+            fontFamily: fontFamily.nunitoSemiBold,
+            textShadowColor: 'rgba(0,0,0,0.5)',
+            textShadowOffset: { width: 0, height: 2 },
+            textShadowRadius: 8,
+            maxWidth: 900,
+            alignSelf: 'center',
+          }}>
+            {currentSpreadData.text}
+          </Text>
+        ) : (
+          <Text style={{
+            fontSize: 20,
+            color: 'rgba(255,255,255,0.6)',
+            textAlign: 'center',
+            fontFamily: fontFamily.nunito,
+            fontStyle: 'italic',
+          }}>
+            No content for this spread
+          </Text>
+        )}
+      </View>
+
+      {/* Navigation Buttons */}
+      <View style={{
+        position: 'absolute',
+        bottom: 100,
+        left: 40,
+        right: 40,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+      }}>
+        {/* Back Button */}
+        <Pressable
+          onPress={goBack}
+          disabled={isFirstSpread}
+          style={({ pressed }) => ({
+            backgroundColor: 'rgba(255,255,255,0.25)',
+            paddingVertical: 18,
+            paddingHorizontal: 30,
+            borderRadius: 22,
+            borderWidth: 2,
+            borderColor: 'rgba(255,255,255,0.35)',
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 12,
+            opacity: isFirstSpread ? 0.5 : pressed ? 0.8 : 1,
+          })}
+        >
+          <Text style={{ fontSize: 26 }}>👈</Text>
+          <Text style={{
+            fontSize: 20,
+            fontFamily: fontFamily.nunitoExtraBold,
+            color: isFirstSpread ? 'rgba(255,255,255,0.45)' : 'white',
+          }}>
+            Back
+          </Text>
+        </Pressable>
+
+        {/* Next Button */}
+        <Pressable
+          onPress={goForward}
+          disabled={isLastSpread}
+          style={({ pressed }) => ({
+            opacity: isLastSpread ? 0.5 : pressed ? 0.9 : 1,
+            transform: [{ scale: pressed ? 0.98 : 1 }],
+          })}
+        >
+          <LinearGradient
+            colors={['#EC4899', '#8B5CF6']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={{
+              paddingVertical: 18,
+              paddingHorizontal: 36,
+              borderRadius: 22,
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 12,
+              shadowColor: '#8B5CF6',
+              shadowOffset: { width: 0, height: 8 },
+              shadowOpacity: 0.5,
+              shadowRadius: 16,
+              elevation: 8,
+            }}
+          >
+            <Text style={{
+              fontSize: 20,
+              fontFamily: fontFamily.nunitoExtraBold,
+              color: 'white',
+            }}>
+              Next
             </Text>
-            <Text className="text-amber-600">
-              Spread {currentSpread + 1} of {totalSpreads}
-            </Text>
-          </View>
-
-          <Pressable className="bg-white/80 p-3 rounded-full">
-            <Text className="text-xl">⚙️</Text>
-          </Pressable>
-        </View>
-
-        {/* Story Content */}
-        <View className="flex-1 flex-row px-6 gap-6">
-          {/* Illustration Side */}
-          <View className="flex-1 bg-white rounded-3xl overflow-hidden shadow-lg">
-            {imageUrl ? (
-              <Image
-                source={{ uri: imageUrl }}
-                className="flex-1"
-                resizeMode="contain"
-                style={{ backgroundColor: '#FEF3C7' }}
-              />
-            ) : (
-              <View className="flex-1 items-center justify-center bg-amber-50">
-                <Text className="text-8xl">📖</Text>
-                <Text className="text-amber-600 mt-4 text-center px-4">
-                  {story.is_illustrated
-                    ? 'Illustration loading...'
-                    : 'Text-only story'}
-                </Text>
-              </View>
-            )}
-          </View>
-
-          {/* Text Side */}
-          <View className="flex-1 bg-white rounded-3xl p-8 shadow-lg justify-center">
-            {currentSpreadData ? (
-              <Text className="text-2xl leading-relaxed text-gray-800">
-                {currentSpreadData.text}
-              </Text>
-            ) : (
-              <Text className="text-xl text-gray-500 italic">
-                No content for this spread
-              </Text>
-            )}
-          </View>
-        </View>
-
-        {/* Navigation */}
-        <View className="flex-row items-center justify-between px-6 py-6">
-          <Pressable
-            onPress={() => setCurrentSpread(Math.max(0, currentSpread - 1))}
-            disabled={currentSpread === 0}
-            className="bg-white px-8 py-4 rounded-2xl"
-            style={{ opacity: currentSpread === 0 ? 0.5 : 1 }}
-          >
-            <Text className="text-lg font-bold text-amber-800">← Back</Text>
-          </Pressable>
-
-          {/* Progress dots - typically 12 spreads, so show all */}
-          <View className="flex-row gap-2">
-            {[...Array(totalSpreads)].map((_, i) => {
-              const isCurrentSpread = i === currentSpread;
-
-              return (
-                <Pressable
-                  key={i}
-                  onPress={() => setCurrentSpread(i)}
-                  className={`w-3 h-3 rounded-full ${
-                    isCurrentSpread
-                      ? 'bg-amber-600'
-                      : 'bg-amber-200'
-                  }`}
-                />
-              );
-            })}
-          </View>
-
-          <Pressable
-            onPress={() => setCurrentSpread(Math.min(totalSpreads - 1, currentSpread + 1))}
-            disabled={currentSpread >= totalSpreads - 1}
-            className="bg-amber-600 px-8 py-4 rounded-2xl"
-            style={{ opacity: currentSpread >= totalSpreads - 1 ? 0.5 : 1 }}
-          >
-            <Text className="text-lg font-bold text-white">Next →</Text>
-          </Pressable>
-        </View>
-      </SafeAreaView>
-    </LinearGradient>
+            <Text style={{ fontSize: 26 }}>👉</Text>
+          </LinearGradient>
+        </Pressable>
+      </View>
+    </View>
   );
 }
