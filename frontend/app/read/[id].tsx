@@ -158,15 +158,20 @@ export default function StoryReader() {
         <Pressable
           onPress={() => router.back()}
           style={{
-            backgroundColor: '#ffffff4D',
+            backgroundColor: '#FAF7F2',
             paddingVertical: 16,
             paddingHorizontal: 22,
             borderRadius: 22,
             borderWidth: 2,
-            borderColor: '#ffffff66',
+            borderColor: '#EDE8E0',
             alignItems: 'center',
             justifyContent: 'center',
             overflow: 'hidden',
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.15,
+            shadowRadius: 6,
+            elevation: 4,
           }}
         >
           <Text style={{ fontSize: 32 }}>🏠</Text>
@@ -177,15 +182,20 @@ export default function StoryReader() {
           flexDirection: 'row',
           alignItems: 'center',
           gap: 16,
-          backgroundColor: 'rgba(255,255,255,0.2)',
+          backgroundColor: '#FAF7F2',
           paddingVertical: 12,
           paddingHorizontal: 24,
           borderRadius: 20,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.15,
+          shadowRadius: 6,
+          elevation: 4,
         }}>
           <View style={{
             width: 180,
             height: 8,
-            backgroundColor: 'rgba(255,255,255,0.3)',
+            backgroundColor: '#E8E0D5',
             borderRadius: 4,
             overflow: 'hidden',
           }}>
@@ -201,12 +211,9 @@ export default function StoryReader() {
             />
           </View>
           <Text style={{
-            color: 'white',
+            color: '#4A4035',
             fontFamily: fontFamily.nunitoBold,
             fontSize: 16,
-            textShadowColor: 'rgba(0,0,0,0.3)',
-            textShadowOffset: { width: 0, height: 1 },
-            textShadowRadius: 4,
           }}>
             {currentSpread + 1} / {totalSpreads}
           </Text>
@@ -228,15 +235,20 @@ export default function StoryReader() {
           onPress={goBack}
           disabled={isFirstSpread}
           style={{
-            backgroundColor: 'rgba(255,255,255,0.25)',
+            backgroundColor: '#FAF7F2',
             width: 64,
             height: 64,
             borderRadius: 32,
             borderWidth: 2,
-            borderColor: 'rgba(255,255,255,0.35)',
+            borderColor: '#EDE8E0',
             alignItems: 'center',
             justifyContent: 'center',
             opacity: isFirstSpread ? 0.4 : 1,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.15,
+            shadowRadius: 6,
+            elevation: 4,
           }}
         >
           <Text style={{ fontSize: 28 }}>👈</Text>
@@ -278,15 +290,20 @@ export default function StoryReader() {
           onPress={goForward}
           disabled={isLastSpread}
           style={{
-            backgroundColor: 'rgba(255,255,255,0.25)',
+            backgroundColor: '#FAF7F2',
             width: 64,
             height: 64,
             borderRadius: 32,
             borderWidth: 2,
-            borderColor: 'rgba(255,255,255,0.35)',
+            borderColor: '#EDE8E0',
             alignItems: 'center',
             justifyContent: 'center',
             opacity: isLastSpread ? 0.4 : 1,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.15,
+            shadowRadius: 6,
+            elevation: 4,
           }}
         >
           <Text style={{ fontSize: 28 }}>👉</Text>
