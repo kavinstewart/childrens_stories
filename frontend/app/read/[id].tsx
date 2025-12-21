@@ -214,115 +214,82 @@ export default function StoryReader() {
 
       </View>
 
-      {/* Story Text */}
+      {/* Bottom Content: Buttons + Text in columns */}
       <View style={{
         position: 'absolute',
-        bottom: 140,
-        left: 100,
-        right: 100,
-      }}>
-        {currentSpreadData ? (
-          <Text style={{
-            fontSize: 26,
-            lineHeight: 40,
-            color: 'white',
-            textAlign: 'center',
-            fontFamily: fontFamily.nunitoSemiBold,
-            textShadowColor: 'rgba(0,0,0,0.5)',
-            textShadowOffset: { width: 0, height: 2 },
-            textShadowRadius: 8,
-            maxWidth: 900,
-            alignSelf: 'center',
-          }}>
-            {currentSpreadData.text}
-          </Text>
-        ) : (
-          <Text style={{
-            fontSize: 20,
-            color: 'rgba(255,255,255,0.6)',
-            textAlign: 'center',
-            fontFamily: fontFamily.nunito,
-            fontStyle: 'italic',
-          }}>
-            No content for this spread
-          </Text>
-        )}
-      </View>
-
-      {/* Navigation Buttons */}
-      <View style={{
-        position: 'absolute',
-        bottom: 100,
-        left: 40,
-        right: 40,
+        bottom: 48,
+        left: 24,
+        right: 24,
         flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
+        alignItems: 'flex-end',
       }}>
         {/* Back Button */}
         <Pressable
           onPress={goBack}
           disabled={isFirstSpread}
           style={{
-            backgroundColor: '#ffffff40',
-            paddingVertical: 18,
-            paddingHorizontal: 30,
-            borderRadius: 22,
+            backgroundColor: 'rgba(255,255,255,0.25)',
+            width: 64,
+            height: 64,
+            borderRadius: 32,
             borderWidth: 2,
-            borderColor: '#ffffff59',
-            flexDirection: 'row',
+            borderColor: 'rgba(255,255,255,0.35)',
             alignItems: 'center',
-            gap: 12,
-            overflow: 'hidden',
-            opacity: isFirstSpread ? 0.5 : 1,
+            justifyContent: 'center',
+            opacity: isFirstSpread ? 0.4 : 1,
           }}
         >
-          <Text style={{ fontSize: 26 }}>👈</Text>
-          <Text style={{
-            fontSize: 20,
-            fontFamily: fontFamily.nunitoExtraBold,
-            color: isFirstSpread ? '#ffffff73' : 'white',
-          }}>
-            Back
-          </Text>
+          <Text style={{ fontSize: 28 }}>👈</Text>
         </Pressable>
+
+        {/* Story Text - center column */}
+        <View style={{
+          flex: 1,
+          paddingHorizontal: 32,
+        }}>
+          {currentSpreadData ? (
+            <Text style={{
+              fontSize: 26,
+              lineHeight: 40,
+              color: 'white',
+              textAlign: 'center',
+              fontFamily: fontFamily.nunitoSemiBold,
+              textShadowColor: 'rgba(0,0,0,0.5)',
+              textShadowOffset: { width: 0, height: 2 },
+              textShadowRadius: 8,
+            }}>
+              {currentSpreadData.text}
+            </Text>
+          ) : (
+            <Text style={{
+              fontSize: 20,
+              color: 'rgba(255,255,255,0.6)',
+              textAlign: 'center',
+              fontFamily: fontFamily.nunito,
+              fontStyle: 'italic',
+            }}>
+              No content for this spread
+            </Text>
+          )}
+        </View>
 
         {/* Next Button */}
         <Pressable
           onPress={goForward}
           disabled={isLastSpread}
-          style={({ pressed }) => ({
-            opacity: isLastSpread ? 0.5 : pressed ? 0.9 : 1,
-            transform: [{ scale: pressed ? 0.98 : 1 }],
-          })}
+          style={{
+            backgroundColor: 'rgba(255,255,255,0.25)',
+            width: 64,
+            height: 64,
+            borderRadius: 32,
+            borderWidth: 2,
+            borderColor: 'rgba(255,255,255,0.35)',
+            alignItems: 'center',
+            justifyContent: 'center',
+            opacity: isLastSpread ? 0.4 : 1,
+          }}
         >
-          <LinearGradient
-            colors={['#EC4899', '#8B5CF6']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={{
-              paddingVertical: 18,
-              paddingHorizontal: 36,
-              borderRadius: 22,
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 12,
-              shadowColor: '#8B5CF6',
-              shadowOffset: { width: 0, height: 8 },
-              shadowOpacity: 0.5,
-              shadowRadius: 16,
-              elevation: 8,
-            }}
-          >
-            <Text style={{
-              fontSize: 20,
-              fontFamily: fontFamily.nunitoExtraBold,
-              color: 'white',
-            }}>
-              Next
-            </Text>
-            <Text style={{ fontSize: 26 }}>👉</Text>
-          </LinearGradient>
+          <Text style={{ fontSize: 28 }}>👉</Text>
         </Pressable>
       </View>
     </View>
