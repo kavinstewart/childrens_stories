@@ -148,3 +148,19 @@ class CreateStoryResponse(BaseModel):
     message: str = Field(
         default="Story generation started. Poll GET /stories/{id} for status."
     )
+
+
+class StoryRecommendationItem(BaseModel):
+    """A single story recommendation (lightweight)."""
+
+    id: str
+    title: Optional[str] = None
+    goal: str
+    cover_url: Optional[str] = None
+    is_illustrated: bool = False
+
+
+class StoryRecommendationsResponse(BaseModel):
+    """Response for story recommendations."""
+
+    recommendations: list[StoryRecommendationItem]

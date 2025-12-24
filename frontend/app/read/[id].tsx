@@ -1,7 +1,7 @@
-import { View, Text, Pressable, Image, ActivityIndicator, Dimensions } from 'react-native';
+import { View, Text, Pressable, Image, ActivityIndicator, Dimensions, Animated } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useStory } from '@/features/stories/hooks';
 import { api } from '@/lib/api';
 import { fontFamily } from '@/lib/fonts';
@@ -13,13 +13,74 @@ export default function StoryReader() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { data: story, isLoading, error } = useStory(id);
   const [currentSpread, setCurrentSpread] = useState(0);
+  const [endButtonsActive, setEndButtonsActive] = useState(false);
+
+  // Animation values for "The End" text
+  const theEndOpacity = useRef(new Animated.Value(0)).current;
+  const theEndScale = useRef(new Animated.Value(0.85)).current;
+  const buttonsOpacity = useRef(new Animated.Value(0)).current;
 
   // Use spreads (new format) or fall back to pages (backwards compatibility)
   const spreads = story?.spreads || story?.pages || [];
   const totalSpreads = spreads.length;
+  const isLastSpread = currentSpread >= totalSpreads - 1;
+
+  // Trigger animations when reaching last page
+  useEffect(() => {
+    if (isLastSpread && totalSpreads > 0) {
+      // Reset animation values
+      theEndOpacity.setValue(0);
+      theEndScale.setValue(0.85);
+      buttonsOpacity.setValue(0);
+      setEndButtonsActive(false);
+
+      // Animate "The End" text: fade + scale over 300ms, then pulse
+      Animated.sequence([
+        // Fade in and scale up
+        Animated.parallel([
+          Animated.timing(theEndOpacity, {
+            toValue: 1,
+            duration: 300,
+            useNativeDriver: true,
+          }),
+          Animated.timing(theEndScale, {
+            toValue: 1,
+            duration: 300,
+            useNativeDriver: true,
+          }),
+        ]),
+        // Pulse: scale to 1.05
+        Animated.timing(theEndScale, {
+          toValue: 1.05,
+          duration: 150,
+          useNativeDriver: true,
+        }),
+        // Settle back to 1.0
+        Animated.timing(theEndScale, {
+          toValue: 1,
+          duration: 150,
+          useNativeDriver: true,
+        }),
+      ]).start();
+
+      // Activate buttons after 1000ms delay
+      const buttonTimer = setTimeout(() => {
+        Animated.timing(buttonsOpacity, {
+          toValue: 1,
+          duration: 200,
+          useNativeDriver: true,
+        }).start();
+        setEndButtonsActive(true);
+      }, 1000);
+
+      return () => clearTimeout(buttonTimer);
+    }
+  }, [isLastSpread, totalSpreads]);
 
   const goBack = () => setCurrentSpread(Math.max(0, currentSpread - 1));
   const goForward = () => setCurrentSpread(Math.min(totalSpreads - 1, currentSpread + 1));
+  const goToStart = () => setCurrentSpread(0);
+  const goToCompleted = () => router.replace(`/completed/${id}`);
 
   if (isLoading) {
     return (
@@ -57,7 +118,6 @@ export default function StoryReader() {
     : null;
 
   const isFirstSpread = currentSpread === 0;
-  const isLastSpread = currentSpread >= totalSpreads - 1;
   const progressPercent = totalSpreads > 0 ? ((currentSpread + 1) / totalSpreads) * 100 : 0;
 
   return (
@@ -230,36 +290,86 @@ export default function StoryReader() {
         flexDirection: 'row',
         alignItems: 'flex-end',
       }}>
-        {/* Back Button */}
-        <Pressable
-          onPress={goBack}
-          disabled={isFirstSpread}
-          style={{
-            backgroundColor: '#FAF7F2',
-            width: 64,
-            height: 64,
-            borderRadius: 32,
-            borderWidth: 2,
-            borderColor: '#EDE8E0',
-            alignItems: 'center',
-            justifyContent: 'center',
-            opacity: isFirstSpread ? 0.4 : 1,
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: 2 },
-            shadowOpacity: 0.15,
-            shadowRadius: 6,
-            elevation: 4,
-          }}
-        >
-          <Text style={{ fontSize: 28 }}>👈</Text>
-        </Pressable>
+        {/* Left Button: Back (normal) or Again (last page) */}
+        {isLastSpread ? (
+          <Animated.View style={{ opacity: buttonsOpacity }}>
+            <Pressable
+              onPress={goToStart}
+              disabled={!endButtonsActive}
+              style={{
+                backgroundColor: '#FAF7F2',
+                width: 80,
+                height: 80,
+                borderRadius: 20,
+                borderWidth: 2,
+                borderColor: '#EDE8E0',
+                alignItems: 'center',
+                justifyContent: 'center',
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.15,
+                shadowRadius: 6,
+                elevation: 4,
+              }}
+            >
+              <Text style={{ fontSize: 28 }}>📖</Text>
+              <Text style={{
+                fontSize: 12,
+                fontFamily: fontFamily.nunitoBold,
+                color: '#4A4035',
+                marginTop: 2,
+              }}>Again</Text>
+            </Pressable>
+          </Animated.View>
+        ) : (
+          <Pressable
+            onPress={goBack}
+            disabled={isFirstSpread}
+            style={{
+              backgroundColor: '#FAF7F2',
+              width: 64,
+              height: 64,
+              borderRadius: 32,
+              borderWidth: 2,
+              borderColor: '#EDE8E0',
+              alignItems: 'center',
+              justifyContent: 'center',
+              opacity: isFirstSpread ? 0.4 : 1,
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.15,
+              shadowRadius: 6,
+              elevation: 4,
+            }}
+          >
+            <Text style={{ fontSize: 28 }}>👈</Text>
+          </Pressable>
+        )}
 
-        {/* Story Text - center column */}
+        {/* Center: Story Text or "The End" */}
         <View style={{
           flex: 1,
           paddingHorizontal: 32,
         }}>
-          {currentSpreadData ? (
+          {isLastSpread ? (
+            <Animated.View style={{
+              opacity: theEndOpacity,
+              transform: [{ scale: theEndScale }],
+              alignItems: 'center',
+            }}>
+              <Text style={{
+                fontSize: 32,
+                color: '#F97316',
+                textAlign: 'center',
+                fontFamily: fontFamily.nunitoBold,
+                textShadowColor: 'rgba(0,0,0,0.5)',
+                textShadowOffset: { width: 0, height: 2 },
+                textShadowRadius: 8,
+              }}>
+                ✨ The End ✨
+              </Text>
+            </Animated.View>
+          ) : currentSpreadData ? (
             <Text style={{
               fontSize: 26,
               lineHeight: 40,
@@ -285,29 +395,67 @@ export default function StoryReader() {
           )}
         </View>
 
-        {/* Next Button */}
-        <Pressable
-          onPress={goForward}
-          disabled={isLastSpread}
-          style={{
-            backgroundColor: '#FAF7F2',
-            width: 64,
-            height: 64,
-            borderRadius: 32,
-            borderWidth: 2,
-            borderColor: '#EDE8E0',
-            alignItems: 'center',
-            justifyContent: 'center',
-            opacity: isLastSpread ? 0.4 : 1,
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: 2 },
-            shadowOpacity: 0.15,
-            shadowRadius: 6,
-            elevation: 4,
-          }}
-        >
-          <Text style={{ fontSize: 28 }}>👉</Text>
-        </Pressable>
+        {/* Right Button: Next (normal) or Done (last page) */}
+        {isLastSpread ? (
+          <Animated.View style={{ opacity: buttonsOpacity }}>
+            <Pressable
+              onPress={goToCompleted}
+              disabled={!endButtonsActive}
+              style={{
+                overflow: 'hidden',
+                width: 80,
+                height: 80,
+                borderRadius: 20,
+                alignItems: 'center',
+                justifyContent: 'center',
+                shadowColor: '#F97316',
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.4,
+                shadowRadius: 12,
+                elevation: 6,
+              }}
+            >
+              <LinearGradient
+                colors={['#FBBF24', '#F97316']}
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                }}
+              />
+              <Text style={{ fontSize: 28 }}>🏠</Text>
+              <Text style={{
+                fontSize: 12,
+                fontFamily: fontFamily.nunitoBold,
+                color: 'white',
+                marginTop: 2,
+              }}>Done</Text>
+            </Pressable>
+          </Animated.View>
+        ) : (
+          <Pressable
+            onPress={goForward}
+            style={{
+              backgroundColor: '#FAF7F2',
+              width: 64,
+              height: 64,
+              borderRadius: 32,
+              borderWidth: 2,
+              borderColor: '#EDE8E0',
+              alignItems: 'center',
+              justifyContent: 'center',
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.15,
+              shadowRadius: 6,
+              elevation: 4,
+            }}
+          >
+            <Text style={{ fontSize: 28 }}>👉</Text>
+          </Pressable>
+        )}
       </View>
     </View>
   );

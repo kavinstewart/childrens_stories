@@ -11,6 +11,7 @@ from ..models.responses import (
     StoryResponse,
     StoryListResponse,
     CreateStoryResponse,
+    StoryRecommendationsResponse,
     JobStatus,
 )
 from ..dependencies import Repository, Service
@@ -84,6 +85,26 @@ async def get_story(story_id: str, repo: Repository):
         )
 
     return story
+
+
+@router.get(
+    "/{story_id}/recommendations",
+    response_model=StoryRecommendationsResponse,
+    summary="Get story recommendations",
+    description="Get recommended stories to read next, excluding the current story.",
+)
+async def get_recommendations(
+    story_id: str,
+    repo: Repository,
+    limit: int = Query(default=4, ge=1, le=10, description="Number of recommendations"),
+):
+    """Get story recommendations for the completion screen."""
+    recommendations = await repo.get_recommendations(
+        exclude_story_id=story_id,
+        limit=limit,
+    )
+
+    return StoryRecommendationsResponse(recommendations=recommendations)
 
 
 @router.get(

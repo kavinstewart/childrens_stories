@@ -111,6 +111,18 @@ export interface CreateStoryResponse {
   message: string;
 }
 
+export interface StoryRecommendation {
+  id: string;
+  title?: string;
+  goal: string;
+  cover_url?: string;
+  is_illustrated: boolean;
+}
+
+export interface RecommendationsResponse {
+  recommendations: StoryRecommendation[];
+}
+
 class ApiError extends Error {
   constructor(public status: number, message: string) {
     super(message);
@@ -195,6 +207,11 @@ export const api = {
   // Get character reference image URL
   getCharacterImageUrl: (storyId: string, characterName: string): string => {
     return `${API_BASE_URL}/stories/${storyId}/characters/${encodeURIComponent(characterName)}/image`;
+  },
+
+  // Get story recommendations
+  getRecommendations: async (storyId: string, limit: number = 4): Promise<RecommendationsResponse> => {
+    return fetchApi(`/stories/${storyId}/recommendations?limit=${limit}`);
   },
 
   // Health check

@@ -1,6 +1,7 @@
 """Repository for story CRUD operations."""
 
 import json
+import random
 from datetime import datetime
 from typing import Optional
 from dataclasses import asdict
@@ -14,6 +15,7 @@ from ..models.responses import (
     QualityJudgmentResponse,
     CharacterReferenceResponse,
     StoryProgressResponse,
+    StoryRecommendationItem,
 )
 
 
@@ -260,6 +262,45 @@ class StoryRepository:
             )
             await db.commit()
             return cursor.rowcount > 0
+
+    async def get_recommendations(
+        self,
+        exclude_story_id: str,
+        limit: int = 4,
+    ) -> list[StoryRecommendationItem]:
+        """Get random story recommendations, excluding a specific story.
+
+        Returns lightweight story objects suitable for recommendation cards.
+        """
+        async with get_db() as db:
+            cursor = await db.execute(
+                """
+                SELECT id, title, goal, generation_type
+                FROM stories
+                WHERE status = 'completed' AND id != ?
+                """,
+                (exclude_story_id,),
+            )
+            rows = await cursor.fetchall()
+
+            if not rows:
+                return []
+
+            # Shuffle and take first N
+            rows = list(rows)
+            random.shuffle(rows)
+            selected = rows[:limit]
+
+            return [
+                StoryRecommendationItem(
+                    id=row["id"],
+                    title=row["title"],
+                    goal=row["goal"],
+                    cover_url=f"/stories/{row['id']}/spreads/1/image",
+                    is_illustrated=row["generation_type"] == "illustrated",
+                )
+                for row in selected
+            ]
 
     def _row_to_response(
         self,

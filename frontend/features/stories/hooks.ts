@@ -8,6 +8,7 @@ export const storyKeys = {
   list: (filters: { status?: JobStatus }) => [...storyKeys.lists(), filters] as const,
   details: () => [...storyKeys.all, 'detail'] as const,
   detail: (id: string) => [...storyKeys.details(), id] as const,
+  recommendations: (id: string) => [...storyKeys.all, 'recommendations', id] as const,
 };
 
 // Hook to fetch all stories
@@ -70,5 +71,15 @@ export function useDeleteStory() {
       queryClient.removeQueries({ queryKey: storyKeys.detail(id) });
       queryClient.invalidateQueries({ queryKey: storyKeys.lists() });
     },
+  });
+}
+
+// Hook to fetch story recommendations
+export function useRecommendations(storyId: string | undefined, limit: number = 4) {
+  return useQuery({
+    queryKey: storyKeys.recommendations(storyId!),
+    queryFn: () => api.getRecommendations(storyId!, limit),
+    enabled: !!storyId,
+    select: (data) => data.recommendations,
   });
 }
