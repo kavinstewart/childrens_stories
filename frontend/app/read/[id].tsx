@@ -3,13 +3,14 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useState } from 'react';
 import { useStory, useRecommendations } from '@/features/stories/hooks';
-import { api, StoryRecommendation } from '@/lib/api';
+import { api } from '@/lib/api';
 import { fontFamily } from '@/lib/fonts';
+import { StoryCard } from '@/components/StoryCard';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 // Card sizing for recommendations
-const CARD_GAP = 12;
+const CARD_GAP = 16;
 const CARD_COUNT = 4;
 
 export default function StoryReader() {
@@ -113,13 +114,13 @@ export default function StoryReader() {
       {/* Dark gradient overlay at bottom for text - taller on last page */}
       <LinearGradient
         colors={['transparent', 'rgba(30, 20, 10, 0.3)', 'rgba(30, 20, 10, 0.85)', 'rgba(30, 20, 10, 0.95)']}
-        locations={[0, 0.15, 0.5, 1]}
+        locations={[0, 0.1, 0.4, 1]}
         style={{
           position: 'absolute',
           bottom: 0,
           left: 0,
           right: 0,
-          height: isLastSpread ? '55%' : '45%',
+          height: isLastSpread ? '70%' : '45%',
         }}
       />
 
@@ -243,9 +244,13 @@ export default function StoryReader() {
         /* END PAGE: The End + Recommendations + Buttons */
         <View style={{
           position: 'absolute',
-          bottom: 32,
-          left: 24,
-          right: 24,
+          bottom: 0,
+          left: 0,
+          right: 0,
+          top: SCREEN_HEIGHT * 0.35, // Start from 35% down the screen
+          paddingHorizontal: 24,
+          paddingTop: 20,
+          justifyContent: 'flex-start',
         }}>
           {/* The End */}
           <Text style={{
@@ -256,20 +261,20 @@ export default function StoryReader() {
             textShadowColor: 'rgba(0,0,0,0.5)',
             textShadowOffset: { width: 0, height: 2 },
             textShadowRadius: 8,
-            marginBottom: 20,
+            marginBottom: 24,
           }}>
             The End
           </Text>
 
           {/* Recommendation Cards */}
           {recommendations && recommendations.length > 0 && (
-            <View style={{ marginBottom: 20 }}>
+            <View style={{ marginBottom: 24 }}>
               <Text style={{
                 fontSize: 16,
                 color: 'rgba(255,255,255,0.7)',
                 textAlign: 'center',
                 fontFamily: fontFamily.nunitoSemiBold,
-                marginBottom: 12,
+                marginBottom: 16,
               }}>
                 More Adventures
               </Text>
@@ -278,12 +283,13 @@ export default function StoryReader() {
                 justifyContent: 'center',
                 gap: CARD_GAP,
               }}>
-                {recommendations.slice(0, CARD_COUNT).map((rec: StoryRecommendation) => (
-                  <RecommendationCard
+                {recommendations.slice(0, CARD_COUNT).map((rec, index) => (
+                  <StoryCard
                     key={rec.id}
                     recommendation={rec}
                     width={cardWidth}
                     height={cardHeight}
+                    colorIndex={index}
                     onPress={() => goToStory(rec.id)}
                   />
                 ))}
@@ -451,97 +457,5 @@ export default function StoryReader() {
         </View>
       )}
     </View>
-  );
-}
-
-// Recommendation Card Component
-function RecommendationCard({
-  recommendation,
-  width,
-  height,
-  onPress,
-}: {
-  recommendation: StoryRecommendation;
-  width: number;
-  height: number;
-  onPress: () => void;
-}) {
-  const coverUrl = recommendation.is_illustrated && recommendation.cover_url
-    ? recommendation.cover_url.startsWith('http')
-      ? recommendation.cover_url
-      : `http://192.168.86.39:8000${recommendation.cover_url}`
-    : null;
-
-  const illustrationHeight = height * 0.65;
-  const infoHeight = height * 0.35;
-
-  // Color gradients for cards without images
-  const gradientColors: [string, string][] = [
-    ['#FCD34D', '#F97316'],
-    ['#A78BFA', '#7C3AED'],
-    ['#F472B6', '#EC4899'],
-    ['#22D3EE', '#3B82F6'],
-  ];
-  const colorIndex = recommendation.id.charCodeAt(0) % gradientColors.length;
-
-  return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => ({
-        width,
-        height,
-        borderRadius: 12,
-        overflow: 'hidden',
-        opacity: pressed ? 0.9 : 1,
-        transform: [{ scale: pressed ? 0.98 : 1 }],
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.2,
-        shadowRadius: 4,
-        elevation: 3,
-      })}
-    >
-      {/* Illustration area */}
-      <View style={{
-        height: illustrationHeight,
-        overflow: 'hidden',
-      }}>
-        {coverUrl ? (
-          <Image
-            source={{ uri: coverUrl }}
-            style={{ width: '100%', height: '100%' }}
-            resizeMode="cover"
-          />
-        ) : (
-          <LinearGradient
-            colors={gradientColors[colorIndex]}
-            style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}
-          >
-            <Text style={{ fontSize: 24 }}>📖</Text>
-          </LinearGradient>
-        )}
-      </View>
-
-      {/* Info section */}
-      <View style={{
-        height: infoHeight,
-        backgroundColor: '#FEF3C7',
-        paddingHorizontal: 6,
-        paddingVertical: 4,
-        justifyContent: 'center',
-      }}>
-        <Text
-          style={{
-            color: '#1F2937',
-            fontWeight: 'bold',
-            fontSize: 11,
-            lineHeight: 13,
-          }}
-          numberOfLines={2}
-        >
-          {recommendation.title || recommendation.goal || 'Untitled'}
-        </Text>
-      </View>
-    </Pressable>
   );
 }
