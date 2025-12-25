@@ -22,14 +22,30 @@ export default function StoryReader() {
   // Use spreads (new format) or fall back to pages (backwards compatibility)
   const spreads = story?.spreads || story?.pages || [];
   const totalSpreads = spreads.length;
-  const isLastSpread = currentSpread >= totalSpreads - 1;
+  const [showEndScreen, setShowEndScreen] = useState(false);
+  const isLastSpread = currentSpread === totalSpreads - 1;
 
   // Fetch recommendations (only used on last page, but hook must be called unconditionally)
   const { data: recommendations } = useRecommendations(id, CARD_COUNT);
 
-  const goBack = () => setCurrentSpread(Math.max(0, currentSpread - 1));
-  const goForward = () => setCurrentSpread(Math.min(totalSpreads - 1, currentSpread + 1));
-  const goToStart = () => setCurrentSpread(0);
+  const goBack = () => {
+    if (showEndScreen) {
+      setShowEndScreen(false);
+    } else {
+      setCurrentSpread(Math.max(0, currentSpread - 1));
+    }
+  };
+  const goForward = () => {
+    if (isLastSpread) {
+      setShowEndScreen(true);
+    } else {
+      setCurrentSpread(currentSpread + 1);
+    }
+  };
+  const goToStart = () => {
+    setShowEndScreen(false);
+    setCurrentSpread(0);
+  };
   const goToLibrary = () => router.replace('/');
   const goToStory = (storyId: string) => router.replace(`/read/${storyId}`);
 
@@ -62,14 +78,16 @@ export default function StoryReader() {
   }
 
   const currentSpreadData = spreads[currentSpread];
+  const lastSpreadData = spreads[totalSpreads - 1];
 
-  // Get image URL for current spread if it has an illustration
-  const imageUrl = story.is_illustrated && currentSpreadData
-    ? api.getSpreadImageUrl(story.id, currentSpreadData.spread_number)
+  // Get image URL - use last spread's image on end screen
+  const displaySpread = showEndScreen ? lastSpreadData : currentSpreadData;
+  const imageUrl = story.is_illustrated && displaySpread
+    ? api.getSpreadImageUrl(story.id, displaySpread.spread_number)
     : null;
 
-  const isFirstSpread = currentSpread === 0;
-  const progressPercent = totalSpreads > 0 ? ((currentSpread + 1) / totalSpreads) * 100 : 0;
+  const isFirstSpread = currentSpread === 0 && !showEndScreen;
+  const progressPercent = showEndScreen ? 100 : (totalSpreads > 0 ? ((currentSpread + 1) / totalSpreads) * 100 : 0);
 
   // Calculate card dimensions for recommendations
   const availableWidth = SCREEN_WIDTH - 48 - (CARD_GAP * (CARD_COUNT - 1)); // padding + gaps
@@ -111,16 +129,16 @@ export default function StoryReader() {
         </View>
       )}
 
-      {/* Dark gradient overlay at bottom for text - taller on last page */}
+      {/* Dark gradient overlay at bottom for text - taller on end screen */}
       <LinearGradient
         colors={['transparent', 'rgba(30, 20, 10, 0.4)', 'rgba(30, 20, 10, 0.88)', 'rgba(30, 20, 10, 0.95)']}
-        locations={isLastSpread ? [0, 0.05, 0.25, 1] : [0, 0.1, 0.4, 1]}
+        locations={showEndScreen ? [0, 0.05, 0.25, 1] : [0, 0.1, 0.4, 1]}
         style={{
           position: 'absolute',
           bottom: 0,
           left: 0,
           right: 0,
-          height: isLastSpread ? '80%' : '45%',
+          height: showEndScreen ? '80%' : '45%',
         }}
       />
 
@@ -136,8 +154,8 @@ export default function StoryReader() {
         }}
       />
 
-      {/* Tap zones for gesture navigation (disabled on last page) */}
-      {!isLastSpread && (
+      {/* Tap zones for gesture navigation (disabled on end screen) */}
+      {!showEndScreen && (
         <>
           <Pressable
             onPress={goBack}
@@ -240,8 +258,8 @@ export default function StoryReader() {
       </View>
 
       {/* Bottom Content */}
-      {isLastSpread ? (
-        /* END PAGE: The End + Recommendations + Buttons */
+      {showEndScreen ? (
+        /* END SCREEN: The End + Recommendations + Buttons */
         <View style={{
           position: 'absolute',
           bottom: 48,
