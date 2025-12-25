@@ -1,86 +1,36 @@
-import { View, Text, Pressable, Image, ActivityIndicator, Dimensions, Animated } from 'react-native';
+import { View, Text, Pressable, Image, ActivityIndicator, Dimensions } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useState, useEffect, useRef } from 'react';
-import { useStory } from '@/features/stories/hooks';
-import { api } from '@/lib/api';
+import { useState } from 'react';
+import { useStory, useRecommendations } from '@/features/stories/hooks';
+import { api, StoryRecommendation } from '@/lib/api';
 import { fontFamily } from '@/lib/fonts';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+
+// Card sizing for recommendations
+const CARD_GAP = 12;
+const CARD_COUNT = 4;
 
 export default function StoryReader() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { data: story, isLoading, error } = useStory(id);
   const [currentSpread, setCurrentSpread] = useState(0);
-  const [endButtonsActive, setEndButtonsActive] = useState(false);
-
-  // Animation values for "The End" text
-  const theEndOpacity = useRef(new Animated.Value(0)).current;
-  const theEndScale = useRef(new Animated.Value(0.85)).current;
-  const buttonsOpacity = useRef(new Animated.Value(0)).current;
 
   // Use spreads (new format) or fall back to pages (backwards compatibility)
   const spreads = story?.spreads || story?.pages || [];
   const totalSpreads = spreads.length;
   const isLastSpread = currentSpread >= totalSpreads - 1;
 
-  // Trigger animations when reaching last page
-  useEffect(() => {
-    if (isLastSpread && totalSpreads > 0) {
-      // Reset animation values
-      theEndOpacity.setValue(0);
-      theEndScale.setValue(0.85);
-      buttonsOpacity.setValue(0);
-      setEndButtonsActive(false);
-
-      // Animate "The End" text: fade + scale over 300ms, then pulse
-      Animated.sequence([
-        // Fade in and scale up
-        Animated.parallel([
-          Animated.timing(theEndOpacity, {
-            toValue: 1,
-            duration: 300,
-            useNativeDriver: true,
-          }),
-          Animated.timing(theEndScale, {
-            toValue: 1,
-            duration: 300,
-            useNativeDriver: true,
-          }),
-        ]),
-        // Pulse: scale to 1.05
-        Animated.timing(theEndScale, {
-          toValue: 1.05,
-          duration: 150,
-          useNativeDriver: true,
-        }),
-        // Settle back to 1.0
-        Animated.timing(theEndScale, {
-          toValue: 1,
-          duration: 150,
-          useNativeDriver: true,
-        }),
-      ]).start();
-
-      // Activate buttons after 1000ms delay
-      const buttonTimer = setTimeout(() => {
-        Animated.timing(buttonsOpacity, {
-          toValue: 1,
-          duration: 200,
-          useNativeDriver: true,
-        }).start();
-        setEndButtonsActive(true);
-      }, 1000);
-
-      return () => clearTimeout(buttonTimer);
-    }
-  }, [isLastSpread, totalSpreads]);
+  // Fetch recommendations (only used on last page, but hook must be called unconditionally)
+  const { data: recommendations } = useRecommendations(id, CARD_COUNT);
 
   const goBack = () => setCurrentSpread(Math.max(0, currentSpread - 1));
   const goForward = () => setCurrentSpread(Math.min(totalSpreads - 1, currentSpread + 1));
   const goToStart = () => setCurrentSpread(0);
-  const goToCompleted = () => router.replace(`/completed/${id}`);
+  const goToLibrary = () => router.replace('/');
+  const goToStory = (storyId: string) => router.replace(`/read/${storyId}`);
 
   if (isLoading) {
     return (
@@ -120,6 +70,11 @@ export default function StoryReader() {
   const isFirstSpread = currentSpread === 0;
   const progressPercent = totalSpreads > 0 ? ((currentSpread + 1) / totalSpreads) * 100 : 0;
 
+  // Calculate card dimensions for recommendations
+  const availableWidth = SCREEN_WIDTH - 48 - (CARD_GAP * (CARD_COUNT - 1)); // padding + gaps
+  const cardWidth = availableWidth / CARD_COUNT;
+  const cardHeight = cardWidth * 1.1;
+
   return (
     <View style={{ flex: 1, backgroundColor: '#1a1a2e' }}>
       {/* Full-bleed Illustration */}
@@ -155,16 +110,16 @@ export default function StoryReader() {
         </View>
       )}
 
-      {/* Dark gradient overlay at bottom for text */}
+      {/* Dark gradient overlay at bottom for text - taller on last page */}
       <LinearGradient
         colors={['transparent', 'rgba(30, 20, 10, 0.3)', 'rgba(30, 20, 10, 0.85)', 'rgba(30, 20, 10, 0.95)']}
-        locations={[0, 0.25, 0.6, 1]}
+        locations={[0, 0.15, 0.5, 1]}
         style={{
           position: 'absolute',
           bottom: 0,
           left: 0,
           right: 0,
-          height: '45%',
+          height: isLastSpread ? '55%' : '45%',
         }}
       />
 
@@ -180,29 +135,32 @@ export default function StoryReader() {
         }}
       />
 
-      {/* Tap zones for gesture navigation */}
-      <Pressable
-        onPress={goBack}
-        disabled={isFirstSpread}
-        style={{
-          position: 'absolute',
-          top: 100,
-          left: 0,
-          width: '25%',
-          height: SCREEN_HEIGHT - 220,
-        }}
-      />
-      <Pressable
-        onPress={goForward}
-        disabled={isLastSpread}
-        style={{
-          position: 'absolute',
-          top: 100,
-          right: 0,
-          width: '25%',
-          height: SCREEN_HEIGHT - 220,
-        }}
-      />
+      {/* Tap zones for gesture navigation (disabled on last page) */}
+      {!isLastSpread && (
+        <>
+          <Pressable
+            onPress={goBack}
+            disabled={isFirstSpread}
+            style={{
+              position: 'absolute',
+              top: 100,
+              left: 0,
+              width: '25%',
+              height: SCREEN_HEIGHT - 220,
+            }}
+          />
+          <Pressable
+            onPress={goForward}
+            style={{
+              position: 'absolute',
+              top: 100,
+              right: 0,
+              width: '25%',
+              height: SCREEN_HEIGHT - 220,
+            }}
+          />
+        </>
+      )}
 
       {/* Top Bar */}
       <View style={{
@@ -278,28 +236,74 @@ export default function StoryReader() {
             {currentSpread + 1} / {totalSpreads}
           </Text>
         </View>
-
       </View>
 
-      {/* Bottom Content: Buttons + Text in columns */}
-      <View style={{
-        position: 'absolute',
-        bottom: 48,
-        left: 24,
-        right: 24,
-        flexDirection: 'row',
-        alignItems: 'flex-end',
-      }}>
-        {/* Left Button: Back (normal) or Again (last page) */}
-        {isLastSpread ? (
-          <Animated.View style={{ opacity: buttonsOpacity }}>
+      {/* Bottom Content */}
+      {isLastSpread ? (
+        /* END PAGE: The End + Recommendations + Buttons */
+        <View style={{
+          position: 'absolute',
+          bottom: 32,
+          left: 24,
+          right: 24,
+        }}>
+          {/* The End */}
+          <Text style={{
+            fontSize: 36,
+            color: '#F97316',
+            textAlign: 'center',
+            fontFamily: fontFamily.nunitoBold,
+            textShadowColor: 'rgba(0,0,0,0.5)',
+            textShadowOffset: { width: 0, height: 2 },
+            textShadowRadius: 8,
+            marginBottom: 20,
+          }}>
+            The End
+          </Text>
+
+          {/* Recommendation Cards */}
+          {recommendations && recommendations.length > 0 && (
+            <View style={{ marginBottom: 20 }}>
+              <Text style={{
+                fontSize: 16,
+                color: 'rgba(255,255,255,0.7)',
+                textAlign: 'center',
+                fontFamily: fontFamily.nunitoSemiBold,
+                marginBottom: 12,
+              }}>
+                More Adventures
+              </Text>
+              <View style={{
+                flexDirection: 'row',
+                justifyContent: 'center',
+                gap: CARD_GAP,
+              }}>
+                {recommendations.slice(0, CARD_COUNT).map((rec: StoryRecommendation) => (
+                  <RecommendationCard
+                    key={rec.id}
+                    recommendation={rec}
+                    width={cardWidth}
+                    height={cardHeight}
+                    onPress={() => goToStory(rec.id)}
+                  />
+                ))}
+              </View>
+            </View>
+          )}
+
+          {/* Action Buttons */}
+          <View style={{
+            flexDirection: 'row',
+            justifyContent: 'center',
+            gap: 24,
+          }}>
+            {/* Read Again Button */}
             <Pressable
               onPress={goToStart}
-              disabled={!endButtonsActive}
               style={{
                 backgroundColor: '#FAF7F2',
-                width: 80,
-                height: 80,
+                width: 100,
+                height: 70,
                 borderRadius: 20,
                 borderWidth: 2,
                 borderColor: '#EDE8E0',
@@ -312,7 +316,7 @@ export default function StoryReader() {
                 elevation: 4,
               }}
             >
-              <Text style={{ fontSize: 28 }}>📖</Text>
+              <Text style={{ fontSize: 24 }}>📖</Text>
               <Text style={{
                 fontSize: 12,
                 fontFamily: fontFamily.nunitoBold,
@@ -320,8 +324,55 @@ export default function StoryReader() {
                 marginTop: 2,
               }}>Again</Text>
             </Pressable>
-          </Animated.View>
-        ) : (
+
+            {/* Library Button */}
+            <Pressable
+              onPress={goToLibrary}
+              style={{
+                overflow: 'hidden',
+                width: 100,
+                height: 70,
+                borderRadius: 20,
+                alignItems: 'center',
+                justifyContent: 'center',
+                shadowColor: '#F97316',
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.4,
+                shadowRadius: 12,
+                elevation: 6,
+              }}
+            >
+              <LinearGradient
+                colors={['#FBBF24', '#F97316']}
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                }}
+              />
+              <Text style={{ fontSize: 24 }}>🏠</Text>
+              <Text style={{
+                fontSize: 12,
+                fontFamily: fontFamily.nunitoBold,
+                color: 'white',
+                marginTop: 2,
+              }}>Library</Text>
+            </Pressable>
+          </View>
+        </View>
+      ) : (
+        /* NORMAL PAGE: Back button + Text + Next button */
+        <View style={{
+          position: 'absolute',
+          bottom: 48,
+          left: 24,
+          right: 24,
+          flexDirection: 'row',
+          alignItems: 'flex-end',
+        }}>
+          {/* Back Button */}
           <Pressable
             onPress={goBack}
             disabled={isFirstSpread}
@@ -344,97 +395,39 @@ export default function StoryReader() {
           >
             <Text style={{ fontSize: 28 }}>👈</Text>
           </Pressable>
-        )}
 
-        {/* Center: Story Text or "The End" */}
-        <View style={{
-          flex: 1,
-          paddingHorizontal: 32,
-        }}>
-          {isLastSpread ? (
-            <Animated.View style={{
-              opacity: theEndOpacity,
-              transform: [{ scale: theEndScale }],
-              alignItems: 'center',
-            }}>
+          {/* Story Text */}
+          <View style={{
+            flex: 1,
+            paddingHorizontal: 32,
+          }}>
+            {currentSpreadData ? (
               <Text style={{
-                fontSize: 32,
-                color: '#F97316',
+                fontSize: 26,
+                lineHeight: 40,
+                color: 'white',
                 textAlign: 'center',
-                fontFamily: fontFamily.nunitoBold,
+                fontFamily: fontFamily.nunitoSemiBold,
                 textShadowColor: 'rgba(0,0,0,0.5)',
                 textShadowOffset: { width: 0, height: 2 },
                 textShadowRadius: 8,
               }}>
-                ✨ The End ✨
+                {currentSpreadData.text}
               </Text>
-            </Animated.View>
-          ) : currentSpreadData ? (
-            <Text style={{
-              fontSize: 26,
-              lineHeight: 40,
-              color: 'white',
-              textAlign: 'center',
-              fontFamily: fontFamily.nunitoSemiBold,
-              textShadowColor: 'rgba(0,0,0,0.5)',
-              textShadowOffset: { width: 0, height: 2 },
-              textShadowRadius: 8,
-            }}>
-              {currentSpreadData.text}
-            </Text>
-          ) : (
-            <Text style={{
-              fontSize: 20,
-              color: 'rgba(255,255,255,0.6)',
-              textAlign: 'center',
-              fontFamily: fontFamily.nunito,
-              fontStyle: 'italic',
-            }}>
-              No content for this spread
-            </Text>
-          )}
-        </View>
-
-        {/* Right Button: Next (normal) or Done (last page) */}
-        {isLastSpread ? (
-          <Animated.View style={{ opacity: buttonsOpacity }}>
-            <Pressable
-              onPress={goToCompleted}
-              disabled={!endButtonsActive}
-              style={{
-                overflow: 'hidden',
-                width: 80,
-                height: 80,
-                borderRadius: 20,
-                alignItems: 'center',
-                justifyContent: 'center',
-                shadowColor: '#F97316',
-                shadowOffset: { width: 0, height: 4 },
-                shadowOpacity: 0.4,
-                shadowRadius: 12,
-                elevation: 6,
-              }}
-            >
-              <LinearGradient
-                colors={['#FBBF24', '#F97316']}
-                style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                }}
-              />
-              <Text style={{ fontSize: 28 }}>🏠</Text>
+            ) : (
               <Text style={{
-                fontSize: 12,
-                fontFamily: fontFamily.nunitoBold,
-                color: 'white',
-                marginTop: 2,
-              }}>Done</Text>
-            </Pressable>
-          </Animated.View>
-        ) : (
+                fontSize: 20,
+                color: 'rgba(255,255,255,0.6)',
+                textAlign: 'center',
+                fontFamily: fontFamily.nunito,
+                fontStyle: 'italic',
+              }}>
+                No content for this spread
+              </Text>
+            )}
+          </View>
+
+          {/* Next Button */}
           <Pressable
             onPress={goForward}
             style={{
@@ -455,8 +448,100 @@ export default function StoryReader() {
           >
             <Text style={{ fontSize: 28 }}>👉</Text>
           </Pressable>
+        </View>
+      )}
+    </View>
+  );
+}
+
+// Recommendation Card Component
+function RecommendationCard({
+  recommendation,
+  width,
+  height,
+  onPress,
+}: {
+  recommendation: StoryRecommendation;
+  width: number;
+  height: number;
+  onPress: () => void;
+}) {
+  const coverUrl = recommendation.is_illustrated && recommendation.cover_url
+    ? recommendation.cover_url.startsWith('http')
+      ? recommendation.cover_url
+      : `http://192.168.86.39:8000${recommendation.cover_url}`
+    : null;
+
+  const illustrationHeight = height * 0.65;
+  const infoHeight = height * 0.35;
+
+  // Color gradients for cards without images
+  const gradientColors: [string, string][] = [
+    ['#FCD34D', '#F97316'],
+    ['#A78BFA', '#7C3AED'],
+    ['#F472B6', '#EC4899'],
+    ['#22D3EE', '#3B82F6'],
+  ];
+  const colorIndex = recommendation.id.charCodeAt(0) % gradientColors.length;
+
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => ({
+        width,
+        height,
+        borderRadius: 12,
+        overflow: 'hidden',
+        opacity: pressed ? 0.9 : 1,
+        transform: [{ scale: pressed ? 0.98 : 1 }],
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.2,
+        shadowRadius: 4,
+        elevation: 3,
+      })}
+    >
+      {/* Illustration area */}
+      <View style={{
+        height: illustrationHeight,
+        overflow: 'hidden',
+      }}>
+        {coverUrl ? (
+          <Image
+            source={{ uri: coverUrl }}
+            style={{ width: '100%', height: '100%' }}
+            resizeMode="cover"
+          />
+        ) : (
+          <LinearGradient
+            colors={gradientColors[colorIndex]}
+            style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}
+          >
+            <Text style={{ fontSize: 24 }}>📖</Text>
+          </LinearGradient>
         )}
       </View>
-    </View>
+
+      {/* Info section */}
+      <View style={{
+        height: infoHeight,
+        backgroundColor: '#FEF3C7',
+        paddingHorizontal: 6,
+        paddingVertical: 4,
+        justifyContent: 'center',
+      }}>
+        <Text
+          style={{
+            color: '#1F2937',
+            fontWeight: 'bold',
+            fontSize: 11,
+            lineHeight: 13,
+          }}
+          numberOfLines={2}
+        >
+          {recommendation.title || recommendation.goal || 'Untitled'}
+        </Text>
+      </View>
+    </Pressable>
   );
 }
