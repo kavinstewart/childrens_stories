@@ -113,14 +113,14 @@ export default function StoryReader() {
 
       {/* Dark gradient overlay at bottom for text - taller on last page */}
       <LinearGradient
-        colors={['transparent', 'rgba(30, 20, 10, 0.3)', 'rgba(30, 20, 10, 0.85)', 'rgba(30, 20, 10, 0.95)']}
-        locations={[0, 0.1, 0.4, 1]}
+        colors={['transparent', 'rgba(30, 20, 10, 0.4)', 'rgba(30, 20, 10, 0.88)', 'rgba(30, 20, 10, 0.95)']}
+        locations={isLastSpread ? [0, 0.05, 0.25, 1] : [0, 0.1, 0.4, 1]}
         style={{
           position: 'absolute',
           bottom: 0,
           left: 0,
           right: 0,
-          height: isLastSpread ? '70%' : '45%',
+          height: isLastSpread ? '80%' : '45%',
         }}
       />
 
@@ -244,13 +244,12 @@ export default function StoryReader() {
         /* END PAGE: The End + Recommendations + Buttons */
         <View style={{
           position: 'absolute',
-          bottom: 0,
-          left: 0,
-          right: 0,
-          top: SCREEN_HEIGHT * 0.35, // Start from 35% down the screen
-          paddingHorizontal: 24,
-          paddingTop: 20,
+          bottom: 48,
+          left: 24,
+          right: 24,
+          top: SCREEN_HEIGHT * 0.22, // Start from 22% down - gives illustration room while keeping content higher
           justifyContent: 'flex-start',
+          alignItems: 'center',
         }}>
           {/* The End */}
           <Text style={{
