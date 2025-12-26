@@ -23,10 +23,6 @@ class StorySpreadResponse(BaseModel):
     illustration_url: Optional[str] = None
 
 
-# Backwards compatibility alias
-StoryPageResponse = StorySpreadResponse
-
-
 class QualityJudgmentResponse(BaseModel):
     """Quality assessment of the story."""
 
@@ -116,19 +112,6 @@ class StoryResponse(BaseModel):
     def is_illustrated(self) -> bool:
         """Derived from generation_type - True when generation_type is ILLUSTRATED."""
         return self.generation_type == GenerationType.ILLUSTRATED
-
-    # Backwards compatibility aliases
-    @computed_field
-    @property
-    def page_count(self) -> Optional[int]:
-        """Alias for spread_count (backwards compatibility)."""
-        return self.spread_count
-
-    @computed_field
-    @property
-    def pages(self) -> Optional[list[StorySpreadResponse]]:
-        """Alias for spreads (backwards compatibility)."""
-        return self.spreads
 
 
 class StoryListResponse(BaseModel):

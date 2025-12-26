@@ -35,9 +35,6 @@ export interface StorySpread {
   illustration_url?: string;
 }
 
-// Backwards compatibility alias
-export type StoryPage = StorySpread;
-
 export interface QualityJudgment {
   overall_score: number;
   verdict: string;
@@ -84,10 +81,6 @@ export interface Story {
   is_illustrated: boolean;
   error_message?: string;
   progress?: StoryProgress;
-
-  // Backwards compatibility (API returns both for now)
-  page_count?: number;
-  pages?: StoryPage[];
 }
 
 export interface StoryListResponse {
@@ -197,11 +190,6 @@ export const api = {
   // Get spread image URL (a spread = two facing pages)
   getSpreadImageUrl: (storyId: string, spreadNumber: number): string => {
     return `${API_BASE_URL}/stories/${storyId}/spreads/${spreadNumber}/image`;
-  },
-
-  // Get page image URL (backwards compatibility - redirects to spread)
-  getPageImageUrl: (storyId: string, pageNumber: number): string => {
-    return `${API_BASE_URL}/stories/${storyId}/pages/${pageNumber}/image`;
   },
 
   // Get character reference image URL

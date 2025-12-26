@@ -130,33 +130,6 @@ async def get_spread_image(story_id: str, spread_number: int):
 
 
 @router.get(
-    "/{story_id}/pages/{page_number}/image",
-    summary="Get page illustration (deprecated)",
-    description="Deprecated: Use /spreads/{spread_number}/image instead. Get the illustration image for a specific page.",
-    responses={
-        200: {"content": {"image/png": {}}},
-        404: {"description": "Image not found"},
-    },
-    deprecated=True,
-)
-async def get_page_image(story_id: str, page_number: int):
-    """Get a page illustration image (backwards compatibility alias for spreads)."""
-    # Try spread path first (new format), then page path (old format)
-    spread_path = STORIES_DIR / story_id / "images" / f"spread_{page_number:02d}.png"
-    page_path = STORIES_DIR / story_id / "images" / f"page_{page_number:02d}.png"
-
-    if spread_path.exists():
-        return FileResponse(spread_path, media_type="image/png")
-    elif page_path.exists():
-        return FileResponse(page_path, media_type="image/png")
-    else:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Image for page/spread {page_number} not found",
-        )
-
-
-@router.get(
     "/{story_id}/characters/{character_name}/image",
     summary="Get character reference image",
     description="Get the reference image for a character.",

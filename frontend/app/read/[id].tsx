@@ -19,8 +19,7 @@ export default function StoryReader() {
   const { data: story, isLoading, error } = useStory(id);
   const [currentSpread, setCurrentSpread] = useState(0);
 
-  // Use spreads (new format) or fall back to pages (backwards compatibility)
-  const spreads = story?.spreads || story?.pages || [];
+  const spreads = story?.spreads || [];
   const totalSpreads = spreads.length;
   const [showEndScreen, setShowEndScreen] = useState(false);
   const isLastSpread = currentSpread === totalSpreads - 1;

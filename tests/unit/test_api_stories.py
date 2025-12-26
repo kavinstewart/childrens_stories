@@ -127,7 +127,7 @@ class TestGetStory:
             created_at=datetime.utcnow(),
             title="The Sharing Tree",
             word_count=500,
-            page_count=15,
+            spread_count=12,
         )
         mock_repo.get_story = AsyncMock(return_value=mock_story)
 
@@ -172,3 +172,84 @@ class TestHealthEndpoint:
 
         assert response.status_code == 200
         assert response.json() == {"status": "healthy"}
+
+
+class TestDeprecatedEndpointsRemoved:
+    """Tests to verify deprecated endpoints have been removed."""
+
+    def test_page_image_endpoint_not_found(self, client_with_mocks):
+        """Deprecated /pages/{page_number}/image endpoint should return 404."""
+        client, _, _ = client_with_mocks
+
+        response = client.get("/stories/test-id/pages/1/image")
+
+        # Should be 404 (not found) since the endpoint was removed
+        # If endpoint existed, it would return 404 for missing file, not route
+        assert response.status_code == 404
+        # The detail should indicate route not found, not file not found
+        assert "pages" not in response.json().get("detail", "").lower() or \
+               "not found" in response.json().get("detail", "").lower()
+
+
+class TestStoryResponseShape:
+    """Tests to verify API response shape after cleanup."""
+
+    def test_story_response_uses_spread_count_not_page_count(self, client_with_mocks):
+        """Story response should use spread_count, not page_count."""
+        client, mock_repo, _ = client_with_mocks
+
+        from backend.api.models.enums import GenerationType, JobStatus
+        from backend.api.models.responses import StoryResponse
+
+        mock_story = StoryResponse(
+            id="test-id",
+            status=JobStatus.COMPLETED,
+            goal="teach about sharing",
+            target_age_range="4-7",
+            generation_type=GenerationType.STANDARD,
+            spread_count=12,
+        )
+        mock_repo.get_story = AsyncMock(return_value=mock_story)
+
+        response = client.get("/stories/test-id")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert "spread_count" in data
+        assert data["spread_count"] == 12
+        # page_count should not exist (removed backwards compat alias)
+        assert "page_count" not in data
+
+    def test_story_response_uses_spreads_not_pages(self, client_with_mocks):
+        """Story response should use spreads, not pages."""
+        client, mock_repo, _ = client_with_mocks
+
+        from backend.api.models.enums import GenerationType, JobStatus
+        from backend.api.models.responses import StoryResponse, StorySpreadResponse
+
+        mock_story = StoryResponse(
+            id="test-id",
+            status=JobStatus.COMPLETED,
+            goal="teach about sharing",
+            target_age_range="4-7",
+            generation_type=GenerationType.STANDARD,
+            spreads=[
+                StorySpreadResponse(
+                    spread_number=1,
+                    text="Once upon a time...",
+                    word_count=4,
+                    was_revised=False,
+                ),
+            ],
+        )
+        mock_repo.get_story = AsyncMock(return_value=mock_story)
+
+        response = client.get("/stories/test-id")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert "spreads" in data
+        assert len(data["spreads"]) == 1
+        assert data["spreads"][0]["spread_number"] == 1
+        # pages should not exist (removed backwards compat alias)
+        assert "pages" not in data

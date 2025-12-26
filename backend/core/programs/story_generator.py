@@ -216,6 +216,7 @@ class StoryGenerator(dspy.Module):
         use_image_qa: bool = True,
         max_image_attempts: int = 3,
         debug: bool = False,
+        on_progress: callable = None,
     ) -> GeneratedStory:
         """
         Generate a complete illustrated children's story using Nano Banana Pro.
@@ -234,6 +235,7 @@ class StoryGenerator(dspy.Module):
             use_image_qa: If True, run QA on images and regenerate failures
             max_image_attempts: Max regeneration attempts per image
             debug: Print progress info
+            on_progress: Optional callback(stage, detail, completed, total) for progress updates
 
         Returns:
             GeneratedStory with illustrations
@@ -243,11 +245,17 @@ class StoryGenerator(dspy.Module):
         # Step 1-3: Generate the story text (outline + 12 spreads)
         if debug:
             print("Step 1: Generating story text (12 spreads)...", file=sys.stderr)
+        if on_progress:
+            on_progress("outline", "Crafting your story...", None, None)
+
         story = self.forward(
             goal=goal,
             target_age_range=target_age_range,
             skip_quality_loop=skip_quality_loop,
         )
+
+        if on_progress:
+            on_progress("spreads", "Story text complete", 1, 1)
 
         if debug and story.outline.illustration_style:
             print(f"Selected illustration style: {story.outline.illustration_style.name}", file=sys.stderr)
@@ -261,6 +269,7 @@ class StoryGenerator(dspy.Module):
         reference_sheets = sheet_generator.generate_for_story(
             outline=story.outline,
             debug=debug,
+            on_progress=on_progress,
         )
         story.reference_sheets = reference_sheets
 
@@ -279,6 +288,7 @@ class StoryGenerator(dspy.Module):
                 reference_sheets=reference_sheets,
                 max_attempts_per_spread=max_image_attempts,
                 debug=debug,
+                on_progress=on_progress,
             )
             if debug:
                 print(f"\nQA Results: {qa_summary['passed']}/{qa_summary['total_spreads']} passed", file=sys.stderr)
@@ -291,6 +301,7 @@ class StoryGenerator(dspy.Module):
                 outline=story.outline,
                 reference_sheets=reference_sheets,
                 debug=debug,
+                on_progress=on_progress,
             )
 
         story.is_illustrated = True

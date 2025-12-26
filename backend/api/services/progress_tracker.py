@@ -1,12 +1,13 @@
 """Progress tracker for story generation."""
 
-import asyncio
+import json
+import sqlite3
 import time
 import logging
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Callable
 
-from ..database.repository import StoryRepository
+from ..config import DB_PATH
 
 logger = logging.getLogger(__name__)
 
@@ -19,25 +20,24 @@ STAGE_WEIGHTS = {
     "illustrations": (40, 100),
 }
 
+# Type alias for progress callback
+ProgressCallback = Callable[[str, str, Optional[int], Optional[int]], None]
+
 
 class ProgressTracker:
     """
     Tracks and persists story generation progress.
 
-    Provides a synchronous interface that schedules async DB writes
-    via an event loop. Includes debouncing to limit DB writes.
+    Uses synchronous SQLite writes since we're running in a background thread.
+    Includes debouncing to limit DB writes.
     """
 
     def __init__(
         self,
         story_id: str,
-        repo: StoryRepository,
-        loop: Optional[asyncio.AbstractEventLoop] = None,
         min_update_interval: float = 0.5,
     ):
         self.story_id = story_id
-        self.repo = repo
-        self.loop = loop
         self.min_update_interval = min_update_interval
 
         self.last_update_time: Optional[float] = None
@@ -92,8 +92,8 @@ class ProgressTracker:
         if self.warnings:
             counters["warnings"] = self.warnings.copy()
 
-        # Schedule async DB write
-        self._schedule_update(stage, detail, percentage, counters)
+        # Write to DB synchronously
+        self._write_progress(stage, detail, percentage, counters)
 
         # Update tracking state
         self.last_update_time = now
@@ -123,29 +123,30 @@ class ProgressTracker:
         # Otherwise, just use stage start
         return start_pct
 
-    def _schedule_update(
+    def _write_progress(
         self,
         stage: str,
         detail: str,
         percentage: int,
         counters: dict,
     ) -> None:
-        """Schedule async DB write."""
-        if self.loop is None:
-            logger.debug(f"No event loop, skipping progress update for {self.story_id}")
-            return
+        """Write progress to database synchronously."""
+        progress_data = {
+            "stage": stage,
+            "stage_detail": detail,
+            "percentage": percentage,
+            "updated_at": datetime.utcnow().isoformat(),
+            **counters,
+        }
 
         try:
-            asyncio.run_coroutine_threadsafe(
-                self.repo.update_progress(
-                    story_id=self.story_id,
-                    stage=stage,
-                    stage_detail=detail,
-                    percentage=percentage,
-                    **counters,
-                ),
-                self.loop,
+            conn = sqlite3.connect(DB_PATH)
+            conn.execute(
+                "UPDATE stories SET progress_json = ? WHERE id = ?",
+                (json.dumps(progress_data), self.story_id),
             )
+            conn.commit()
+            conn.close()
         except Exception as e:
             # Silent fail - progress updates are non-critical
             logger.warning(f"Failed to update progress for {self.story_id}: {e}")

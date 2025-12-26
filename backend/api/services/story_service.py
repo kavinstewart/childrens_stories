@@ -6,7 +6,6 @@ import asyncio
 import time
 from datetime import datetime
 from pathlib import Path
-from dataclasses import asdict
 from typing import Optional
 
 from ..database.repository import StoryRepository
@@ -80,8 +79,8 @@ class StoryService:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
 
-        # Create progress tracker with access to event loop
-        tracker = ProgressTracker(story_id, self.repo, loop=loop)
+        # Create progress tracker (uses sync SQLite writes)
+        tracker = ProgressTracker(story_id)
 
         try:
             loop.run_until_complete(
@@ -148,9 +147,9 @@ class StoryService:
                 tracker.update("spreads", "Story complete", completed=1, total=1)
 
             elif generation_type == "illustrated":
-                # For illustrated, we track progress at a high level
-                # The generator handles the detailed steps
-                tracker.update("outline", "Crafting your story outline...")
+                # Create progress callback that updates the tracker
+                def on_progress(stage: str, detail: str, completed: int, total: int):
+                    tracker.update(stage, detail, completed, total)
 
                 story = generator.generate_illustrated(
                     goal,
@@ -159,14 +158,7 @@ class StoryService:
                     use_image_qa=True,
                     max_image_attempts=3,
                     debug=True,  # Enable debug output
-                )
-
-                # Update final progress
-                tracker.update(
-                    "illustrations",
-                    "All illustrations complete",
-                    completed=len(story.spreads),
-                    total=len(story.spreads),
+                    on_progress=on_progress,
                 )
 
             else:  # standard
