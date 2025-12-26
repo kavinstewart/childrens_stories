@@ -2,7 +2,6 @@
 
 import pytest
 from unittest.mock import MagicMock, patch
-from dataclasses import dataclass
 
 from backend.core.modules.spread_illustrator import SpreadIllustrator
 from backend.core.types import (

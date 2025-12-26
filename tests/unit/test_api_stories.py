@@ -1,7 +1,7 @@
 """Integration tests for story API endpoints."""
 
 import pytest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 from datetime import datetime
 
 

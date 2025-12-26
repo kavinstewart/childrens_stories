@@ -1,10 +1,7 @@
 """Pytest fixtures for API tests."""
 
 import pytest
-import tempfile
-import shutil
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 from fastapi.testclient import TestClient
 

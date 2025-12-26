@@ -5,7 +5,7 @@ import sqlite3
 import time
 import logging
 from datetime import datetime
-from typing import Optional, Callable
+from typing import Optional
 
 from ..config import DB_PATH
 
@@ -19,9 +19,6 @@ STAGE_WEIGHTS = {
     "character_refs": (30, 40),
     "illustrations": (40, 100),
 }
-
-# Type alias for progress callback
-ProgressCallback = Callable[[str, str, Optional[int], Optional[int]], None]
 
 
 class ProgressTracker:
@@ -98,10 +95,6 @@ class ProgressTracker:
         # Update tracking state
         self.last_update_time = now
         self.last_stage = stage
-
-    def add_warning(self, warning: str) -> None:
-        """Add a non-fatal warning."""
-        self.warnings.append(warning)
 
     def _calculate_percentage(
         self,

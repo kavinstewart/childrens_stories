@@ -79,11 +79,6 @@ ILLUSTRATION_STYLES: dict[IllustrationStyleType, StyleDefinition] = {
 }
 
 
-def get_style(style_type: IllustrationStyleType) -> StyleDefinition:
-    """Get the style definition for a given style type."""
-    return ILLUSTRATION_STYLES[style_type]
-
-
 def get_style_by_name(name: str) -> StyleDefinition:
     """Get style definition by string name (case-insensitive)."""
     name_lower = name.lower().replace(" ", "_").replace("-", "_")

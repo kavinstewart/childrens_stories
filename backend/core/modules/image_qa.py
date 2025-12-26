@@ -41,30 +41,6 @@ class ImageQAResult:
     attempt_number: int = 1
     max_attempts: int = 3
 
-    def get_summary(self) -> str:
-        """Get a human-readable summary of the QA result."""
-        lines = [
-            f"Image: {self.image_id}",
-            f"Verdict: {self.verdict.value}",
-        ]
-
-        if self.detailed_check:
-            dc = self.detailed_check
-            lines.extend([
-                f"Text-free: {dc.text_free}" + (f" ({dc.text_detected})" if not dc.text_free else ""),
-                f"Character match: {dc.character_match_score}/5",
-                f"Scene accuracy: {dc.scene_accuracy_score}/5",
-                f"Composition: {dc.composition_score}/5",
-                f"Style: {dc.style_score}/5",
-            ])
-
-        if self.failure_reasons:
-            lines.append(f"Issues: {'; '.join(self.failure_reasons)}")
-
-        lines.append(f"Attempt: {self.attempt_number}/{self.max_attempts}")
-
-        return "\n".join(lines)
-
 
 @dataclass
 class RegenerationRequest:

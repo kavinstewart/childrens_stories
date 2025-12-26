@@ -5,8 +5,6 @@ import json
 import asyncio
 import time
 from datetime import datetime
-from pathlib import Path
-from typing import Optional
 
 from ..database.repository import StoryRepository
 from ..config import STORIES_DIR, story_logger

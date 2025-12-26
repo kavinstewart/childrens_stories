@@ -146,15 +146,3 @@ def outline_quality_metric(
     feedback = f"{verdict}\n\nDetails:\n{feedback}"
 
     return dspy.Prediction(score=final_score, feedback=feedback)
-
-
-def outline_quality_metric_simple(
-    example: dspy.Example,
-    prediction: dspy.Prediction,
-    trace: Optional[object] = None,
-) -> float:
-    """
-    Simple metric that returns just the score (for evaluation, not GEPA).
-    """
-    result = outline_quality_metric(example, prediction, trace)
-    return result.score

@@ -412,23 +412,3 @@ def get_random_examples(count: int = 2, seed: int = None) -> list[ReferenceStory
 
     count = min(count, len(ALL_REFERENCE_STORIES))
     return random.sample(ALL_REFERENCE_STORIES, count)
-
-
-def format_examples_for_prompt(count: int = 2, seed: int = None) -> str:
-    """
-    Get formatted example stories ready to include in a prompt.
-
-    Args:
-        count: Number of examples to include
-        seed: Optional random seed for reproducibility
-
-    Returns:
-        Formatted string with example stories
-    """
-    examples = get_random_examples(count=count, seed=seed)
-
-    formatted = ["Here are examples of excellent children's picture book prose:\n"]
-    for i, story in enumerate(examples, 1):
-        formatted.append(f"\n{story.to_example_string()}\n")
-
-    return "\n".join(formatted)

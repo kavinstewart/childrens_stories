@@ -383,7 +383,3 @@ Wide shot framing with space at bottom for text overlay. Maintain exact characte
                 print(f"  Issues: {qa_summary['issues_by_type']}", file=sys.stderr)
 
         return spreads, qa_summary
-
-
-# Backwards compatibility alias
-PageIllustrator = SpreadIllustrator

@@ -18,10 +18,6 @@ class ExtractedCharacter:
     name: str
     details: str  # Everything the story tells us about them
 
-    def to_bible_input(self) -> str:
-        """Format for character bible generation."""
-        return f"{self.name}: {self.details}"
-
 
 class CharacterExtractor(dspy.Module):
     """

@@ -4,7 +4,6 @@ import json
 import random
 from datetime import datetime
 from typing import Optional
-from dataclasses import asdict
 
 from .db import get_db
 from ..models.enums import GenerationType, JobStatus
@@ -69,30 +68,6 @@ class StoryRepository:
             await db.execute(
                 f"UPDATE stories SET {', '.join(updates)} WHERE id = ?",
                 params,
-            )
-            await db.commit()
-
-    async def update_progress(
-        self,
-        story_id: str,
-        stage: str,
-        stage_detail: str,
-        percentage: int,
-        **kwargs,
-    ) -> None:
-        """Update story progress."""
-        progress_data = {
-            "stage": stage,
-            "stage_detail": stage_detail,
-            "percentage": percentage,
-            "updated_at": datetime.utcnow().isoformat(),
-            **kwargs,
-        }
-
-        async with get_db() as db:
-            await db.execute(
-                "UPDATE stories SET progress_json = ? WHERE id = ?",
-                (json.dumps(progress_data), story_id),
             )
             await db.commit()
 

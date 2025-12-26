@@ -1,8 +1,8 @@
 """Background job manager using ThreadPoolExecutor."""
 
-from concurrent.futures import ThreadPoolExecutor, Future
+from concurrent.futures import ThreadPoolExecutor
 import threading
-from typing import Callable, Optional
+from typing import Callable
 
 from ..config import MAX_CONCURRENT_JOBS
 
@@ -46,29 +46,6 @@ class JobManager:
                     del self._futures[job_id]
 
         future.add_done_callback(cleanup)
-
-    def is_running(self, job_id: str) -> bool:
-        """Check if a job is currently running."""
-        with self._lock:
-            future = self._futures.get(job_id)
-            return future is not None and future.running()
-
-    def get_future(self, job_id: str) -> Optional[Future]:
-        """Get the Future object for a job if it exists."""
-        with self._lock:
-            return self._futures.get(job_id)
-
-    def cancel(self, job_id: str) -> bool:
-        """
-        Attempt to cancel a job.
-
-        Returns True if cancelled, False if already running/completed.
-        """
-        with self._lock:
-            future = self._futures.get(job_id)
-            if future:
-                return future.cancel()
-            return False
 
     def shutdown(self, wait: bool = True) -> None:
         """Shutdown the executor."""

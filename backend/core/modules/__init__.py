@@ -4,7 +4,7 @@ from .character_extractor import CharacterExtractor, ExtractedCharacter
 from .bible_generator import BibleGenerator
 
 # Illustration and quality
-from .spread_illustrator import SpreadIllustrator, PageIllustrator
+from .spread_illustrator import SpreadIllustrator
 from .quality_judge import QualityJudge
 from .vlm_judge import VLMJudge, DetailedCheckResult
 
@@ -21,7 +21,6 @@ __all__ = [
     "BibleGenerator",
     # Illustration and quality
     "SpreadIllustrator",
-    "PageIllustrator",  # Backwards compatibility alias
     "QualityJudge",
     "VLMJudge",
     "DetailedCheckResult",
