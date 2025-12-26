@@ -1,14 +1,16 @@
 """
 Module for generating character reference images using Nano Banana Pro.
 
-Generates simple portrait references for each character to ensure
-visual consistency across all story illustrations.
+Generates character model sheets (turnarounds) for each character to ensure
+visual consistency across all story illustrations. Optimized for Nano Banana Pro
+following Google's recommended prompting practices.
 """
 
 from backend.config import get_image_client, get_image_model, get_image_config, extract_image_from_response
 from ..types import (
     CharacterBible,
     StoryOutline,
+    StyleDefinition,
     CharacterReferenceSheet,
     StoryReferenceSheets,
 )
@@ -18,7 +20,7 @@ class CharacterSheetGenerator:
     """
     Generate character reference images using Nano Banana Pro.
 
-    Creates simple portrait references that serve as visual anchors
+    Creates model sheet turnarounds that serve as visual anchors
     for consistent character appearance across all story illustrations.
     """
 
@@ -27,59 +29,42 @@ class CharacterSheetGenerator:
         self.model = get_image_model()
         self.config = get_image_config()
 
-    def _build_reference_prompt(self, bible: CharacterBible, illustration_style=None) -> str:
-        """Build the prompt for generating a character model sheet with multiple views."""
-        colors_str = ", ".join(bible.color_palette) if bible.color_palette else ""
+    def _build_reference_prompt(self, bible: CharacterBible, illustration_style: StyleDefinition) -> str:
+        """
+        Build concise prompt for character model sheet, optimized for Nano Banana Pro.
 
-        # Use illustration style if provided, otherwise fall back to character style tags
-        if illustration_style:
-            style_prefix = illustration_style.prompt_prefix
-            style_suffix = illustration_style.prompt_suffix
-        else:
-            style_str = ", ".join(bible.style_tags) if bible.style_tags else "children's book illustration style"
-            style_prefix = f"Character model sheet in {style_str}."
-            style_suffix = ""
+        Follows Google's recommended practices:
+        - Concise narrative description
+        - Specific lighting from style
+        - Clear layout direction
+        """
+        colors_str = ", ".join(bible.color_palette) if bible.color_palette else "warm, appealing colors"
+        lighting = illustration_style.lighting_direction or "soft even studio lighting"
 
-        prompt = f"""{style_prefix}
+        # Concise character description
+        character_desc = f"{bible.age_appearance} {bible.species}, {bible.body}, {bible.face}"
+        if bible.hair:
+            character_desc += f", {bible.hair}"
+        if bible.clothing:
+            character_desc += f", wearing {bible.clothing}"
+        if bible.signature_item:
+            character_desc += f", with {bible.signature_item}"
 
-Generate a CHARACTER MODEL SHEET / TURNAROUND for a children's book character.
+        prompt = f"""{illustration_style.prompt_prefix}, character model sheet turnaround on clean white background.
 
-CHARACTER: {bible.name}
-- Species/Type: {bible.species}
-- Age: {bible.age_appearance}
-- Body: {bible.body}
-- Face: {bible.face}
-- Hair: {bible.hair}
-- Eyes: {bible.eyes}
-- Clothing: {bible.clothing}
-- Signature item: {bible.signature_item}
+Character: {bible.name} - {character_desc}.
 
-COLOR PALETTE: {colors_str}
+Color palette: {colors_str}. Lighting: {lighting}.
 
-{style_suffix}
-
-MODEL SHEET LAYOUT - Include ALL of these views in a single image:
-1. FRONT VIEW (full body, arms slightly away from body, neutral pose)
-2. 3/4 VIEW (full body, showing depth and volume)
-3. SIDE VIEW (profile, full body)
-4. EXPRESSION SHEET (3-4 head shots showing: happy, sad, surprised, determined)
-
-REQUIREMENTS:
-- Clean white or light gray background
-- All views of the SAME character with IDENTICAL design
-- Clear, consistent proportions across all views
-- Show full body in the turnaround views (head to feet)
-- Character should be the focus - large and clearly visible
-- Same clothing and accessories in every view
-- No text, labels, or annotations
-- Professional character design sheet layout
-
-This model sheet will be used as reference to maintain character consistency across multiple story illustrations."""
+Layout: Front view, 3/4 view, side profile (all full body), plus 4 expression head shots (happy, sad, surprised, determined). Identical character design across all views. No text or labels."""
 
         return prompt
 
-    def generate_reference(self, bible: CharacterBible, illustration_style=None) -> CharacterReferenceSheet:
-        """Generate a reference portrait for a character."""
+    def generate_reference(self, bible: CharacterBible, illustration_style: StyleDefinition) -> CharacterReferenceSheet:
+        """Generate a character model sheet reference image."""
+        if not illustration_style:
+            raise ValueError("illustration_style is required")
+
         prompt = self._build_reference_prompt(bible, illustration_style)
 
         response = self.client.models.generate_content(
@@ -107,6 +92,7 @@ This model sheet will be used as reference to maintain character consistency acr
         self,
         outline: StoryOutline,
         debug: bool = False,
+        on_progress: callable = None,
     ) -> StoryReferenceSheets:
         """
         Generate reference images for all characters in a story.
@@ -114,6 +100,7 @@ This model sheet will be used as reference to maintain character consistency acr
         Args:
             outline: Story outline containing character bibles
             debug: Print progress info
+            on_progress: Optional callback(stage, detail, completed, total) for progress updates
 
         Returns:
             StoryReferenceSheets containing all character reference images
@@ -124,13 +111,17 @@ This model sheet will be used as reference to maintain character consistency acr
 
         # Use the illustration style from the outline
         illustration_style = outline.illustration_style
+        total_characters = len(outline.character_bibles)
 
         if debug and illustration_style:
             print(f"Using illustration style: {illustration_style.name}", file=sys.stderr)
 
         for i, bible in enumerate(outline.character_bibles):
             if debug:
-                print(f"Generating reference for character {i+1}/{len(outline.character_bibles)}: {bible.name}", file=sys.stderr)
+                print(f"Generating reference for character {i+1}/{total_characters}: {bible.name}", file=sys.stderr)
+
+            if on_progress:
+                on_progress("character_refs", f"Creating {bible.name}...", i, total_characters)
 
             try:
                 sheet = self.generate_reference(bible, illustration_style)
@@ -142,5 +133,9 @@ This model sheet will be used as reference to maintain character consistency acr
             except Exception as e:
                 if debug:
                     print(f"  FAILED: {bible.name} - {e}", file=sys.stderr)
+
+        # Final progress update
+        if on_progress:
+            on_progress("character_refs", "Character references complete", total_characters, total_characters)
 
         return sheets

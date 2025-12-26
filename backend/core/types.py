@@ -22,18 +22,13 @@ if TYPE_CHECKING:
 
 @dataclass
 class StyleDefinition:
-    """Complete definition of an illustration style."""
+    """Complete definition of an illustration style for Nano Banana Pro."""
 
     name: str
     description: str  # Human-readable description for LLM selection
     prompt_prefix: str  # Concise style direction (1-2 sentences)
-    prompt_suffix: str  # Legacy field, kept for compatibility
     best_for: list[str]  # Story types this style works well for
     lighting_direction: str = ""  # Specific lighting for this style
-
-    def apply_to_prompt(self, scene_prompt: str) -> str:
-        """Wrap a scene prompt with this style's formatting."""
-        return f"{self.prompt_prefix}\n\n{scene_prompt}\n\n{self.prompt_suffix}"
 
 
 # =============================================================================
@@ -174,13 +169,6 @@ class StoryOutline:
             if name_lower in bible.name.lower():
                 return bible
         return None
-
-    def get_all_style_tags(self) -> list[str]:
-        """Get unified style tags from all characters."""
-        all_tags = set()
-        for bible in self.character_bibles:
-            all_tags.update(bible.style_tags)
-        return list(all_tags)
 
 
 @dataclass

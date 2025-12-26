@@ -53,14 +53,13 @@ class SpreadIllustrator:
         - Clear style specification without conflicts
         - Identity locking for character consistency
         """
-        # Get style info
-        if outline.illustration_style:
-            style = outline.illustration_style
-            style_direction = style.prompt_prefix
-            lighting = style.lighting_direction or "soft diffused natural light with gentle shadows"
-        else:
-            style_direction = "Children's book illustration with warm, inviting colors"
-            lighting = "soft golden hour lighting with gentle shadows"
+        # Get style info (style is always set by OutlineGenerator)
+        if not outline.illustration_style:
+            raise ValueError("illustration_style is required - OutlineGenerator should always set this")
+
+        style = outline.illustration_style
+        style_direction = style.prompt_prefix
+        lighting = style.lighting_direction or "soft diffused natural light with gentle shadows"
 
         # Build concise, narrative prompt (Nano Banana Pro prefers <25 words for core direction)
         prompt = f"""{style_direction}, 16:9 double-page spread composition.

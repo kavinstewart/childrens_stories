@@ -129,9 +129,9 @@ class TestSpreadIllustratorReal:
             illustration_style=StyleDefinition(
                 name="Simple Cartoon",
                 description="Clean cartoon style",
-                prompt_prefix="Children's book illustration, simple cartoon style.",
-                prompt_suffix="Clean lines, warm colors, appealing to children.",
+                prompt_prefix="Children's book illustration in simple cartoon style with clean lines and warm colors",
                 best_for=["animals"],
+                lighting_direction="soft even studio lighting",
             ),
             style_rationale="Simple style for simple story",
         )

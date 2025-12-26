@@ -55,9 +55,9 @@ def sample_style():
     return StyleDefinition(
         name="Watercolor",
         description="Soft watercolor style",
-        prompt_prefix="Watercolor children's book illustration.",
-        prompt_suffix="Soft edges, warm colors.",
+        prompt_prefix="Watercolor children's book illustration with soft edges and warm colors",
         best_for=["nature", "emotions"],
+        lighting_direction="soft diffused daylight",
     )
 
 
