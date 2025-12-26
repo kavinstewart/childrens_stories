@@ -78,11 +78,22 @@ class TestCharacterSheetGeneratorReal:
             style_tags=["cute", "cartoon"],
         )
 
-    def test_generates_character_reference(self, simple_character):
+    @pytest.fixture
+    def simple_style(self):
+        """A simple illustration style for testing."""
+        return StyleDefinition(
+            name="Simple Cartoon",
+            description="Clean cartoon style for testing",
+            prompt_prefix="Children's book illustration in simple cartoon style with clean lines",
+            best_for=["animals"],
+            lighting_direction="soft even studio lighting",
+        )
+
+    def test_generates_character_reference(self, simple_character, simple_style):
         """Generates a valid character reference sheet."""
         generator = CharacterSheetGenerator()
 
-        result = generator.generate_reference(simple_character)
+        result = generator.generate_reference(simple_character, simple_style)
 
         # Verify result structure
         assert result.character_name == "Pip"
