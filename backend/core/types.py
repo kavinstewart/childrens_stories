@@ -26,9 +26,10 @@ class StyleDefinition:
 
     name: str
     description: str  # Human-readable description for LLM selection
-    prompt_prefix: str  # Added to start of illustration prompts
-    prompt_suffix: str  # Added to end of illustration prompts
+    prompt_prefix: str  # Concise style direction (1-2 sentences)
+    prompt_suffix: str  # Legacy field, kept for compatibility
     best_for: list[str]  # Story types this style works well for
+    lighting_direction: str = ""  # Specific lighting for this style
 
     def apply_to_prompt(self, scene_prompt: str) -> str:
         """Wrap a scene prompt with this style's formatting."""

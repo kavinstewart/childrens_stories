@@ -44,60 +44,32 @@ class SpreadIllustrator:
         spread: StorySpread,
         outline: StoryOutline,
     ) -> str:
-        """Build the scene description part of the prompt."""
-        # Use selected illustration style if available
+        """
+        Build scene prompt optimized for Nano Banana Pro.
+
+        Follows Google's recommended practices:
+        - Concise narrative description (not keyword lists)
+        - Specific lighting and camera direction
+        - Clear style specification without conflicts
+        - Identity locking for character consistency
+        """
+        # Get style info
         if outline.illustration_style:
             style = outline.illustration_style
-            prompt = f"""{style.prompt_prefix}
-
-Generate illustration for Spread {spread.spread_number} (two facing pages).
-
-SCENE DESCRIPTION:
-{spread.illustration_prompt}
-
-STORY TEXT FOR THIS SPREAD:
-"{spread.text}"
-
-SETTING: {outline.setting}
-
-{style.prompt_suffix}
-
-ADDITIONAL REQUIREMENTS:
-- Single cohesive illustration spanning a double-page spread
-- Horizontal composition suitable for two facing pages
-- Leave space for text (typically top or bottom 20% of image)
-- Characters should be expressive and appealing to children
-- Clear focal point as described in the scene
-- Age-appropriate content
-- No text or words in the image
-- IMPORTANT: Characters must match the reference images provided above exactly"""
+            style_direction = style.prompt_prefix
+            lighting = style.lighting_direction or "soft diffused natural light with gentle shadows"
         else:
-            # Fallback to old style if no illustration style selected
-            style_tags = outline.get_all_style_tags()
-            style_str = ", ".join(style_tags) if style_tags else "children's book illustration, warm colors, soft lighting"
+            style_direction = "Children's book illustration with warm, inviting colors"
+            lighting = "soft golden hour lighting with gentle shadows"
 
-            prompt = f"""Generate a children's picture book illustration for Spread {spread.spread_number} (two facing pages).
+        # Build concise, narrative prompt (Nano Banana Pro prefers <25 words for core direction)
+        prompt = f"""{style_direction}, 16:9 double-page spread composition.
 
-SCENE DESCRIPTION:
-{spread.illustration_prompt}
+Scene: {spread.illustration_prompt}
 
-STORY TEXT FOR THIS SPREAD:
-"{spread.text}"
+Setting: {outline.setting}. Lighting: {lighting}.
 
-SETTING: {outline.setting}
-
-STYLE: {style_str}
-
-REQUIREMENTS:
-- Single cohesive illustration spanning a double-page spread
-- Horizontal composition suitable for two facing pages
-- Leave space for text (typically top or bottom 20% of image)
-- Characters should be expressive and appealing to children
-- Warm, inviting color palette
-- Clear focal point as described in the scene
-- Age-appropriate content
-- No text or words in the image
-- IMPORTANT: Characters must match the reference images provided above exactly"""
+Wide shot framing with space at bottom for text overlay. Maintain exact character identity from reference images above. No text or words in the image."""
 
         return prompt
 
@@ -146,6 +118,7 @@ REQUIREMENTS:
         outline: StoryOutline,
         reference_sheets: Optional[StoryReferenceSheets] = None,
         debug: bool = False,
+        on_progress: callable = None,
     ) -> list[StorySpread]:
         """
         Generate illustrations for all spreads in a story (typically 12).
@@ -155,15 +128,20 @@ REQUIREMENTS:
             outline: The story outline with character bibles
             reference_sheets: Character reference images
             debug: Print progress info
+            on_progress: Optional callback(stage, detail, completed, total) for progress updates
 
         Returns:
             List of StorySpread objects with illustration_image populated
         """
         import sys
 
+        total_spreads = len(spreads)
         for i, spread in enumerate(spreads):
             if debug:
-                print(f"Illustrating spread {spread.spread_number} of {len(spreads)}...", file=sys.stderr)
+                print(f"Illustrating spread {spread.spread_number} of {total_spreads}...", file=sys.stderr)
+
+            if on_progress:
+                on_progress("illustrations", f"Illustrating spread {spread.spread_number}...", i, total_spreads)
 
             try:
                 image_bytes = self.illustrate_spread(
@@ -181,6 +159,10 @@ REQUIREMENTS:
                 if debug:
                     print(f"  Spread {spread.spread_number}: FAILED - {e}", file=sys.stderr)
                 spread.illustration_image = None
+
+        # Final progress update
+        if on_progress:
+            on_progress("illustrations", "All illustrations complete", total_spreads, total_spreads)
 
         return spreads
 
@@ -218,7 +200,11 @@ REQUIREMENTS:
                     if sheet and added_refs < max_refs:
                         pil_image = sheet.to_pil_image()
                         contents.append(pil_image)
-                        contents.append(f"This is {bible.name} - {bible.to_prompt_string()}")
+                        # Identity locking: explicit instruction to maintain exact features
+                        contents.append(
+                            f"CHARACTER REFERENCE for {bible.name}: Use this as strict visual reference. "
+                            f"Maintain exact facial features, proportions, and clothing. {bible.to_prompt_string()}"
+                        )
                         added_refs += 1
 
         contents.append(scene_prompt)
@@ -316,6 +302,7 @@ REQUIREMENTS:
         reference_sheets: Optional[StoryReferenceSheets] = None,
         max_attempts_per_spread: int = 3,
         debug: bool = False,
+        on_progress: callable = None,
     ) -> Tuple[list[StorySpread], dict]:
         """
         Generate illustrations for all spreads with QA (typically 12 images).
@@ -326,6 +313,7 @@ REQUIREMENTS:
             reference_sheets: Character reference images
             max_attempts_per_spread: Max regeneration attempts per spread
             debug: Print progress info
+            on_progress: Optional callback(stage, detail, completed, total) for progress updates
 
         Returns:
             Tuple of (spreads with illustrations, qa_summary dict)
@@ -333,8 +321,9 @@ REQUIREMENTS:
         import sys
         from .image_qa import QAVerdict
 
+        total_spreads = len(spreads)
         qa_summary = {
-            "total_spreads": len(spreads),
+            "total_spreads": total_spreads,
             "passed": 0,
             "failed": 0,
             "total_attempts": 0,
@@ -344,7 +333,10 @@ REQUIREMENTS:
 
         for i, spread in enumerate(spreads):
             if debug:
-                print(f"Illustrating spread {spread.spread_number} of {len(spreads)}...", file=sys.stderr)
+                print(f"Illustrating spread {spread.spread_number} of {total_spreads}...", file=sys.stderr)
+
+            if on_progress:
+                on_progress("illustrations", f"Illustrating spread {spread.spread_number}...", i, total_spreads)
 
             try:
                 image_bytes, qa_result = self.illustrate_spread_with_qa(
@@ -379,6 +371,10 @@ REQUIREMENTS:
                     print(f"  Spread {spread.spread_number}: FAILED - {e}", file=sys.stderr)
                 spread.illustration_image = None
                 qa_summary["failed"] += 1
+
+        # Final progress update
+        if on_progress:
+            on_progress("illustrations", "All illustrations complete", total_spreads, total_spreads)
 
         if debug:
             print(f"\nQA Summary:", file=sys.stderr)
