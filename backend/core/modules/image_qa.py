@@ -65,6 +65,7 @@ class ImageQA:
         min_character_score: int = 4,
         min_scene_score: int = 3,
         max_regeneration_attempts: int = 3,
+        enable_logging: bool = False,
     ):
         """
         Args:
@@ -72,11 +73,13 @@ class ImageQA:
             min_character_score: Minimum character match score 1-5 (default 4)
             min_scene_score: Minimum scene accuracy score 1-5 (default 3)
             max_regeneration_attempts: Max retries before accepting (default 3)
+            enable_logging: Whether to log evaluations for GEPA optimization (default False)
         """
         self.require_text_free = require_text_free
         self.min_character_score = min_character_score
         self.min_scene_score = min_scene_score
         self.max_attempts = max_regeneration_attempts
+        self.enable_logging = enable_logging
 
         # Initialize VLM judge lazily
         self._vlm_judge = None
@@ -85,7 +88,7 @@ class ImageQA:
     def vlm_judge(self) -> VLMJudge:
         """Lazy load VLMJudge."""
         if self._vlm_judge is None:
-            self._vlm_judge = VLMJudge()
+            self._vlm_judge = VLMJudge(enable_logging=self.enable_logging)
         return self._vlm_judge
 
     def evaluate(
@@ -95,6 +98,8 @@ class ImageQA:
         image_id: str = "unknown",
         reference_sheets: Optional[StoryReferenceSheets] = None,
         attempt_number: int = 1,
+        story_id: Optional[str] = None,
+        spread_number: Optional[int] = None,
     ) -> ImageQAResult:
         """
         Run full QA evaluation on an image.
@@ -105,6 +110,8 @@ class ImageQA:
             image_id: Identifier for logging (e.g., "page_01")
             reference_sheets: Character references for consistency check
             attempt_number: Current attempt (for tracking retries)
+            story_id: Optional story ID for evaluation logging
+            spread_number: Optional spread number for evaluation logging
 
         Returns:
             ImageQAResult with verdict and any issues found
@@ -139,6 +146,8 @@ class ImageQA:
             check_text_free=self.require_text_free,
             check_characters=bool(character_refs),
             check_composition=True,
+            story_id=story_id,
+            spread_number=spread_number,
         )
 
         # Check for failures

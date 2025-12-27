@@ -5,15 +5,20 @@ Uses Gemini 3.0 Flash to check specific criteria:
 - Text-free verification
 - Character consistency with references
 - Scene accuracy and composition
+
+Supports optional logging of evaluations for GEPA optimization.
 """
 
 import json
 from dataclasses import dataclass, field
-from typing import Union, Optional
+from typing import Union, Optional, TYPE_CHECKING
 from PIL import Image
 from io import BytesIO
 
 from backend.config import get_image_client
+
+if TYPE_CHECKING:
+    from backend.api.database.vlm_eval_repository import VLMEvalRepository
 
 
 @dataclass
@@ -41,8 +46,9 @@ class VLMJudge:
     - Scene accuracy and composition
     """
 
-    def __init__(self, model: str = "gemini-3.0-flash"):
+    def __init__(self, model: str = "gemini-3.0-flash", enable_logging: bool = False):
         self.model = model
+        self.enable_logging = enable_logging
         self._client = None
 
     @property
@@ -60,6 +66,8 @@ class VLMJudge:
         check_text_free: bool = True,
         check_characters: bool = True,
         check_composition: bool = True,
+        story_id: Optional[str] = None,
+        spread_number: Optional[int] = None,
     ) -> DetailedCheckResult:
         """
         Run detailed VLM evaluation on an image.
@@ -71,6 +79,8 @@ class VLMJudge:
             check_text_free: Whether to check for text in image
             check_characters: Whether to check character consistency
             check_composition: Whether to check composition/style
+            story_id: Optional story ID for logging context
+            spread_number: Optional spread number for logging context
 
         Returns:
             DetailedCheckResult with scores and issues
@@ -117,7 +127,65 @@ class VLMJudge:
         )
 
         # Parse response
-        return self._parse_response(response.text)
+        raw_response = response.text
+        result = self._parse_response(raw_response)
+
+        # Log evaluation if enabled
+        if self.enable_logging:
+            self._log_evaluation(
+                image=image,
+                prompt=prompt,
+                result=result,
+                raw_response=raw_response,
+                character_refs=character_refs,
+                story_id=story_id,
+                spread_number=spread_number,
+                check_text_free=check_text_free,
+                check_characters=check_characters,
+                check_composition=check_composition,
+            )
+
+        return result
+
+    def _log_evaluation(
+        self,
+        image: Image.Image,
+        prompt: str,
+        result: "DetailedCheckResult",
+        raw_response: str,
+        character_refs: Optional[list[tuple[str, Image.Image, str]]],
+        story_id: Optional[str],
+        spread_number: Optional[int],
+        check_text_free: bool,
+        check_characters: bool,
+        check_composition: bool,
+    ) -> None:
+        """Log evaluation to database for later annotation."""
+        import asyncio
+        from backend.api.database.vlm_eval_repository import VLMEvalRepository
+
+        async def _do_log():
+            await VLMEvalRepository.log_evaluation(
+                image=image,
+                prompt=prompt,
+                result=result,
+                raw_response=raw_response,
+                model=self.model,
+                character_refs=character_refs,
+                story_id=story_id,
+                spread_number=spread_number,
+                check_text_free=check_text_free,
+                check_characters=check_characters,
+                check_composition=check_composition,
+            )
+
+        try:
+            loop = asyncio.get_running_loop()
+            # If we're in an async context, create a task
+            loop.create_task(_do_log())
+        except RuntimeError:
+            # No running loop, run synchronously
+            asyncio.run(_do_log())
 
     def _build_evaluation_prompt(
         self,
