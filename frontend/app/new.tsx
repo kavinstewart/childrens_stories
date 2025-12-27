@@ -1,4 +1,4 @@
-import { View, Text, TextInput, Pressable, ScrollView, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, Pressable, ScrollView, ActivityIndicator, StyleProp, ViewStyle } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -14,50 +14,14 @@ import Animated, {
 import { useCreateStory } from '@/features/stories/hooks';
 import { fontFamily } from '@/lib/fonts';
 import { FloatingElement } from '@/components/animations';
-
-// Inspiration prompts - shown as tappable pills, randomized on mount
-const inspirationPrompts = [
-  // Historical events
-  { pill: "Napoleon's Return", prompt: "Napoleon escapes from Elba and marches back to Paris" },
-  { pill: 'French Revolution', prompt: 'The people of France rise up against their king' },
-  { pill: 'Fall of Constantinople', prompt: 'The last day of the great Byzantine city' },
-  { pill: 'Boston Tea Party', prompt: 'Colonists dump tea into the harbor to protest unfair taxes' },
-  { pill: 'Moon Landing', prompt: "Astronauts take humanity's first steps on the moon" },
-  { pill: 'Berlin Wall Falls', prompt: 'The night the wall came down and families reunited' },
-  { pill: 'Silk Road Journey', prompt: 'A merchant travels the ancient trade route between East and West' },
-  // Human body & diseases
-  { pill: 'How Arteries Clog', prompt: 'A journey through blood vessels learning about atherosclerosis' },
-  { pill: "Parkinson's Disease", prompt: "Understanding why grandpa's hands shake" },
-  { pill: 'How Livers Work', prompt: "The body's amazing cleaning factory" },
-  { pill: 'Fighting Cancer', prompt: "How the body's defenders battle rogue cells" },
-  { pill: 'Diabetes Explained', prompt: 'Why some bodies need help with sugar' },
-  { pill: 'How Vaccines Work', prompt: 'Training tiny soldiers to protect the body' },
-  { pill: 'The Beating Heart', prompt: "A day in the life of the body's hardest-working muscle" },
-  // Religious & philosophical
-  { pill: "Arjuna's Dilemma", prompt: "The warrior who didn't want to fight (from the Bhagavad Gita)" },
-  { pill: 'Buddha Under Tree', prompt: 'A prince who gave up everything to find peace' },
-  { pill: 'David vs Goliath', prompt: 'A shepherd boy faces a giant warrior' },
-  { pill: "Noah's Great Boat", prompt: 'Building an ark to save all the animals' },
-  { pill: 'The Good Samaritan', prompt: 'A stranger helps someone everyone else ignored' },
-  { pill: "Muhammad's Journey", prompt: 'The night journey to the heavens' },
-  // Science & nature
-  { pill: 'How Stars Die', prompt: "The spectacular end of a star's life" },
-  { pill: 'Dinosaur Extinction', prompt: 'The day the asteroid changed everything' },
-  { pill: 'How Bees Dance', prompt: 'The secret language of the hive' },
-  { pill: 'Volcano Erupts', prompt: 'What happens deep inside an erupting mountain' },
-  { pill: 'Ice Age Begins', prompt: 'When the world froze over' },
-  // Philosophy & ideas
-  { pill: 'Socrates Questions', prompt: 'The man who asked too many questions' },
-  { pill: "Plato's Cave", prompt: 'Prisoners who only saw shadows' },
-  { pill: 'Golden Rule', prompt: 'The idea that connects all cultures' },
-];
+import { pillColors, inspirationPrompts } from '@/lib/story-prompts';
 
 // Wiggle animation for the create button
 function WiggleButton({ children, enabled, onPress, style }: {
   children: React.ReactNode;
   enabled: boolean;
   onPress: () => void;
-  style?: any;
+  style?: StyleProp<ViewStyle>;
 }) {
   const rotation = useSharedValue(0);
 
@@ -96,17 +60,20 @@ function WiggleButton({ children, enabled, onPress, style }: {
   );
 }
 
-// Helper to shuffle and pick N items from an array
-function pickRandom<T>(arr: T[], count: number): T[] {
+// Helper to shuffle and pick N items from an array, assigning colors
+function pickRandomWithColors<T>(arr: T[], colors: typeof pillColors, count: number): (T & { color: typeof pillColors[0] })[] {
   const shuffled = [...arr].sort(() => Math.random() - 0.5);
-  return shuffled.slice(0, count);
+  return shuffled.slice(0, count).map((item, index) => ({
+    ...item,
+    color: colors[index % colors.length],
+  }));
 }
 
 export default function NewStory() {
   const router = useRouter();
   const [prompt, setPrompt] = useState('');
-  // Pick 4 random inspiration prompts on mount
-  const [visiblePrompts] = useState(() => pickRandom(inspirationPrompts, 4));
+  // Pick 4 random inspiration prompts on mount with colors
+  const [visiblePrompts] = useState(() => pickRandomWithColors(inspirationPrompts, pillColors, 4));
 
   const createStory = useCreateStory();
 
@@ -160,27 +127,16 @@ export default function NewStory() {
             >
               <Text style={{ fontSize: 20 }}>←</Text>
             </Pressable>
+            <Text style={{ fontSize: 24, marginRight: 8 }}>✨</Text>
             <Text
               style={{
                 fontFamily: fontFamily.baloo,
                 fontSize: 28,
-                color: 'transparent',
+                color: '#7C3AED',
               }}
             >
-              {/* Gradient text workaround - we'll use a solid color with emoji */}
+              New Story
             </Text>
-            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <Text style={{ fontSize: 24, marginRight: 8 }}>✨</Text>
-              <Text
-                style={{
-                  fontFamily: fontFamily.baloo,
-                  fontSize: 28,
-                  color: '#7C3AED',
-                }}
-              >
-                New Story
-              </Text>
-            </View>
           </View>
 
           {/* Prompt Input */}
@@ -221,55 +177,46 @@ export default function NewStory() {
             />
           </View>
 
-          {/* Inspiration Pills */}
-          <View
-            style={{
-              backgroundColor: 'rgba(255,255,255,0.8)',
-              borderRadius: 24,
-              padding: 20,
-              marginBottom: 20,
-            }}
-          >
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
-              <Text style={{ fontSize: 20, marginRight: 8 }}>💡</Text>
-              <Text
-                style={{
-                  fontFamily: fontFamily.nunitoBold,
-                  fontSize: 18,
-                  color: '#374151',
-                }}
-              >
-                Quick ideas
-              </Text>
-            </View>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-              {visiblePrompts.map((item) => (
+          {/* Inspiration Pills - colorful, directly under input */}
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 }}>
+            {visiblePrompts.map((item) => {
+              const isSelected = prompt === item.prompt;
+              return (
                 <Pressable
                   key={item.pill}
                   onPress={() => setPrompt(item.prompt)}
-                  style={({ pressed }) => ({
-                    flexShrink: 0,
-                    backgroundColor: prompt === item.prompt ? '#FEF3C7' : '#F3F4F6',
-                    paddingHorizontal: 16,
-                    paddingVertical: 10,
-                    borderRadius: 16,
-                    borderWidth: 1,
-                    borderColor: prompt === item.prompt ? '#FBBF24' : 'transparent',
-                    transform: [{ scale: pressed ? 0.95 : 1 }],
-                  })}
                 >
-                  <Text
-                    style={{
-                      fontFamily: fontFamily.nunitoSemiBold,
-                      fontSize: 14,
-                      color: prompt === item.prompt ? '#B45309' : '#4B5563',
-                    }}
-                  >
-                    {item.pill}
-                  </Text>
+                  {({ pressed }) => (
+                    <View
+                      style={{
+                        backgroundColor: isSelected ? item.color.selectedBg : item.color.bg,
+                        paddingHorizontal: 18,
+                        paddingVertical: 12,
+                        borderRadius: 20,
+                        borderWidth: 2,
+                        borderColor: isSelected ? item.color.text : item.color.border,
+                        transform: [{ scale: pressed ? 0.95 : 1 }],
+                        shadowColor: item.color.text,
+                        shadowOffset: { width: 0, height: 2 },
+                        shadowOpacity: isSelected ? 0.3 : 0.15,
+                        shadowRadius: 4,
+                        elevation: isSelected ? 4 : 2,
+                      }}
+                    >
+                      <Text
+                        style={{
+                          fontFamily: fontFamily.nunitoBold,
+                          fontSize: 15,
+                          color: item.color.text,
+                        }}
+                      >
+                        {item.pill}
+                      </Text>
+                    </View>
+                  )}
                 </Pressable>
-              ))}
-            </View>
+              );
+            })}
           </View>
 
           {/* Error Message */}
