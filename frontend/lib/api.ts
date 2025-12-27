@@ -92,10 +92,6 @@ export interface StoryListResponse {
 
 export interface CreateStoryRequest {
   goal: string;
-  target_age_range?: string;
-  generation_type?: GenerationType;
-  quality_threshold?: number;
-  max_attempts?: number;
 }
 
 export interface CreateStoryResponse {

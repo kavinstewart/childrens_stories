@@ -18,14 +18,13 @@ class StoryService:
     def __init__(self, repo: StoryRepository):
         self.repo = repo
 
-    async def create_story_job(
-        self,
-        goal: str,
-        target_age_range: str,
-        generation_type: str,
-        quality_threshold: int,
-        max_attempts: int,
-    ) -> str:
+    # Hardcoded generation defaults (not exposed via API)
+    DEFAULT_TARGET_AGE_RANGE = "4-7"
+    DEFAULT_GENERATION_TYPE = "illustrated"
+    DEFAULT_QUALITY_THRESHOLD = 7
+    DEFAULT_MAX_ATTEMPTS = 3
+
+    async def create_story_job(self, goal: str) -> str:
         """
         Create a new story generation job.
 
@@ -41,8 +40,8 @@ class StoryService:
         await self.repo.create_story(
             story_id=story_id,
             goal=goal,
-            target_age_range=target_age_range,
-            generation_type=generation_type,
+            target_age_range=self.DEFAULT_TARGET_AGE_RANGE,
+            generation_type=self.DEFAULT_GENERATION_TYPE,
             llm_model=llm_model,
         )
 
@@ -52,10 +51,10 @@ class StoryService:
             self._run_generation_sync,
             story_id,
             goal,
-            target_age_range,
-            generation_type,
-            quality_threshold,
-            max_attempts,
+            self.DEFAULT_TARGET_AGE_RANGE,
+            self.DEFAULT_GENERATION_TYPE,
+            self.DEFAULT_QUALITY_THRESHOLD,
+            self.DEFAULT_MAX_ATTEMPTS,
         )
 
         return story_id

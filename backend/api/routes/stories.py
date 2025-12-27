@@ -29,13 +29,7 @@ router = APIRouter()
 )
 async def create_story(request: CreateStoryRequest, service: Service):
     """Start a new story generation job."""
-    story_id = await service.create_story_job(
-        goal=request.goal,
-        target_age_range=request.target_age_range,
-        generation_type=request.generation_type.value,
-        quality_threshold=request.quality_threshold,
-        max_attempts=request.max_attempts,
-    )
+    story_id = await service.create_story_job(goal=request.goal)
 
     return CreateStoryResponse(
         id=story_id,

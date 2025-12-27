@@ -12,24 +12,44 @@ import Animated, {
   Easing,
 } from 'react-native-reanimated';
 import { useCreateStory } from '@/features/stories/hooks';
-import { GenerationType } from '@/lib/api';
 import { fontFamily } from '@/lib/fonts';
 import { FloatingElement } from '@/components/animations';
 
-// Themes with gradient colors for selected state
-const themes = [
-  { id: 'kindness', label: 'Kindness', icon: '💕', hint: 'being kind and helpful', colors: ['#F472B6', '#E11D48'] },
-  { id: 'bravery', label: 'Bravery', icon: '🦁', hint: 'overcoming fears', colors: ['#FBBF24', '#F97316'] },
-  { id: 'sharing', label: 'Sharing', icon: '🤝', hint: 'learning to share with others', colors: ['#34D399', '#14B8A6'] },
-  { id: 'creativity', label: 'Creativity', icon: '🎨', hint: 'using imagination', colors: ['#A78BFA', '#8B5CF6'] },
-  { id: 'friendship', label: 'Friendship', icon: '🌟', hint: 'making and keeping friends', colors: ['#38BDF8', '#3B82F6'] },
-  { id: 'patience', label: 'Patience', icon: '🐢', hint: 'learning to wait', colors: ['#A3E635', '#22C55E'] },
-];
-
-const generationTypes: { id: GenerationType; label: string; description: string }[] = [
-  { id: 'simple', label: 'Quick', description: 'Fast generation, ~1 min' },
-  { id: 'standard', label: 'Standard', description: 'Quality checked, ~3 min' },
-  { id: 'illustrated', label: 'Illustrated', description: 'With pictures, ~10 min' },
+// Inspiration prompts - shown as tappable pills, randomized on mount
+const inspirationPrompts = [
+  // Historical events
+  { pill: "Napoleon's Return", prompt: "Napoleon escapes from Elba and marches back to Paris" },
+  { pill: 'French Revolution', prompt: 'The people of France rise up against their king' },
+  { pill: 'Fall of Constantinople', prompt: 'The last day of the great Byzantine city' },
+  { pill: 'Boston Tea Party', prompt: 'Colonists dump tea into the harbor to protest unfair taxes' },
+  { pill: 'Moon Landing', prompt: "Astronauts take humanity's first steps on the moon" },
+  { pill: 'Berlin Wall Falls', prompt: 'The night the wall came down and families reunited' },
+  { pill: 'Silk Road Journey', prompt: 'A merchant travels the ancient trade route between East and West' },
+  // Human body & diseases
+  { pill: 'How Arteries Clog', prompt: 'A journey through blood vessels learning about atherosclerosis' },
+  { pill: "Parkinson's Disease", prompt: "Understanding why grandpa's hands shake" },
+  { pill: 'How Livers Work', prompt: "The body's amazing cleaning factory" },
+  { pill: 'Fighting Cancer', prompt: "How the body's defenders battle rogue cells" },
+  { pill: 'Diabetes Explained', prompt: 'Why some bodies need help with sugar' },
+  { pill: 'How Vaccines Work', prompt: 'Training tiny soldiers to protect the body' },
+  { pill: 'The Beating Heart', prompt: "A day in the life of the body's hardest-working muscle" },
+  // Religious & philosophical
+  { pill: "Arjuna's Dilemma", prompt: "The warrior who didn't want to fight (from the Bhagavad Gita)" },
+  { pill: 'Buddha Under Tree', prompt: 'A prince who gave up everything to find peace' },
+  { pill: 'David vs Goliath', prompt: 'A shepherd boy faces a giant warrior' },
+  { pill: "Noah's Great Boat", prompt: 'Building an ark to save all the animals' },
+  { pill: 'The Good Samaritan', prompt: 'A stranger helps someone everyone else ignored' },
+  { pill: "Muhammad's Journey", prompt: 'The night journey to the heavens' },
+  // Science & nature
+  { pill: 'How Stars Die', prompt: "The spectacular end of a star's life" },
+  { pill: 'Dinosaur Extinction', prompt: 'The day the asteroid changed everything' },
+  { pill: 'How Bees Dance', prompt: 'The secret language of the hive' },
+  { pill: 'Volcano Erupts', prompt: 'What happens deep inside an erupting mountain' },
+  { pill: 'Ice Age Begins', prompt: 'When the world froze over' },
+  // Philosophy & ideas
+  { pill: 'Socrates Questions', prompt: 'The man who asked too many questions' },
+  { pill: "Plato's Cave", prompt: 'Prisoners who only saw shadows' },
+  { pill: 'Golden Rule', prompt: 'The idea that connects all cultures' },
 ];
 
 // Wiggle animation for the create button
@@ -76,32 +96,27 @@ function WiggleButton({ children, enabled, onPress, style }: {
   );
 }
 
+// Helper to shuffle and pick N items from an array
+function pickRandom<T>(arr: T[], count: number): T[] {
+  const shuffled = [...arr].sort(() => Math.random() - 0.5);
+  return shuffled.slice(0, count);
+}
+
 export default function NewStory() {
   const router = useRouter();
   const [prompt, setPrompt] = useState('');
-  const [selectedTheme, setSelectedTheme] = useState<string | null>(null);
-  const [generationType, setGenerationType] = useState<GenerationType>('illustrated');
+  // Pick 4 random inspiration prompts on mount
+  const [visiblePrompts] = useState(() => pickRandom(inspirationPrompts, 4));
 
   const createStory = useCreateStory();
 
-  const canCreate = prompt.trim().length > 0 || selectedTheme;
+  const canCreate = prompt.trim().length > 0;
 
   const handleCreate = async () => {
-    // Build the goal from prompt and theme
-    let goal = prompt.trim();
-    if (selectedTheme) {
-      const theme = themes.find(t => t.id === selectedTheme);
-      if (theme && !goal.toLowerCase().includes(selectedTheme)) {
-        goal = goal ? `${goal} (theme: ${theme.hint})` : `A story about ${theme.hint}`;
-      }
-    }
+    const goal = prompt.trim();
 
     try {
-      const result = await createStory.mutateAsync({
-        goal,
-        generation_type: generationType,
-        target_age_range: '4-7',
-      });
+      const result = await createStory.mutateAsync({ goal });
 
       // Navigate to the creating screen to show progress
       router.replace(`/creating/${result.id}`);
@@ -110,7 +125,6 @@ export default function NewStory() {
     }
   };
 
-  const selectedThemeData = themes.find(t => t.id === selectedTheme);
 
   return (
     <LinearGradient
@@ -191,7 +205,7 @@ export default function NewStory() {
             <TextInput
               value={prompt}
               onChangeText={setPrompt}
-              placeholder="A brave little mouse who dreams of becoming a chef..."
+              placeholder="A story about..."
               placeholderTextColor="#9CA3AF"
               multiline
               style={{
@@ -201,13 +215,13 @@ export default function NewStory() {
                 backgroundColor: '#F9FAFB',
                 borderRadius: 16,
                 padding: 16,
-                minHeight: 120,
+                minHeight: 100,
                 textAlignVertical: 'top',
               }}
             />
           </View>
 
-          {/* Theme Selection */}
+          {/* Inspiration Pills */}
           <View
             style={{
               backgroundColor: 'rgba(255,255,255,0.8)',
@@ -216,179 +230,43 @@ export default function NewStory() {
               marginBottom: 20,
             }}
           >
-            <Text
-              style={{
-                fontFamily: fontFamily.nunitoBold,
-                fontSize: 18,
-                color: '#374151',
-                marginBottom: 12,
-              }}
-            >
-              Pick a lesson to learn{' '}
-              <Text style={{ fontFamily: fontFamily.nunito, color: '#9CA3AF' }}>(optional)</Text>
-            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
+              <Text style={{ fontSize: 20, marginRight: 8 }}>💡</Text>
+              <Text
+                style={{
+                  fontFamily: fontFamily.nunitoBold,
+                  fontSize: 18,
+                  color: '#374151',
+                }}
+              >
+                Quick ideas
+              </Text>
+            </View>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-              {themes.map((theme) => {
-                const isSelected = selectedTheme === theme.id;
-                return (
-                  <Pressable
-                    key={theme.id}
-                    onPress={() => setSelectedTheme(isSelected ? null : theme.id)}
-                    style={({ pressed }) => ({
-                      transform: [{ scale: pressed ? 0.95 : 1 }],
-                    })}
-                  >
-                    {isSelected ? (
-                      <LinearGradient
-                        colors={theme.colors as [string, string]}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 0 }}
-                        style={{
-                          flexDirection: 'row',
-                          alignItems: 'center',
-                          gap: 8,
-                          paddingHorizontal: 16,
-                          paddingVertical: 10,
-                          borderRadius: 20,
-                          shadowColor: theme.colors[1],
-                          shadowOffset: { width: 0, height: 2 },
-                          shadowOpacity: 0.3,
-                          shadowRadius: 4,
-                          elevation: 4,
-                        }}
-                      >
-                        <Text style={{ fontSize: 16 }}>{theme.icon}</Text>
-                        <Text
-                          style={{
-                            fontFamily: fontFamily.nunitoSemiBold,
-                            color: 'white',
-                          }}
-                        >
-                          {theme.label}
-                        </Text>
-                      </LinearGradient>
-                    ) : (
-                      <View
-                        style={{
-                          flexDirection: 'row',
-                          alignItems: 'center',
-                          gap: 8,
-                          paddingHorizontal: 16,
-                          paddingVertical: 10,
-                          borderRadius: 20,
-                          backgroundColor: '#F3F4F6',
-                        }}
-                      >
-                        <Text style={{ fontSize: 16 }}>{theme.icon}</Text>
-                        <Text
-                          style={{
-                            fontFamily: fontFamily.nunitoSemiBold,
-                            color: '#4B5563',
-                          }}
-                        >
-                          {theme.label}
-                        </Text>
-                      </View>
-                    )}
-                  </Pressable>
-                );
-              })}
-            </View>
-          </View>
-
-          {/* Inspiration tip */}
-          <View
-            style={{
-              backgroundColor: 'rgba(251, 191, 36, 0.15)',
-              borderRadius: 16,
-              padding: 16,
-              marginBottom: 20,
-              borderWidth: 1,
-              borderColor: 'rgba(251, 191, 36, 0.3)',
-            }}
-          >
-            <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12 }}>
-              <Text style={{ fontSize: 24 }}>💡</Text>
-              <View style={{ flex: 1 }}>
-                <Text
-                  style={{
-                    fontFamily: fontFamily.nunitoSemiBold,
-                    color: '#B45309',
-                    marginBottom: 4,
-                  }}
-                >
-                  Need inspiration?
-                </Text>
-                <Text
-                  style={{
-                    fontFamily: fontFamily.nunito,
-                    color: '#D97706',
-                    fontSize: 14,
-                  }}
-                >
-                  Try: "A penguin who's afraid of water" or "Two best friends on a treasure hunt"
-                </Text>
-              </View>
-            </View>
-          </View>
-
-          {/* Generation Type */}
-          <View
-            style={{
-              backgroundColor: 'rgba(255,255,255,0.8)',
-              borderRadius: 24,
-              padding: 20,
-              marginBottom: 20,
-            }}
-          >
-            <Text
-              style={{
-                fontFamily: fontFamily.nunitoBold,
-                fontSize: 18,
-                color: '#374151',
-                marginBottom: 12,
-              }}
-            >
-              Generation mode
-            </Text>
-            <View style={{ gap: 12 }}>
-              {generationTypes.map((type) => (
+              {visiblePrompts.map((item) => (
                 <Pressable
-                  key={type.id}
-                  onPress={() => setGenerationType(type.id)}
-                  style={{
-                    padding: 16,
+                  key={item.pill}
+                  onPress={() => setPrompt(item.prompt)}
+                  style={({ pressed }) => ({
+                    flexShrink: 0,
+                    backgroundColor: prompt === item.prompt ? '#FEF3C7' : '#F3F4F6',
+                    paddingHorizontal: 16,
+                    paddingVertical: 10,
                     borderRadius: 16,
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    backgroundColor: generationType === type.id ? '#EDE9FE' : '#F9FAFB',
-                    borderWidth: 2,
-                    borderColor: generationType === type.id ? '#8B5CF6' : 'transparent',
-                  }}
+                    borderWidth: 1,
+                    borderColor: prompt === item.prompt ? '#FBBF24' : 'transparent',
+                    transform: [{ scale: pressed ? 0.95 : 1 }],
+                  })}
                 >
-                  <View>
-                    <Text
-                      style={{
-                        fontFamily: fontFamily.nunitoBold,
-                        fontSize: 16,
-                        color: generationType === type.id ? '#6D28D9' : '#374151',
-                      }}
-                    >
-                      {type.label}
-                    </Text>
-                    <Text
-                      style={{
-                        fontFamily: fontFamily.nunito,
-                        color: '#6B7280',
-                      }}
-                    >
-                      {type.description}
-                    </Text>
-                  </View>
-                  {generationType === type.id && (
-                    <Text style={{ fontSize: 20 }}>✓</Text>
-                  )}
+                  <Text
+                    style={{
+                      fontFamily: fontFamily.nunitoSemiBold,
+                      fontSize: 14,
+                      color: prompt === item.prompt ? '#B45309' : '#4B5563',
+                    }}
+                  >
+                    {item.pill}
+                  </Text>
                 </Pressable>
               ))}
             </View>
@@ -495,7 +373,7 @@ export default function NewStory() {
                 textAlign: 'center',
               }}
             >
-              Tell me about your story or pick a theme to get started
+              Tell me about your story or tap an idea above
             </Text>
           )}
         </ScrollView>
