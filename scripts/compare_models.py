@@ -8,8 +8,8 @@ sys.path.insert(0, '/Users/kavinstewart/Desktop/projects/childrens_stories')
 from dotenv import load_dotenv
 load_dotenv('/Users/kavinstewart/Desktop/projects/childrens_stories/.env')
 
-import dspy
-from backend.core.programs.story_generator import StoryGenerator
+import dspy  # noqa: E402
+from backend.core.programs.story_generator import StoryGenerator  # noqa: E402
 
 goal = "a story that teaches kids that feedback is frustrating to receive but that it's super important to be able to get it in order to improve"
 

@@ -14,12 +14,12 @@ load_dotenv(find_dotenv())
 if not os.getenv("API_KEY"):
     os.environ["API_KEY"] = "test-api-key-for-unit-tests"
 
-from backend.api.main import app
-from backend.api.database.db import init_db
-from backend.api.database.repository import StoryRepository
-from backend.api.services.story_service import StoryService
-from backend.api.dependencies import get_repository, get_story_service, verify_api_key
-from backend.api import config
+from backend.api.main import app  # noqa: E402
+from backend.api.database.db import init_db  # noqa: E402
+from backend.api.database.repository import StoryRepository  # noqa: E402
+from backend.api.services.story_service import StoryService  # noqa: E402
+from backend.api.dependencies import get_repository, get_story_service, verify_api_key  # noqa: E402
+from backend.api import config  # noqa: E402
 
 
 @pytest.fixture

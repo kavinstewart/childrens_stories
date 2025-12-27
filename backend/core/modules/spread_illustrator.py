@@ -13,10 +13,13 @@ Supports optional QA with automatic regeneration:
 """
 
 import re
-from typing import Optional, Tuple
+from typing import TYPE_CHECKING, Optional, Tuple
 
 from backend.config import get_image_client, get_image_model, get_image_config, IMAGE_CONSTANTS, extract_image_from_response
 from ..types import StoryOutline, StorySpread, StoryReferenceSheets
+
+if TYPE_CHECKING:
+    from .image_qa import ImageQAResult
 
 
 class SpreadIllustrator:
@@ -281,7 +284,7 @@ Wide shot framing with space at bottom for text overlay. Maintain exact characte
             # Check if should regenerate
             if not qa_result.should_regenerate:
                 if debug:
-                    print(f"    Max attempts reached, accepting with issues", file=sys.stderr)
+                    print("    Max attempts reached, accepting with issues", file=sys.stderr)
                 return image_bytes, qa_result
 
             # Get enhanced prompt for retry
@@ -289,7 +292,7 @@ Wide shot framing with space at bottom for text overlay. Maintain exact characte
             if regen_request:
                 prompt = regen_request.enhanced_prompt
                 if debug:
-                    print(f"    Regenerating with enhanced prompt...", file=sys.stderr)
+                    print("    Regenerating with enhanced prompt...", file=sys.stderr)
 
         # Return last attempt if all failed
         return image_bytes, qa_result
@@ -376,7 +379,7 @@ Wide shot framing with space at bottom for text overlay. Maintain exact characte
             on_progress("illustrations", "All illustrations complete", total_spreads, total_spreads)
 
         if debug:
-            print(f"\nQA Summary:", file=sys.stderr)
+            print("\nQA Summary:", file=sys.stderr)
             print(f"  Passed: {qa_summary['passed']}/{qa_summary['total_spreads']}", file=sys.stderr)
             print(f"  Regenerations: {qa_summary['regenerations']}", file=sys.stderr)
             if qa_summary["issues_by_type"]:

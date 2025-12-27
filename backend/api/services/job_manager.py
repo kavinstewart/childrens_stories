@@ -1,6 +1,6 @@
 """Background job manager using ThreadPoolExecutor."""
 
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 import threading
 from typing import Callable
 

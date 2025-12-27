@@ -10,8 +10,8 @@ from fastapi.security import APIKeyHeader
 # Load .env from project root (find_dotenv searches parent directories)
 load_dotenv(find_dotenv())
 
-from .database.repository import StoryRepository
-from .services.story_service import StoryService
+from .database.repository import StoryRepository  # noqa: E402
+from .services.story_service import StoryService  # noqa: E402
 
 
 # API Key authentication

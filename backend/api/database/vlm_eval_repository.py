@@ -2,12 +2,9 @@
 
 import json
 import uuid
-from dataclasses import asdict
 from datetime import datetime
-from pathlib import Path
 from typing import Optional
 
-import aiosqlite
 from PIL import Image
 
 from .db import get_db
