@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .database.db import init_db
-from .routes import stories
+from .routes import stories, admin
 from .services.job_manager import job_manager
 
 
@@ -50,6 +50,7 @@ app.add_middleware(
 
 # Include routers
 app.include_router(stories.router, prefix="/stories", tags=["Stories"])
+app.include_router(admin.router, prefix="/admin", tags=["Admin"])
 
 
 @app.get("/health", tags=["Health"])
