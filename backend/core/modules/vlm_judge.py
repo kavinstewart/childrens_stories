@@ -1,7 +1,7 @@
 """
 VLM-as-Judge wrapper for detailed image evaluation.
 
-Uses Gemini 2.0 Flash to check specific criteria:
+Uses Gemini 3.0 Flash to check specific criteria:
 - Text-free verification
 - Character consistency with references
 - Scene accuracy and composition
@@ -33,7 +33,7 @@ class DetailedCheckResult:
 
 class VLMJudge:
     """
-    Detailed image evaluation using VLM (Gemini 2.0 Flash).
+    Detailed image evaluation using VLM (Gemini 3.0 Flash).
 
     Checks specific criteria that VQAScore might miss:
     - Text-free verification (critical for children's books)
@@ -41,7 +41,7 @@ class VLMJudge:
     - Scene accuracy and composition
     """
 
-    def __init__(self, model: str = "gemini-2.0-flash"):
+    def __init__(self, model: str = "gemini-3.0-flash"):
         self.model = model
         self._client = None
 
