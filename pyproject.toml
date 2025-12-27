@@ -39,10 +39,12 @@ asyncio_mode = "auto"
 
 [tool.mypy]
 python_version = "3.11"
-ignore_missing_imports = true
 warn_return_any = false
 warn_unused_ignores = false
-check_untyped_defs = false
+
+[[tool.mypy.overrides]]
+module = "dspy.*"
+ignore_missing_imports = true
 
 [tool.ruff]
 line-length = 120
