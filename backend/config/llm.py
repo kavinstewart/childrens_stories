@@ -12,7 +12,7 @@ Includes:
 
 import os
 import logging
-from dotenv import load_dotenv
+from dotenv import find_dotenv, load_dotenv
 import dspy
 from tenacity import (
     retry,
@@ -22,8 +22,8 @@ from tenacity import (
     before_sleep_log,
 )
 
-# Load environment variables from .env file
-load_dotenv()
+# Load environment variables from .env file (find_dotenv searches parent directories)
+load_dotenv(find_dotenv())
 
 # Logging for retry attempts
 logger = logging.getLogger(__name__)

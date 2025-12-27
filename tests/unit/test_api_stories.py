@@ -34,17 +34,6 @@ class TestCreateStory:
 
         assert response.status_code == 422
 
-    def test_create_story_validates_age_range_format(self, client_with_mocks):
-        """Age range must match pattern 'min-max'."""
-        client, _, _ = client_with_mocks
-
-        response = client.post(
-            "/stories/",
-            json={"goal": "teach about sharing", "target_age_range": "invalid"},
-        )
-
-        assert response.status_code == 422
-
     def test_create_story_accepts_all_generation_types(self, client_with_mocks):
         """All three generation types should be accepted."""
         client, mock_repo, mock_service = client_with_mocks

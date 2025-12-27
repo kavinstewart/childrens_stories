@@ -5,12 +5,12 @@ Uses Nano Banana Pro (Gemini 3 Pro Image) for illustration generation.
 """
 
 import os
-from dotenv import load_dotenv
+from dotenv import find_dotenv, load_dotenv
 from google import genai
 from google.genai.types import GenerateContentConfig, Modality
 
-# Load environment variables from .env file
-load_dotenv()
+# Load environment variables from .env file (find_dotenv searches parent directories)
+load_dotenv(find_dotenv())
 
 # Image generation constants
 IMAGE_CONSTANTS = {

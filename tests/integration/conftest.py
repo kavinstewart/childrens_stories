@@ -2,10 +2,10 @@
 
 import os
 import pytest
-from dotenv import load_dotenv
+from dotenv import find_dotenv, load_dotenv
 
-# Load environment variables
-load_dotenv()
+# Load environment variables (find_dotenv searches parent directories)
+load_dotenv(find_dotenv())
 
 
 def pytest_configure(config):

@@ -1,15 +1,24 @@
 """Pytest fixtures for API tests."""
 
+import os
 import pytest
 from unittest.mock import AsyncMock
 
+from dotenv import find_dotenv, load_dotenv
 from fastapi.testclient import TestClient
+
+# Load environment variables (find_dotenv searches parent directories)
+load_dotenv(find_dotenv())
+
+# Set a test API key if not already set (needed for auth)
+if not os.getenv("API_KEY"):
+    os.environ["API_KEY"] = "test-api-key-for-unit-tests"
 
 from backend.api.main import app
 from backend.api.database.db import init_db
 from backend.api.database.repository import StoryRepository
 from backend.api.services.story_service import StoryService
-from backend.api.dependencies import get_repository, get_story_service
+from backend.api.dependencies import get_repository, get_story_service, verify_api_key
 from backend.api import config
 
 
@@ -59,6 +68,8 @@ def client_with_mocks(mock_repository, mock_service):
     """TestClient with mocked dependencies."""
     app.dependency_overrides[get_repository] = lambda: mock_repository
     app.dependency_overrides[get_story_service] = lambda: mock_service
+    # Bypass auth for unit tests
+    app.dependency_overrides[verify_api_key] = lambda: "test-api-key"
 
     with TestClient(app) as client:
         yield client, mock_repository, mock_service
