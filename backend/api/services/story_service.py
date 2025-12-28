@@ -107,7 +107,6 @@ class StoryService:
         """Actual story generation with DB updates and progress tracking."""
         # Import here to avoid circular imports and slow startup
         # Using absolute imports to survive directory restructure
-        import dspy
         from backend.core.programs.story_generator import StoryGenerator
         from backend.config import get_inference_lm
 

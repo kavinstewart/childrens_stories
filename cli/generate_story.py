@@ -18,7 +18,7 @@ from pathlib import Path
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from backend.config import configure_dspy, STORY_CONSTANTS
+from backend.config import configure_dspy
 from backend.core.programs.story_generator import StoryGenerator
 
 
@@ -106,7 +106,6 @@ Examples:
     generator = StoryGenerator(
         quality_threshold=args.quality_threshold,
         max_attempts=args.max_attempts,
-        words_per_page=args.words_per_page,
     )
 
     # Generate story

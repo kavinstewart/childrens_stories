@@ -343,9 +343,9 @@ class GeneratedStory:
             lines.append("---")
             lines.append("")
 
-        lines.append(f"*The End*")
+        lines.append("*The End*")
         lines.append("")
-        lines.append(f"---")
+        lines.append("---")
         lines.append(f"Word count: {self.word_count}")
         lines.append(f"Spreads: {self.spread_count}")
         lines.append(f"Illustrated: {'Yes' if self.is_illustrated else 'No'}")

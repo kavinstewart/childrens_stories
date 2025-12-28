@@ -12,9 +12,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 import dspy
-from backend.config import configure_dspy, get_inference_lm, get_reflection_lm
+from backend.config import configure_dspy, get_reflection_lm
 from backend.core.modules.outline_generator import OutlineGenerator
-from backend.core.modules.page_generator import PageGenerator
 from backend.core.signatures.page_writer import PageWriterSignature
 
 
