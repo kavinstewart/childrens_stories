@@ -43,7 +43,12 @@ warn_return_any = false
 warn_unused_ignores = false
 
 [[tool.mypy.overrides]]
-module = "dspy.*"
+module = [
+    "dspy.*",
+    "google.genai.*",
+    "tenacity.*",
+    "clip.*",
+]
 ignore_missing_imports = true
 
 [tool.ruff]
