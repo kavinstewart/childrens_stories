@@ -19,10 +19,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from PIL import Image
+from PIL import Image  # noqa: E402
 
-from backend.core.modules.image_qa import ImageQA, QAVerdict
-from backend.core.types import StoryReferenceSheets, CharacterReferenceSheet
+from backend.core.modules.image_qa import ImageQA, QAVerdict  # noqa: E402
+from backend.core.types import StoryReferenceSheets, CharacterReferenceSheet  # noqa: E402
 
 
 def get_story_by_id_or_title(db_path: Path, identifier: str) -> dict | None:
@@ -226,15 +226,15 @@ def run_vlm_qa(story_identifier: str, enable_logging: bool = True):
         style_scores = [r.detailed_check.style_score for _, r in results if r.detailed_check]
 
         if char_scores:
-            print(f"\nAverage Scores:")
+            print("\nAverage Scores:")
             print(f"  Character Consistency: {sum(char_scores)/len(char_scores):.1f}/5")
             print(f"  Scene Accuracy: {sum(scene_scores)/len(scene_scores):.1f}/5")
             print(f"  Composition: {sum(comp_scores)/len(comp_scores):.1f}/5")
             print(f"  Style: {sum(style_scores)/len(style_scores):.1f}/5")
 
     if enable_logging:
-        print(f"\n📝 Evaluations logged to database for human annotation")
-        print(f"   Run the API and check /admin/vlm-evaluations to annotate")
+        print("\n📝 Evaluations logged to database for human annotation")
+        print("   Run the API and check /admin/vlm-evaluations to annotate")
 
 
 if __name__ == "__main__":

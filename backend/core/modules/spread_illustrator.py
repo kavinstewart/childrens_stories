@@ -36,12 +36,6 @@ class SpreadIllustrator:
         self.model = get_image_model()
         self.config = get_image_config()
 
-    def _extract_character_names(self, text: str) -> list[str]:
-        """Extract character names mentioned in text."""
-        # Simple extraction - looks for capitalized words that might be names
-        words = re.findall(r'\b[A-Z][a-z]+\b', text)
-        return list(set(words))
-
     def _build_scene_prompt(
         self,
         spread: StorySpread,
@@ -123,7 +117,7 @@ Wide shot framing with space at bottom for text overlay. Maintain exact characte
         on_progress: callable = None,
     ) -> list[StorySpread]:
         """
-        Generate illustrations for all spreads in a story (typically 12).
+        Generate illustrations for all spreads in a story in parallel (typically 12).
 
         Args:
             spreads: List of story spreads
@@ -136,31 +130,51 @@ Wide shot framing with space at bottom for text overlay. Maintain exact characte
             List of StorySpread objects with illustration_image populated
         """
         import sys
+        import concurrent.futures
 
         total_spreads = len(spreads)
-        for i, spread in enumerate(spreads):
-            if debug:
-                print(f"Illustrating spread {spread.spread_number} of {total_spreads}...", file=sys.stderr)
 
-            if on_progress:
-                on_progress("illustrations", f"Illustrating spread {spread.spread_number}...", i, total_spreads)
+        if on_progress:
+            on_progress("illustrations", f"Generating {total_spreads} spread illustrations...", 0, total_spreads)
 
+        def illustrate_one(spread):
+            """Generate illustration for a single spread."""
             try:
                 image_bytes = self.illustrate_spread(
                     spread=spread,
                     outline=outline,
                     reference_sheets=reference_sheets,
-                    debug=debug,
+                    debug=False,  # Disable per-spread debug in parallel mode
                 )
-                spread.illustration_image = image_bytes
-
-                if debug:
-                    print(f"  Spread {spread.spread_number}: Generated {len(image_bytes)} bytes", file=sys.stderr)
-
+                return spread.spread_number, image_bytes, None
             except Exception as e:
-                if debug:
-                    print(f"  Spread {spread.spread_number}: FAILED - {e}", file=sys.stderr)
-                spread.illustration_image = None
+                return spread.spread_number, None, e
+
+        # Generate all spread illustrations in parallel
+        # Use up to 6 workers to avoid overwhelming the API
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(total_spreads, 6)) as executor:
+            futures = {executor.submit(illustrate_one, spread): spread for spread in spreads}
+
+            completed = 0
+            for future in concurrent.futures.as_completed(futures):
+                spread_num, image_bytes, error = future.result()
+                completed += 1
+
+                # Find the spread and update it
+                for spread in spreads:
+                    if spread.spread_number == spread_num:
+                        if image_bytes:
+                            spread.illustration_image = image_bytes
+                            if debug:
+                                print(f"  Done ({completed}/{total_spreads}): Spread {spread_num} ({len(image_bytes)} bytes)", file=sys.stderr)
+                        else:
+                            spread.illustration_image = None
+                            if debug:
+                                print(f"  FAILED ({completed}/{total_spreads}): Spread {spread_num} - {error}", file=sys.stderr)
+                        break
+
+                if on_progress:
+                    on_progress("illustrations", f"Illustrated spread {spread_num}", completed, total_spreads)
 
         # Final progress update
         if on_progress:
@@ -170,6 +184,21 @@ Wide shot framing with space at bottom for text overlay. Maintain exact characte
 
     # === QA-ENABLED METHODS ===
 
+    def _extract_character_names(self, text: str) -> list[str]:
+        words = re.findall(r'\b[A-Z][a-z]+\b', text)
+        return list(set(words))
+
+    def _get_characters_for_spread(self, spread: StorySpread, outline: StoryOutline) -> list[str]:
+        if spread.present_characters is not None:
+            return spread.present_characters
+        mentioned_names = self._extract_character_names(spread.illustration_prompt + ' ' + spread.text)
+        matched_characters = []
+        for bible in outline.character_bibles:
+            is_mentioned = any(name.lower() in bible.name.lower() for name in mentioned_names)
+            if is_mentioned:
+                matched_characters.append(bible.name)
+        return matched_characters
+
     def _build_contents(
         self,
         spread: StorySpread,
@@ -177,37 +206,39 @@ Wide shot framing with space at bottom for text overlay. Maintain exact characte
         reference_sheets: Optional[StoryReferenceSheets],
         scene_prompt: str,
     ) -> list:
-        """Build multimodal contents list for image generation."""
+        """Build multimodal contents list for image generation.
+
+        Uses spread.present_characters to determine which character reference
+        sheets to include. Falls back to mention-based detection for backwards
+        compatibility with stories that don't have present_characters populated.
+        """
         contents = []
 
-        # Add character reference images first (if available)
+        # Add character reference images for characters present in this spread
         if reference_sheets and reference_sheets.character_sheets:
-            # Get character names mentioned in this spread
-            mentioned_names = self._extract_character_names(
-                spread.illustration_prompt + " " + spread.text
-            )
+            # Get characters that should appear in this spread
+            characters_in_spread = self._get_characters_for_spread(spread, outline)
 
-            # Add reference images for mentioned characters
             added_refs = 0
             max_refs = IMAGE_CONSTANTS["max_reference_images"]
 
-            for bible in outline.character_bibles:
-                is_mentioned = any(
-                    name.lower() in bible.name.lower()
-                    for name in mentioned_names
-                )
+            for char_name in characters_in_spread:
+                if added_refs >= max_refs:
+                    break
 
-                if is_mentioned or added_refs < 3:
-                    sheet = reference_sheets.get_sheet(bible.name)
-                    if sheet and added_refs < max_refs:
-                        pil_image = sheet.to_pil_image()
-                        contents.append(pil_image)
-                        # Identity locking: explicit instruction to maintain exact features
-                        contents.append(
-                            f"CHARACTER REFERENCE for {bible.name}: Use this as strict visual reference. "
-                            f"Maintain exact facial features, proportions, and clothing. {bible.to_prompt_string()}"
-                        )
-                        added_refs += 1
+                # Find matching character bible and reference sheet
+                bible = outline.get_character_bible(char_name)
+                sheet = reference_sheets.get_sheet(char_name)
+
+                if sheet and bible:
+                    pil_image = sheet.to_pil_image()
+                    contents.append(pil_image)
+                    # Identity locking: explicit instruction to maintain exact features
+                    contents.append(
+                        f"CHARACTER REFERENCE for {bible.name}: Use this as strict visual reference. "
+                        f"Maintain exact facial features, proportions, and clothing. {bible.to_prompt_string()}"
+                    )
+                    added_refs += 1
 
         contents.append(scene_prompt)
         return contents
@@ -307,7 +338,7 @@ Wide shot framing with space at bottom for text overlay. Maintain exact characte
         on_progress: callable = None,
     ) -> Tuple[list[StorySpread], dict]:
         """
-        Generate illustrations for all spreads with QA (typically 12 images).
+        Generate illustrations for all spreads with QA in parallel (typically 12 images).
 
         Args:
             spreads: List of story spreads
@@ -321,6 +352,8 @@ Wide shot framing with space at bottom for text overlay. Maintain exact characte
             Tuple of (spreads with illustrations, qa_summary dict)
         """
         import sys
+        import concurrent.futures
+        import threading
         from .image_qa import QAVerdict
 
         total_spreads = len(spreads)
@@ -332,47 +365,69 @@ Wide shot framing with space at bottom for text overlay. Maintain exact characte
             "regenerations": 0,
             "issues_by_type": {},
         }
+        summary_lock = threading.Lock()
 
-        for i, spread in enumerate(spreads):
-            if debug:
-                print(f"Illustrating spread {spread.spread_number} of {total_spreads}...", file=sys.stderr)
+        if on_progress:
+            on_progress("illustrations", f"Generating {total_spreads} spread illustrations with QA...", 0, total_spreads)
 
-            if on_progress:
-                on_progress("illustrations", f"Illustrating spread {spread.spread_number}...", i, total_spreads)
-
+        def illustrate_one_with_qa(spread):
+            """Generate illustration with QA for a single spread."""
             try:
                 image_bytes, qa_result = self.illustrate_spread_with_qa(
                     spread=spread,
                     outline=outline,
                     reference_sheets=reference_sheets,
                     max_attempts=max_attempts_per_spread,
-                    debug=debug,
+                    debug=False,  # Disable per-spread debug in parallel mode
                 )
-                spread.illustration_image = image_bytes
-
-                # Update summary
-                qa_summary["total_attempts"] += qa_result.attempt_number
-                if qa_result.attempt_number > 1:
-                    qa_summary["regenerations"] += qa_result.attempt_number - 1
-
-                if qa_result.verdict == QAVerdict.PASS:
-                    qa_summary["passed"] += 1
-                else:
-                    qa_summary["failed"] += 1
-                    verdict_type = qa_result.verdict.value
-                    qa_summary["issues_by_type"][verdict_type] = (
-                        qa_summary["issues_by_type"].get(verdict_type, 0) + 1
-                    )
-
-                if debug:
-                    print(f"  Spread {spread.spread_number}: {qa_result.verdict.value} "
-                          f"(attempt {qa_result.attempt_number})", file=sys.stderr)
-
+                return spread.spread_number, image_bytes, qa_result, None
             except Exception as e:
-                if debug:
-                    print(f"  Spread {spread.spread_number}: FAILED - {e}", file=sys.stderr)
-                spread.illustration_image = None
-                qa_summary["failed"] += 1
+                return spread.spread_number, None, None, e
+
+        # Generate all spread illustrations in parallel with QA
+        # Use up to 6 workers to avoid overwhelming the API
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(total_spreads, 6)) as executor:
+            futures = {executor.submit(illustrate_one_with_qa, spread): spread for spread in spreads}
+
+            completed = 0
+            for future in concurrent.futures.as_completed(futures):
+                spread_num, image_bytes, qa_result, error = future.result()
+                completed += 1
+
+                # Find the spread and update it
+                for spread in spreads:
+                    if spread.spread_number == spread_num:
+                        if image_bytes and qa_result:
+                            spread.illustration_image = image_bytes
+
+                            # Update summary (thread-safe)
+                            with summary_lock:
+                                qa_summary["total_attempts"] += qa_result.attempt_number
+                                if qa_result.attempt_number > 1:
+                                    qa_summary["regenerations"] += qa_result.attempt_number - 1
+
+                                if qa_result.verdict == QAVerdict.PASS:
+                                    qa_summary["passed"] += 1
+                                else:
+                                    qa_summary["failed"] += 1
+                                    verdict_type = qa_result.verdict.value
+                                    qa_summary["issues_by_type"][verdict_type] = (
+                                        qa_summary["issues_by_type"].get(verdict_type, 0) + 1
+                                    )
+
+                            if debug:
+                                print(f"  Done ({completed}/{total_spreads}): Spread {spread_num} - "
+                                      f"{qa_result.verdict.value} (attempt {qa_result.attempt_number})", file=sys.stderr)
+                        else:
+                            spread.illustration_image = None
+                            with summary_lock:
+                                qa_summary["failed"] += 1
+                            if debug:
+                                print(f"  FAILED ({completed}/{total_spreads}): Spread {spread_num} - {error}", file=sys.stderr)
+                        break
+
+                if on_progress:
+                    on_progress("illustrations", f"Illustrated spread {spread_num}", completed, total_spreads)
 
         # Final progress update
         if on_progress:

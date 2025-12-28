@@ -95,7 +95,7 @@ Layout: Front view, 3/4 view, side profile (all full body), plus 4 expression he
         on_progress: callable = None,
     ) -> StoryReferenceSheets:
         """
-        Generate reference images for all characters in a story.
+        Generate reference images for all characters in a story (in parallel).
 
         Args:
             outline: Story outline containing character bibles
@@ -106,6 +106,7 @@ Layout: Front view, 3/4 view, side profile (all full body), plus 4 expression he
             StoryReferenceSheets containing all character reference images
         """
         import sys
+        import concurrent.futures
 
         sheets = StoryReferenceSheets(story_title=outline.title)
 
@@ -116,23 +117,36 @@ Layout: Front view, 3/4 view, side profile (all full body), plus 4 expression he
         if debug and illustration_style:
             print(f"Using illustration style: {illustration_style.name}", file=sys.stderr)
 
-        for i, bible in enumerate(outline.character_bibles):
-            if debug:
-                print(f"Generating reference for character {i+1}/{total_characters}: {bible.name}", file=sys.stderr)
+        if on_progress:
+            on_progress("character_refs", f"Generating {total_characters} character references...", 0, total_characters)
 
-            if on_progress:
-                on_progress("character_refs", f"Creating {bible.name}...", i, total_characters)
-
+        def generate_one(bible):
+            """Generate reference for a single character."""
             try:
                 sheet = self.generate_reference(bible, illustration_style)
-                sheets.character_sheets[bible.name] = sheet
-
-                if debug:
-                    print(f"  Done: {bible.name} ({len(sheet.reference_image)} bytes)", file=sys.stderr)
-
+                return bible.name, sheet, None
             except Exception as e:
-                if debug:
-                    print(f"  FAILED: {bible.name} - {e}", file=sys.stderr)
+                return bible.name, None, e
+
+        # Generate all character references in parallel
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(total_characters, 4)) as executor:
+            futures = {executor.submit(generate_one, bible): bible for bible in outline.character_bibles}
+
+            completed = 0
+            for future in concurrent.futures.as_completed(futures):
+                name, sheet, error = future.result()
+                completed += 1
+
+                if sheet:
+                    sheets.character_sheets[name] = sheet
+                    if debug:
+                        print(f"  Done ({completed}/{total_characters}): {name} ({len(sheet.reference_image)} bytes)", file=sys.stderr)
+                else:
+                    if debug:
+                        print(f"  FAILED ({completed}/{total_characters}): {name} - {error}", file=sys.stderr)
+
+                if on_progress:
+                    on_progress("character_refs", f"Created {name}", completed, total_characters)
 
         # Final progress update
         if on_progress:

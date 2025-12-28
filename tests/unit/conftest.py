@@ -18,7 +18,7 @@ from backend.api.main import app  # noqa: E402
 from backend.api.database.db import init_db  # noqa: E402
 from backend.api.database.repository import StoryRepository  # noqa: E402
 from backend.api.services.story_service import StoryService  # noqa: E402
-from backend.api.dependencies import get_repository, get_story_service, verify_api_key  # noqa: E402
+from backend.api.dependencies import get_repository, get_story_service  # noqa: E402
 from backend.api import config  # noqa: E402
 
 
@@ -68,8 +68,6 @@ def client_with_mocks(mock_repository, mock_service):
     """TestClient with mocked dependencies."""
     app.dependency_overrides[get_repository] = lambda: mock_repository
     app.dependency_overrides[get_story_service] = lambda: mock_service
-    # Bypass auth for unit tests
-    app.dependency_overrides[verify_api_key] = lambda: "test-api-key"
 
     with TestClient(app) as client:
         yield client, mock_repository, mock_service

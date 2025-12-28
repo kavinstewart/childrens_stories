@@ -186,6 +186,9 @@ class StorySpread:
     illustration_prompt: str = ""
     illustration_image: Optional[bytes] = None  # Generated illustration for this spread
     was_revised: bool = False  # Backwards compatibility
+    # Characters visually present in this spread's illustration (explicit from LLM)
+    # Required for illustration - DirectStoryGenerator must populate this field
+    present_characters: Optional[list[str]] = None
 
     @property
     def page_number(self) -> int:

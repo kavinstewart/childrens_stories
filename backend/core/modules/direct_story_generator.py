@@ -43,7 +43,10 @@ class DirectStoryGenerator(dspy.Module):
             return "No reference examples provided."
 
         examples = get_random_examples(count=self.example_count)
-        parts = ["Study these examples for rhythm, sentence length, and read-aloud quality:\n"]
+        parts = [
+            "Study these examples for rhythm, sentence length, and read-aloud quality.",
+            "Pay special attention to HOW THEY END—notice they don't explain, they just land:\n"
+        ]
 
         for example in examples:
             parts.append(f'--- "{example.title}" by {example.author} ---')
@@ -51,6 +54,29 @@ class DirectStoryGenerator(dspy.Module):
             parts.append(f"--- End ({example.word_count} words) ---\n")
 
         return "\n".join(parts)
+
+    def _parse_characters_field(self, characters_str: str) -> list[str] | None:
+        """
+        Parse the [Characters: ...] field into a list of character names.
+
+        Returns:
+            List of character names, empty list if "none", or None if not parseable.
+        """
+        if not characters_str:
+            return None
+
+        characters_str = characters_str.strip()
+
+        # Handle explicit "none" or empty
+        if characters_str.lower() in ("none", "n/a", "no one", "nobody", "empty", ""):
+            return []
+
+        # Split by comma and clean up
+        names = [name.strip() for name in characters_str.split(",")]
+        # Filter out empty strings and "none" values
+        names = [n for n in names if n and n.lower() not in ("none", "n/a")]
+
+        return names if names else []
 
     def _parse_story_output(self, raw_output: str) -> tuple[str, list[StorySpread]]:
         """
@@ -90,6 +116,14 @@ class DirectStoryGenerator(dspy.Module):
                 # Remove illustration prompt from text
                 content = content[:illust_match.start()] + content[illust_match.end():]
 
+            # Extract present characters if present (new field)
+            present_characters = None
+            chars_match = re.search(r'\[Characters:\s*(.+?)\]', content, re.DOTALL)
+            if chars_match:
+                present_characters = self._parse_characters_field(chars_match.group(1))
+                # Remove characters field from text
+                content = content[:chars_match.start()] + content[chars_match.end():]
+
             text = content.strip()
 
             spreads.append(StorySpread(
@@ -97,6 +131,7 @@ class DirectStoryGenerator(dspy.Module):
                 text=text,
                 word_count=len(text.split()),
                 illustration_prompt=illustration_prompt,
+                present_characters=present_characters,
             ))
 
         # Sort by spread number

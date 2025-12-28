@@ -3,7 +3,7 @@
 import shutil
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, HTTPException, status, Query
 from fastapi.responses import FileResponse
 
 from ..models.requests import CreateStoryRequest

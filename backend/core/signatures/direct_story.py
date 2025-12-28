@@ -15,7 +15,7 @@ class DirectStorySignature(dspy.Signature):
 
     Write like the classics: Frog and Toad, Harold and the Purple Crayon,
     Last Stop on Market Street. Simple sentences. Real emotions.
-    No lessons announced aloud.
+    The meaning is FELT through what characters do and see, never announced.
 
     STRUCTURE:
     - 12 spreads (a spread = two facing pages when the book is open)
@@ -23,11 +23,25 @@ class DirectStorySignature(dspy.Signature):
     - Target age: 4-7 years old
 
     PACING:
-    - Spread 1: Hook. Establish character and situation.
+    - Spread 1: Hook. Establish character, situation, and emotional stakes.
     - Spreads 2-4: The character wants something or tries something.
-    - Spreads 5-8: Complications. Things don't go as planned.
-    - Spreads 9-10: Climax. The turning point.
-    - Spreads 11-12: Resolution. How things have changed.
+    - Spreads 5-8: Complications. Things don't go as planned. Tension builds.
+    - Spreads 9-10: Climax. The protagonist makes a choice or has a realization.
+    - Spreads 11-12: Resolution. See below.
+
+    THE ENDING (critical):
+    Study how the reference examples END. Notice: they don't explain.
+    They land on one image, one action, one moment—and stop.
+
+    Your ending must:
+    - Echo the opening. Return to the same place, image, or phrase—but shifted.
+    - Show, don't tell. No narration explaining what changed or what it meant.
+    - Give the protagonist agency. Their choice or realization drives the turn.
+    - Leave room. The best endings open a door, not close it. Let the weight speak.
+    - Linger. Ask: what single image stays with the child after the book closes?
+
+    For weighty stories (loss, courage, sacrifice): let silence carry the meaning.
+    The feeling should echo after the last word. Don't rush. Don't explain.
 
     READ-ALOUD QUALITY:
     - Short sentences (max 12 words)
@@ -39,11 +53,19 @@ class DirectStorySignature(dspy.Signature):
 
     Spread 1: [text]
     [Illustration: what to draw]
+    [Characters: comma-separated names of characters VISIBLE in the illustration]
 
     Spread 2: [text]
     [Illustration: what to draw]
+    [Characters: comma-separated names of characters VISIBLE in the illustration]
 
     ... through Spread 12
+
+    IMPORTANT for [Characters:] field:
+    - List ONLY characters who should be VISIBLE in the illustration
+    - If a character hasn't appeared yet in the story, do NOT include them
+    - A spread showing "an empty room" has Characters: none
+    - Be precise: if the text says "soldiers grumbled" but the General hasn't arrived yet, don't list the General
     """
 
     goal: str = dspy.InputField(
@@ -55,17 +77,20 @@ class DirectStorySignature(dspy.Signature):
     )
 
     story: str = dspy.OutputField(
-        desc="""Complete story with title and illustration notes.
+        desc="""Complete story with title, illustration notes, and character presence.
 Format:
 TITLE: [title]
 
 Spread 1: [story text]
 [Illustration: scene description]
+[Characters: names of characters visible in this illustration, or "none"]
 
 Spread 2: [story text]
 [Illustration: scene description]
+[Characters: names visible in illustration]
 
 ... through Spread 12.
 
-Each spread: 25-35 words. Total: 300-400 words."""
+Each spread: 25-35 words. Total: 300-400 words.
+Characters field must list ONLY characters who appear in THAT spread's illustration."""
     )

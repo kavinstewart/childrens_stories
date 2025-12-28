@@ -141,12 +141,34 @@ class StoryGenerator(dspy.Module):
                 debug=True,
             )
 
-            # Step 4: Select illustration style
+            # Steps 4 & 5: Select illustration style AND judge quality (in parallel)
+            import concurrent.futures
+
             story_summary = f"{title}. {story_text[:500]}..."
-            style_result = llm_retry(self.style_selector)(
-                story_summary=story_summary,
-                available_styles=get_all_styles_for_selection(),
-            )
+
+            def select_style():
+                result = llm_retry(self.style_selector)(
+                    story_summary=story_summary,
+                    available_styles=get_all_styles_for_selection(),
+                )
+                return result
+
+            def judge_quality():
+                if skip_quality_loop:
+                    return None
+                return llm_retry(self.quality_judge)(
+                    story_text=story_text,
+                    original_goal=goal,
+                    target_age_range=target_age_range,
+                )
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+                style_future = executor.submit(select_style)
+                judge_future = executor.submit(judge_quality)
+
+                style_result = style_future.result()
+                judgment = judge_future.result()
+
             selected_style_name = style_result.selected_style.strip().lower()
             illustration_style = get_style_by_name(selected_style_name)
 
@@ -164,15 +186,6 @@ class StoryGenerator(dspy.Module):
                 illustration_style=illustration_style,
                 style_rationale=style_result.style_rationale,
             )
-
-            # Step 5: Judge quality (with retry for network errors)
-            judgment = None
-            if not skip_quality_loop:
-                judgment = llm_retry(self.quality_judge)(
-                    story_text=story_text,
-                    original_goal=goal,
-                    target_age_range=target_age_range,
-                )
 
             story = GeneratedStory(
                 title=title,
