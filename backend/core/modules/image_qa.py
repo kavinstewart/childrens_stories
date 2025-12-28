@@ -153,10 +153,10 @@ class ImageQA:
         # Check for failures
         dc = result.detailed_check
 
-        # Text-free check (highest priority for children's books)
-        if self.require_text_free and not dc.text_free:
+        # Overlay text check (captions, title cards, story text - NOT scene-appropriate text)
+        if self.require_text_free and dc.has_overlay_text:
             result.verdict = QAVerdict.FAIL_HAS_TEXT
-            result.failure_reasons.append(f"Text detected in image: {dc.text_detected}")
+            result.failure_reasons.append(f"Overlay text detected in image: {dc.overlay_text_detected}")
             result.should_regenerate = attempt_number < self.max_attempts
             return result
 

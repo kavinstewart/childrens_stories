@@ -1,8 +1,8 @@
 """
 VLM-as-Judge wrapper for detailed image evaluation.
 
-Uses Gemini 3.0 Flash to check specific criteria:
-- Text-free verification
+Uses Gemini 3 Flash to check specific criteria:
+- Overlay text detection (captions, titles, story text - NOT scene-appropriate text like signs/documents)
 - Character consistency with references
 - Scene accuracy and composition
 
@@ -18,14 +18,17 @@ from io import BytesIO
 from backend.config import get_image_client
 
 if TYPE_CHECKING:
-    from backend.api.database.vlm_eval_repository import VLMEvalRepository
+    pass
 
 
 @dataclass
 class DetailedCheckResult:
     """Result from VLM detailed check."""
-    text_free: bool = True             # No text/words in image
-    text_detected: str = "none"        # Description of any text found
+    has_overlay_text: bool = False     # Text that looks like captions/titles/story text
+    overlay_text_detected: str = "none"  # Description of overlay text found
+    # Legacy fields for backwards compatibility
+    text_free: bool = True             # Inverse of has_overlay_text
+    text_detected: str = "none"        # Alias for overlay_text_detected
     character_match_score: int = 5     # 1-5
     character_issues: list[str] = field(default_factory=list)
     scene_accuracy_score: int = 5      # 1-5
@@ -38,15 +41,16 @@ class DetailedCheckResult:
 
 class VLMJudge:
     """
-    Detailed image evaluation using VLM (Gemini 3.0 Flash).
+    Detailed image evaluation using VLM (Gemini 3 Flash).
 
     Checks specific criteria that VQAScore might miss:
-    - Text-free verification (critical for children's books)
+    - Overlay text detection (captions, title cards, story text meant for the page)
+      Note: Scene-appropriate text (signs, documents, newspapers) is OK
     - Character consistency with reference images
     - Scene accuracy and composition
     """
 
-    def __init__(self, model: str = "gemini-3.0-flash", enable_logging: bool = False):
+    def __init__(self, model: str = "gemini-3-flash-preview", enable_logging: bool = False):
         self.model = model
         self.enable_logging = enable_logging
         self._client = None
@@ -205,8 +209,8 @@ Respond with valid JSON only. No markdown, no explanation, just the JSON object.
         json_fields = []
 
         if check_text_free:
-            json_fields.append('''"text_free": true/false (true if NO text, words, letters, numbers, signs, or writing visible anywhere in the image),
-"text_detected": "description of any text found, or 'none'"''')
+            json_fields.append('''"has_overlay_text": true/false (true ONLY if the image contains text that looks like it's meant to be story text, captions, title cards, or page labels - NOT scene-appropriate text like signs on buildings, writing on documents characters hold, newspapers, posters in the background, etc. Scene text is FINE and should be marked false.),
+"overlay_text_detected": "description of any overlay-style text found, or 'none' if only scene-appropriate text or no text at all"''')
 
         if check_characters:
             json_fields.append('''"reference_hair_style": "describe EXACTLY the hair style in REFERENCE (e.g. 'two pigtails with red ties', 'short bob', 'long ponytail')",
@@ -285,9 +289,21 @@ Respond with valid JSON only. No markdown, no explanation, just the JSON object.
                 if ref_age and scene_age:
                     character_issues.append(f"Age mismatch: reference looks '{ref_age}', scene looks '{scene_age}'")
 
+            # Handle new overlay text fields, with fallback to legacy field names
+            has_overlay = data.get("has_overlay_text", False)
+            overlay_desc = data.get("overlay_text_detected", "none")
+
+            # Fallback: if old fields present and new ones missing, use old logic inverted
+            if "has_overlay_text" not in data and "text_free" in data:
+                has_overlay = not data.get("text_free", True)
+                overlay_desc = data.get("text_detected", "none")
+
             return DetailedCheckResult(
-                text_free=data.get("text_free", True),
-                text_detected=data.get("text_detected", "none"),
+                has_overlay_text=has_overlay,
+                overlay_text_detected=overlay_desc,
+                # Keep legacy fields in sync for backwards compatibility
+                text_free=not has_overlay,
+                text_detected=overlay_desc,
                 character_match_score=character_score,
                 character_issues=character_issues,
                 scene_accuracy_score=int(data.get("scene_accuracy_score", 5)),
@@ -300,6 +316,8 @@ Respond with valid JSON only. No markdown, no explanation, just the JSON object.
         except (json.JSONDecodeError, KeyError, ValueError) as e:
             # If parsing fails, assume pass but flag the issue
             return DetailedCheckResult(
+                has_overlay_text=False,
+                overlay_text_detected="[parse error]",
                 text_free=True,
                 text_detected="[parse error]",
                 character_match_score=3,

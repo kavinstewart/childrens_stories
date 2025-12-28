@@ -71,7 +71,7 @@ Scene: {spread.illustration_prompt}
 
 Setting: {outline.setting}. Lighting: {lighting}.
 
-Wide shot framing with space at bottom for text overlay. Maintain exact character identity from reference images above. No text or words in the image."""
+Wide shot framing with space at bottom for text overlay. Maintain exact character identity from reference images above."""
 
         return prompt
 
