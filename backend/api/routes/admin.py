@@ -2,14 +2,13 @@
 
 import base64
 import json
-from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from ..database.vlm_eval_repository import VLMEvalRepository, VLM_EVALS_DIR
+from ..database.vlm_eval_repository import VLMEvalRepository
 from ..config import DATA_DIR
 
 
