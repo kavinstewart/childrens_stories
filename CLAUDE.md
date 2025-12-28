@@ -106,6 +106,12 @@ optimized = optimizer.compile(program, trainset=train, valset=val)
 - Maintain state: `bd update <id> --status in_progress|open|blocked`, `bd close <id> --reason "..."`
 - Model dependencies: `bd dep add <parent> <child>`, inspect with `bd dep tree <id>`
 
+## Package Management
+- **IMPORTANT**: This project uses Poetry for dependency management
+- Always use `poetry add <package>` to add dependencies (never `pip install`)
+- Run Python code with `poetry run python <script>` or `poetry run pytest`
+- Check dependencies with `poetry show`
+
 ## Development Workflow
 1. **Implement baseline** - Get end-to-end pipeline working without optimization
 2. **Create training data** - Goals + reference stories for optimization
