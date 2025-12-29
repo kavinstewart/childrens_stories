@@ -1,44 +1,78 @@
-"""SQLite database connection management."""
+"""PostgreSQL database connection management using SQLAlchemy async."""
 
-import aiosqlite
-from pathlib import Path
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Optional
 
-from ..config import DB_PATH
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import DeclarativeBase
 
-SCHEMA_PATH = Path(__file__).parent / "schema.sql"
+from ..config import DATABASE_URL
+
+
+class Base(DeclarativeBase):
+    """SQLAlchemy declarative base for all models."""
+
+    pass
+
+
+# Create async engine (only if DATABASE_URL is configured)
+# Pool settings optimized for story generation workload
+engine: Optional[AsyncEngine] = None
+async_session_factory: Optional[async_sessionmaker[AsyncSession]] = None
+
+if DATABASE_URL:
+    engine = create_async_engine(
+        DATABASE_URL,
+        echo=False,  # Set to True for SQL debugging
+        pool_size=5,
+        max_overflow=10,
+        pool_pre_ping=True,  # Verify connections before use
+    )
+
+    # Session factory
+    async_session_factory = async_sessionmaker(
+        engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+
+
+def _check_configured():
+    """Raise an error if the database is not configured."""
+    if engine is None or async_session_factory is None:
+        raise RuntimeError(
+            "Database not configured. Set DATABASE_URL environment variable "
+            "to a PostgreSQL connection string."
+        )
 
 
 async def init_db() -> None:
-    """Initialize database with schema."""
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-
-    async with aiosqlite.connect(DB_PATH) as db:
-        # Enable foreign keys
-        await db.execute("PRAGMA foreign_keys = ON")
-
-        # Execute schema
-        schema = SCHEMA_PATH.read_text()
-        await db.executescript(schema)
-
-        # Migrations: Add columns if they don't exist
-        cursor = await db.execute("PRAGMA table_info(stories)")
-        columns = [row[1] for row in await cursor.fetchall()]
-
-        if "llm_model" not in columns:
-            await db.execute("ALTER TABLE stories ADD COLUMN llm_model TEXT")
-
-        if "progress_json" not in columns:
-            await db.execute("ALTER TABLE stories ADD COLUMN progress_json TEXT")
-
-        await db.commit()
+    """Initialize database - create all tables."""
+    _check_configured()
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
 
 
 @asynccontextmanager
-async def get_db() -> AsyncGenerator[aiosqlite.Connection, None]:
-    """Async context manager for database connection."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        await db.execute("PRAGMA foreign_keys = ON")
-        yield db
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    """Async context manager for database sessions."""
+    _check_configured()
+    async with async_session_factory() as session:
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+
+
+async def get_session() -> AsyncGenerator[AsyncSession, None]:
+    """Dependency injection helper for FastAPI."""
+    _check_configured()
+    async with async_session_factory() as session:
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise

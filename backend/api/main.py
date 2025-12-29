@@ -1,21 +1,33 @@
 """FastAPI application for the Children's Story Generator."""
 
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .database.db import init_db
+from .auth.routes import router as auth_router
+from .config import DATABASE_URL
 from .routes import stories, admin
 from .services.job_manager import job_manager
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan - startup and shutdown."""
-    # Startup: Initialize database
-    await init_db()
+    # Startup: Initialize database (only if DATABASE_URL is configured)
+    if DATABASE_URL:
+        from .database.db import init_db
+
+        await init_db()
+        logger.info("Database initialized")
+    else:
+        logger.warning("DATABASE_URL not set - database not initialized")
+
     yield
+
     # Shutdown: Clean up job manager
     job_manager.shutdown(wait=True)
 
@@ -49,6 +61,7 @@ app.add_middleware(
 )
 
 # Include routers
+app.include_router(auth_router)  # No prefix - already has /auth
 app.include_router(stories.router, prefix="/stories", tags=["Stories"])
 app.include_router(admin.router, prefix="/admin", tags=["Admin"])
 

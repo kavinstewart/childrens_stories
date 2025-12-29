@@ -1,13 +1,15 @@
 """Progress tracker for story generation."""
 
 import json
-import sqlite3
 import time
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
-from ..config import DB_PATH
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import create_async_engine
+
+from ..config import DATABASE_URL
 
 logger = logging.getLogger(__name__)
 
@@ -25,8 +27,7 @@ class ProgressTracker:
     """
     Tracks and persists story generation progress.
 
-    Uses synchronous SQLite writes since we're running in a background thread.
-    Includes debouncing to limit DB writes.
+    Uses async PostgreSQL writes. Includes debouncing to limit DB writes.
     """
 
     def __init__(
@@ -41,7 +42,11 @@ class ProgressTracker:
         self.last_stage: Optional[str] = None
         self.warnings: list[str] = []
 
-    def update(
+        # Create a dedicated engine for progress updates
+        # This avoids issues with sharing connections across threads
+        self._engine = create_async_engine(DATABASE_URL, pool_size=1)
+
+    async def update_async(
         self,
         stage: str,
         detail: str,
@@ -50,7 +55,7 @@ class ProgressTracker:
         **kwargs,
     ) -> None:
         """
-        Update progress synchronously.
+        Update progress asynchronously.
 
         Args:
             stage: Current pipeline stage
@@ -89,12 +94,40 @@ class ProgressTracker:
         if self.warnings:
             counters["warnings"] = self.warnings.copy()
 
-        # Write to DB synchronously
-        self._write_progress(stage, detail, percentage, counters)
+        # Write to DB asynchronously
+        await self._write_progress_async(stage, detail, percentage, counters)
 
         # Update tracking state
         self.last_update_time = now
         self.last_stage = stage
+
+    def update(
+        self,
+        stage: str,
+        detail: str,
+        completed: Optional[int] = None,
+        total: Optional[int] = None,
+        **kwargs,
+    ) -> None:
+        """
+        Update progress synchronously (for use in sync code paths).
+
+        This runs the async update in a new event loop iteration.
+        For background thread usage, prefer using update_async directly.
+        """
+        import asyncio
+
+        try:
+            loop = asyncio.get_running_loop()
+            # We're in an async context, schedule the update
+            asyncio.create_task(
+                self.update_async(stage, detail, completed, total, **kwargs)
+            )
+        except RuntimeError:
+            # No running loop - create one for this call
+            asyncio.run(
+                self.update_async(stage, detail, completed, total, **kwargs)
+            )
 
     def _calculate_percentage(
         self,
@@ -116,30 +149,32 @@ class ProgressTracker:
         # Otherwise, just use stage start
         return start_pct
 
-    def _write_progress(
+    async def _write_progress_async(
         self,
         stage: str,
         detail: str,
         percentage: int,
         counters: dict,
     ) -> None:
-        """Write progress to database synchronously."""
+        """Write progress to database asynchronously."""
         progress_data = {
             "stage": stage,
             "stage_detail": detail,
             "percentage": percentage,
-            "updated_at": datetime.utcnow().isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
             **counters,
         }
 
         try:
-            conn = sqlite3.connect(DB_PATH)
-            conn.execute(
-                "UPDATE stories SET progress_json = ? WHERE id = ?",
-                (json.dumps(progress_data), self.story_id),
-            )
-            conn.commit()
-            conn.close()
+            async with self._engine.begin() as conn:
+                await conn.execute(
+                    text("UPDATE stories SET progress_json = :progress WHERE id = :id"),
+                    {"progress": json.dumps(progress_data), "id": self.story_id},
+                )
         except Exception as e:
             # Silent fail - progress updates are non-critical
             logger.warning(f"Failed to update progress for {self.story_id}: {e}")
+
+    async def close(self) -> None:
+        """Close the dedicated engine."""
+        await self._engine.dispose()

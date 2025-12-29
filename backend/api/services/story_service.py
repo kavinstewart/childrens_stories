@@ -4,9 +4,12 @@ import uuid
 import json
 import asyncio
 import time
-from datetime import datetime
+from datetime import datetime, timezone
+
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database.repository import StoryRepository
+from ..database.db import async_session_factory
 from ..config import STORIES_DIR, story_logger
 from .job_manager import job_manager
 from .progress_tracker import ProgressTracker
@@ -76,7 +79,7 @@ class StoryService:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
 
-        # Create progress tracker (uses sync SQLite writes)
+        # Create progress tracker (uses async PostgreSQL writes)
         tracker = ProgressTracker(story_id)
 
         try:
@@ -92,6 +95,8 @@ class StoryService:
                 )
             )
         finally:
+            # Clean up tracker's engine
+            loop.run_until_complete(tracker.close())
             loop.close()
 
     async def _generate_story(
@@ -115,15 +120,20 @@ class StoryService:
         # Log generation start
         story_logger.generation_started(story_id, generation_type)
 
-        # Update status to running
-        await self.repo.update_status(
-            story_id,
-            "running",
-            started_at=datetime.utcnow(),
-        )
+        # Create a new session for this background task
+        async with async_session_factory() as session:
+            repo = StoryRepository(session)
+
+            # Update status to running
+            await repo.update_status(
+                story_id,
+                "running",
+                started_at=datetime.now(timezone.utc),
+            )
+            await session.commit()
 
         # Initial progress update
-        tracker.update("outline", "Crafting your story outline...")
+        await tracker.update_async("outline", "Crafting your story outline...")
 
         try:
             # Get the LM for this generation
@@ -138,14 +148,17 @@ class StoryService:
 
             # Generate based on type
             if generation_type == "simple":
-                tracker.update("outline", "Crafting your story outline...")
+                await tracker.update_async("outline", "Crafting your story outline...")
                 story = generator.generate_simple(goal)
-                tracker.update("spreads", "Story complete", completed=1, total=1)
+                await tracker.update_async("spreads", "Story complete", completed=1, total=1)
 
             elif generation_type == "illustrated":
                 # Create progress callback that updates the tracker
                 def on_progress(stage: str, detail: str, completed: int, total: int):
-                    tracker.update(stage, detail, completed, total)
+                    # Schedule async update
+                    asyncio.create_task(
+                        tracker.update_async(stage, detail, completed, total)
+                    )
 
                 story = generator.generate_illustrated(
                     goal,
@@ -158,13 +171,13 @@ class StoryService:
                 )
 
             else:  # standard
-                tracker.update("outline", "Crafting your story outline...")
+                await tracker.update_async("outline", "Crafting your story outline...")
                 story = generator.forward(
                     goal,
                     target_age_range,
                     skip_quality_loop=False,
                 )
-                tracker.update("quality", "Story generation complete")
+                await tracker.update_async("quality", "Story generation complete")
 
             # Save to database and filesystem
             await self._save_story(story_id, story)
@@ -176,15 +189,18 @@ class StoryService:
         except Exception as e:
             # Log and track failure
             story_logger.generation_failed(story_id, e)
-            tracker.update("failed", f"Generation failed: {type(e).__name__}")
+            await tracker.update_async("failed", f"Generation failed: {type(e).__name__}")
 
             # Update status to failed with error message
-            await self.repo.update_status(
-                story_id,
-                "failed",
-                completed_at=datetime.utcnow(),
-                error_message=str(e),
-            )
+            async with async_session_factory() as session:
+                repo = StoryRepository(session)
+                await repo.update_status(
+                    story_id,
+                    "failed",
+                    completed_at=datetime.now(timezone.utc),
+                    error_message=str(e),
+                )
+                await session.commit()
             raise
 
     async def _save_story(self, story_id: str, story) -> None:
@@ -257,19 +273,22 @@ class StoryService:
                 "specific_problems": story.judgment.specific_problems,
             }
 
-        # Save to database
-        await self.repo.save_completed_story(
-            story_id=story_id,
-            title=story.title,
-            word_count=story.word_count,
-            spread_count=story.spread_count,
-            attempts=story.attempts,
-            is_illustrated=story.is_illustrated,
-            outline_json=json.dumps(outline_dict),
-            judgment_json=json.dumps(judgment_dict) if judgment_dict else None,
-            spreads=spreads_data,
-            character_refs=char_refs_data,
-        )
+        # Save to database using a new session
+        async with async_session_factory() as session:
+            repo = StoryRepository(session)
+            await repo.save_completed_story(
+                story_id=story_id,
+                title=story.title,
+                word_count=story.word_count,
+                spread_count=story.spread_count,
+                attempts=story.attempts,
+                is_illustrated=story.is_illustrated,
+                outline_json=json.dumps(outline_dict),
+                judgment_json=json.dumps(judgment_dict) if judgment_dict else None,
+                spreads=spreads_data,
+                character_refs=char_refs_data,
+            )
+            await session.commit()
 
 
 def _safe_filename(name: str) -> str:

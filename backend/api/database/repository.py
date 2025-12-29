@@ -1,25 +1,32 @@
-"""Repository for story CRUD operations."""
+"""Repository for story CRUD operations using SQLAlchemy ORM."""
 
 import json
 import random
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
-from .db import get_db
+from sqlalchemy import delete, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
+from .models import CharacterReference, Story, StorySpread
 from ..models.enums import GenerationType, JobStatus
 from ..models.responses import (
-    StoryResponse,
-    StorySpreadResponse,
-    StoryOutlineResponse,
-    QualityJudgmentResponse,
     CharacterReferenceResponse,
+    QualityJudgmentResponse,
+    StoryOutlineResponse,
     StoryProgressResponse,
     StoryRecommendationItem,
+    StoryResponse,
+    StorySpreadResponse,
 )
 
 
 class StoryRepository:
     """Repository for story persistence operations."""
+
+    def __init__(self, session: AsyncSession):
+        self.session = session
 
     async def create_story(
         self,
@@ -30,15 +37,16 @@ class StoryRepository:
         llm_model: Optional[str] = None,
     ) -> None:
         """Create a new story record in pending status."""
-        async with get_db() as db:
-            await db.execute(
-                """
-                INSERT INTO stories (id, goal, target_age_range, generation_type, llm_model, status)
-                VALUES (?, ?, ?, ?, ?, 'pending')
-                """,
-                (story_id, goal, target_age_range, generation_type, llm_model),
-            )
-            await db.commit()
+        story = Story(
+            id=story_id,
+            goal=goal,
+            target_age_range=target_age_range,
+            generation_type=generation_type,
+            llm_model=llm_model,
+            status="pending",
+        )
+        self.session.add(story)
+        await self.session.flush()
 
     async def update_status(
         self,
@@ -49,27 +57,27 @@ class StoryRepository:
         error_message: Optional[str] = None,
     ) -> None:
         """Update story status and timestamps."""
-        async with get_db() as db:
-            updates = ["status = ?"]
-            params = [status]
+        result = await self.session.execute(select(Story).where(Story.id == story_id))
+        story = result.scalar_one_or_none()
 
+        if story:
+            story.status = status
             if started_at:
-                updates.append("started_at = ?")
-                params.append(started_at.isoformat())
+                story.started_at = started_at
             if completed_at:
-                updates.append("completed_at = ?")
-                params.append(completed_at.isoformat())
+                story.completed_at = completed_at
             if error_message is not None:
-                updates.append("error_message = ?")
-                params.append(error_message)
+                story.error_message = error_message
+            await self.session.flush()
 
-            params.append(story_id)
+    async def update_progress(self, story_id: str, progress_json: str) -> None:
+        """Update story progress JSON."""
+        result = await self.session.execute(select(Story).where(Story.id == story_id))
+        story = result.scalar_one_or_none()
 
-            await db.execute(
-                f"UPDATE stories SET {', '.join(updates)} WHERE id = ?",
-                params,
-            )
-            await db.commit()
+        if story:
+            story.progress_json = progress_json
+            await self.session.flush()
 
     async def save_completed_story(
         self,
@@ -85,103 +93,63 @@ class StoryRepository:
         character_refs: Optional[list[dict]] = None,
     ) -> None:
         """Save completed story data."""
-        async with get_db() as db:
-            # Update main story record
-            await db.execute(
-                """
-                UPDATE stories SET
-                    title = ?,
-                    word_count = ?,
-                    spread_count = ?,
-                    attempts = ?,
-                    is_illustrated = ?,
-                    outline_json = ?,
-                    judgment_json = ?,
-                    status = 'completed',
-                    completed_at = ?
-                WHERE id = ?
-                """,
-                (
-                    title,
-                    word_count,
-                    spread_count,
-                    attempts,
-                    1 if is_illustrated else 0,
-                    outline_json,
-                    judgment_json,
-                    datetime.utcnow().isoformat(),
-                    story_id,
-                ),
+        result = await self.session.execute(select(Story).where(Story.id == story_id))
+        story = result.scalar_one_or_none()
+
+        if not story:
+            return
+
+        # Update main story record
+        story.title = title
+        story.word_count = word_count
+        story.spread_count = spread_count
+        story.attempts = attempts
+        story.is_illustrated = is_illustrated
+        story.outline_json = outline_json
+        story.judgment_json = judgment_json
+        story.status = "completed"
+        story.completed_at = datetime.now(timezone.utc)
+
+        # Insert spreads
+        for spread_data in spreads:
+            spread = StorySpread(
+                story_id=story_id,
+                spread_number=spread_data["spread_number"],
+                text=spread_data["text"],
+                word_count=spread_data.get("word_count"),
+                was_revised=spread_data.get("was_revised", False),
+                page_turn_note=spread_data.get("page_turn_note"),
+                illustration_prompt=spread_data.get("illustration_prompt"),
+                illustration_path=spread_data.get("illustration_path"),
             )
+            self.session.add(spread)
 
-            # Insert spreads
-            for spread in spreads:
-                await db.execute(
-                    """
-                    INSERT INTO story_spreads
-                    (story_id, spread_number, text, word_count, was_revised,
-                     page_turn_note, illustration_prompt, illustration_path)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        story_id,
-                        spread["spread_number"],
-                        spread["text"],
-                        spread["word_count"],
-                        1 if spread.get("was_revised") else 0,
-                        spread.get("page_turn_note"),
-                        spread.get("illustration_prompt"),
-                        spread.get("illustration_path"),
-                    ),
+        # Insert character references if present
+        if character_refs:
+            for ref_data in character_refs:
+                ref = CharacterReference(
+                    story_id=story_id,
+                    character_name=ref_data["character_name"],
+                    character_description=ref_data.get("character_description"),
+                    reference_image_path=ref_data.get("reference_image_path"),
                 )
+                self.session.add(ref)
 
-            # Insert character references if present
-            if character_refs:
-                for ref in character_refs:
-                    await db.execute(
-                        """
-                        INSERT INTO character_references
-                        (story_id, character_name, character_description, reference_image_path)
-                        VALUES (?, ?, ?, ?)
-                        """,
-                        (
-                            story_id,
-                            ref["character_name"],
-                            ref.get("character_description"),
-                            ref.get("reference_image_path"),
-                        ),
-                    )
-
-            await db.commit()
+        await self.session.flush()
 
     async def get_story(self, story_id: str) -> Optional[StoryResponse]:
         """Get a story by ID with all related data."""
-        async with get_db() as db:
-            # Get main story
-            cursor = await db.execute(
-                "SELECT * FROM stories WHERE id = ?",
-                (story_id,),
-            )
-            row = await cursor.fetchone()
+        result = await self.session.execute(
+            select(Story)
+            .options(selectinload(Story.spreads), selectinload(Story.character_references))
+            .where(Story.id == story_id)
+        )
+        story = result.scalar_one_or_none()
 
-            if not row:
-                return None
+        if not story:
+            return None
 
-            # Get spreads
-            spreads_cursor = await db.execute(
-                "SELECT * FROM story_spreads WHERE story_id = ? ORDER BY spread_number",
-                (story_id,),
-            )
-            spreads_rows = await spreads_cursor.fetchall()
-
-            # Get character refs
-            refs_cursor = await db.execute(
-                "SELECT * FROM character_references WHERE story_id = ?",
-                (story_id,),
-            )
-            refs_rows = await refs_cursor.fetchall()
-
-            return self._row_to_response(row, spreads_rows, refs_rows)
+        return self._model_to_response(story)
 
     async def list_stories(
         self,
@@ -189,178 +157,141 @@ class StoryRepository:
         offset: int = 0,
         status: Optional[str] = "completed",
     ) -> tuple[list[StoryResponse], int]:
-        """List stories with pagination and optional status filter.
+        """List stories with pagination and optional status filter."""
+        # Build base query
+        query = select(Story)
 
-        By default, only returns completed stories. Pass status=None to get all.
-        """
-        async with get_db() as db:
-            # Build query
-            where_clause = ""
-            params: list = []
+        if status:
+            query = query.where(Story.status == status)
 
-            if status:
-                where_clause = "WHERE status = ?"
-                params.append(status)
+        # Get total count
+        count_query = select(func.count()).select_from(Story)
+        if status:
+            count_query = count_query.where(Story.status == status)
+        count_result = await self.session.execute(count_query)
+        total = count_result.scalar() or 0
 
-            # Get total count
-            count_cursor = await db.execute(
-                f"SELECT COUNT(*) FROM stories {where_clause}",
-                params,
-            )
-            total = (await count_cursor.fetchone())[0]
+        # Get stories (without loading relationships for list view)
+        query = query.order_by(Story.created_at.desc()).limit(limit).offset(offset)
+        result = await self.session.execute(query)
+        stories = result.scalars().all()
 
-            # Get stories
-            params.extend([limit, offset])
-            cursor = await db.execute(
-                f"""
-                SELECT * FROM stories {where_clause}
-                ORDER BY created_at DESC
-                LIMIT ? OFFSET ?
-                """,
-                params,
-            )
-            rows = await cursor.fetchall()
-
-            # Build responses (without loading pages for list view)
-            stories = []
-            for row in rows:
-                stories.append(self._row_to_response(row, [], []))
-
-            return stories, total
+        return [self._model_to_response(s, include_relations=False) for s in stories], total
 
     async def delete_story(self, story_id: str) -> bool:
         """Delete a story and all related data."""
-        async with get_db() as db:
-            cursor = await db.execute(
-                "DELETE FROM stories WHERE id = ?",
-                (story_id,),
-            )
-            await db.commit()
-            return cursor.rowcount > 0
+        result = await self.session.execute(delete(Story).where(Story.id == story_id))
+        await self.session.flush()
+        return result.rowcount > 0
 
     async def get_recommendations(
         self,
         exclude_story_id: str,
         limit: int = 4,
     ) -> list[StoryRecommendationItem]:
-        """Get random story recommendations, excluding a specific story.
+        """Get random story recommendations, excluding a specific story."""
+        result = await self.session.execute(
+            select(Story.id, Story.title, Story.goal, Story.generation_type)
+            .where(Story.status == "completed")
+            .where(Story.id != exclude_story_id)
+        )
+        rows = result.all()
 
-        Returns lightweight story objects suitable for recommendation cards.
-        """
-        async with get_db() as db:
-            cursor = await db.execute(
-                """
-                SELECT id, title, goal, generation_type
-                FROM stories
-                WHERE status = 'completed' AND id != ?
-                """,
-                (exclude_story_id,),
+        if not rows:
+            return []
+
+        # Shuffle and take first N
+        rows = list(rows)
+        random.shuffle(rows)
+        selected = rows[:limit]
+
+        return [
+            StoryRecommendationItem(
+                id=row.id,
+                title=row.title,
+                goal=row.goal,
+                cover_url=f"/stories/{row.id}/spreads/1/image",
+                is_illustrated=row.generation_type == "illustrated",
             )
-            rows = await cursor.fetchall()
+            for row in selected
+        ]
 
-            if not rows:
-                return []
-
-            # Shuffle and take first N
-            rows = list(rows)
-            random.shuffle(rows)
-            selected = rows[:limit]
-
-            return [
-                StoryRecommendationItem(
-                    id=row["id"],
-                    title=row["title"],
-                    goal=row["goal"],
-                    cover_url=f"/stories/{row['id']}/spreads/1/image",
-                    is_illustrated=row["generation_type"] == "illustrated",
-                )
-                for row in selected
-            ]
-
-    def _row_to_response(
+    def _model_to_response(
         self,
-        row,
-        spreads_rows: list,
-        refs_rows: list,
+        story: Story,
+        include_relations: bool = True,
     ) -> StoryResponse:
-        """Convert database rows to response model."""
+        """Convert SQLAlchemy model to response model."""
         # Parse outline JSON
         outline = None
-        if row["outline_json"]:
-            outline_data = json.loads(row["outline_json"])
+        if story.outline_json:
+            outline_data = json.loads(story.outline_json)
             outline = StoryOutlineResponse(**outline_data)
 
         # Parse judgment JSON
         judgment = None
-        if row["judgment_json"]:
-            judgment_data = json.loads(row["judgment_json"])
+        if story.judgment_json:
+            judgment_data = json.loads(story.judgment_json)
             judgment = QualityJudgmentResponse(**judgment_data)
 
         # Convert spreads
         spreads = None
-        if spreads_rows:
+        if include_relations and story.spreads:
             spreads = [
                 StorySpreadResponse(
-                    spread_number=s["spread_number"],
-                    text=s["text"],
-                    word_count=s["word_count"],
-                    was_revised=bool(s["was_revised"]),
-                    page_turn_note=s["page_turn_note"],
-                    illustration_prompt=s["illustration_prompt"],
-                    illustration_url=f"/stories/{row['id']}/spreads/{s['spread_number']}/image"
-                    if s["illustration_path"]
+                    spread_number=s.spread_number,
+                    text=s.text,
+                    word_count=s.word_count,
+                    was_revised=s.was_revised,
+                    page_turn_note=s.page_turn_note,
+                    illustration_prompt=s.illustration_prompt,
+                    illustration_url=f"/stories/{story.id}/spreads/{s.spread_number}/image"
+                    if s.illustration_path
                     else None,
                 )
-                for s in spreads_rows
+                for s in story.spreads
             ]
 
         # Convert character refs
         character_refs = None
-        if refs_rows:
+        if include_relations and story.character_references:
             character_refs = [
                 CharacterReferenceResponse(
-                    character_name=r["character_name"],
-                    character_description=r["character_description"],
-                    reference_image_url=f"/stories/{row['id']}/characters/{r['character_name']}/image"
-                    if r["reference_image_path"]
+                    character_name=r.character_name,
+                    character_description=r.character_description,
+                    reference_image_url=f"/stories/{story.id}/characters/{r.character_name}/image"
+                    if r.reference_image_path
                     else None,
                 )
-                for r in refs_rows
+                for r in story.character_references
             ]
-
-        # Parse timestamps
-        created_at = datetime.fromisoformat(row["created_at"]) if row["created_at"] else None
-        started_at = datetime.fromisoformat(row["started_at"]) if row["started_at"] else None
-        completed_at = datetime.fromisoformat(row["completed_at"]) if row["completed_at"] else None
 
         # Parse progress JSON
         progress = None
-        progress_json = row["progress_json"] if "progress_json" in row.keys() else None
-        if progress_json:
-            progress_data = json.loads(progress_json)
-            # Parse updated_at if present
+        if story.progress_json:
+            progress_data = json.loads(story.progress_json)
             if progress_data.get("updated_at"):
                 progress_data["updated_at"] = datetime.fromisoformat(progress_data["updated_at"])
             progress = StoryProgressResponse(**progress_data)
 
         return StoryResponse(
-            id=row["id"],
-            status=JobStatus(row["status"]),
-            goal=row["goal"],
-            target_age_range=row["target_age_range"],
-            generation_type=GenerationType(row["generation_type"]),
-            llm_model=row["llm_model"],
-            created_at=created_at,
-            started_at=started_at,
-            completed_at=completed_at,
-            title=row["title"],
-            word_count=row["word_count"],
-            spread_count=row["spread_count"],
-            attempts=row["attempts"],
+            id=story.id,
+            status=JobStatus(story.status),
+            goal=story.goal,
+            target_age_range=story.target_age_range,
+            generation_type=GenerationType(story.generation_type),
+            llm_model=story.llm_model,
+            created_at=story.created_at,
+            started_at=story.started_at,
+            completed_at=story.completed_at,
+            title=story.title,
+            word_count=story.word_count,
+            spread_count=story.spread_count,
+            attempts=story.attempts,
             outline=outline,
             spreads=spreads,
             judgment=judgment,
             character_references=character_refs,
             progress=progress,
-            error_message=row["error_message"],
+            error_message=story.error_message,
         )

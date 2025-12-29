@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from ..database.vlm_eval_repository import VLMEvalRepository
+from ..dependencies import VLMEvalRepo
 from ..config import DATA_DIR
 
 
@@ -98,7 +98,7 @@ def _row_to_summary(row: dict) -> EvalSummary:
         story_id=row.get("story_id"),
         spread_number=row.get("spread_number"),
         prompt=row["prompt"][:100] + "..." if len(row["prompt"]) > 100 else row["prompt"],
-        vlm_overall_pass=bool(row.get("vlm_overall_pass", 1)),
+        vlm_overall_pass=bool(row.get("vlm_overall_pass", True)),
         human_verdict=bool(row["human_verdict"]) if row.get("human_verdict") is not None else None,
         created_at=row["created_at"],
     )
@@ -126,12 +126,12 @@ def _row_to_detail(row: dict) -> EvalDetail:
         prompt=row["prompt"],
         image_base64=image_base64,
         character_ref_base64=ref_base64,
-        check_text_free=bool(row.get("check_text_free", 1)),
-        check_characters=bool(row.get("check_characters", 1)),
-        check_composition=bool(row.get("check_composition", 1)),
+        check_text_free=bool(row.get("check_text_free", True)),
+        check_characters=bool(row.get("check_characters", True)),
+        check_composition=bool(row.get("check_composition", True)),
         vlm_model=row.get("vlm_model", "unknown"),
         vlm_raw_response=row.get("vlm_raw_response"),
-        vlm_overall_pass=bool(row.get("vlm_overall_pass", 1)),
+        vlm_overall_pass=bool(row.get("vlm_overall_pass", True)),
         vlm_text_free=bool(row["vlm_text_free"]) if row.get("vlm_text_free") is not None else None,
         vlm_character_match_score=row.get("vlm_character_match_score"),
         vlm_scene_accuracy_score=row.get("vlm_scene_accuracy_score"),
@@ -152,13 +152,14 @@ def _row_to_detail(row: dict) -> EvalDetail:
     description="Get a paginated list of VLM evaluations for annotation.",
 )
 async def list_evaluations(
+    repo: VLMEvalRepo,
     unannotated_only: bool = Query(default=False, description="Only show unannotated evaluations"),
     story_id: Optional[str] = Query(default=None, description="Filter by story ID"),
     limit: int = Query(default=50, ge=1, le=200, description="Maximum number to return"),
     offset: int = Query(default=0, ge=0, description="Number to skip"),
 ):
     """List VLM evaluations."""
-    rows = await VLMEvalRepository.list_evaluations(
+    rows = await repo.list_evaluations(
         unannotated_only=unannotated_only,
         story_id=story_id,
         limit=limit,
@@ -173,9 +174,9 @@ async def list_evaluations(
     summary="Get annotation statistics",
     description="Get statistics on annotation progress and VLM/human agreement.",
 )
-async def get_stats():
+async def get_stats(repo: VLMEvalRepo):
     """Get annotation statistics."""
-    stats = await VLMEvalRepository.get_stats()
+    stats = await repo.get_stats()
     return StatsResponse(**stats)
 
 
@@ -184,9 +185,9 @@ async def get_stats():
     summary="Export annotated evaluations for GEPA",
     description="Export all annotated evaluations as JSON for GEPA optimization.",
 )
-async def export_for_gepa():
+async def export_for_gepa(repo: VLMEvalRepo):
     """Export annotated evaluations for GEPA optimization."""
-    rows = await VLMEvalRepository.export_for_gepa()
+    rows = await repo.export_for_gepa()
 
     # Convert to training-friendly format
     training_data = []
@@ -196,8 +197,8 @@ async def export_for_gepa():
             "prompt": row["prompt"],
             "image_path": row.get("image_path"),
             "character_ref_paths": json.loads(row.get("character_ref_paths") or "[]"),
-            "vlm_prediction": bool(row.get("vlm_overall_pass", 1)),
-            "human_label": bool(row.get("human_verdict", 1)),
+            "vlm_prediction": bool(row.get("vlm_overall_pass", True)),
+            "human_label": bool(row.get("human_verdict", True)),
             "is_correct": row.get("vlm_overall_pass") == row.get("human_verdict"),
             "vlm_raw_response": row.get("vlm_raw_response"),
             "human_notes": row.get("human_notes"),
@@ -215,9 +216,9 @@ async def export_for_gepa():
     summary="Get evaluation detail",
     description="Get full details of an evaluation including images as base64.",
 )
-async def get_evaluation(eval_id: str):
+async def get_evaluation(eval_id: str, repo: VLMEvalRepo):
     """Get a single evaluation with full detail."""
-    row = await VLMEvalRepository.get_evaluation(eval_id)
+    row = await repo.get_evaluation(eval_id)
     if not row:
         raise HTTPException(status_code=404, detail=f"Evaluation {eval_id} not found")
 
@@ -229,9 +230,9 @@ async def get_evaluation(eval_id: str):
     summary="Annotate an evaluation",
     description="Add human ground truth annotation to an evaluation.",
 )
-async def annotate_evaluation(eval_id: str, request: AnnotateRequest):
+async def annotate_evaluation(eval_id: str, request: AnnotateRequest, repo: VLMEvalRepo):
     """Add human annotation to an evaluation."""
-    success = await VLMEvalRepository.annotate(
+    success = await repo.annotate(
         eval_id=eval_id,
         human_verdict=request.human_verdict,
         human_notes=request.human_notes,

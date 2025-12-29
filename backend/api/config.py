@@ -5,6 +5,7 @@ Single source of truth for paths and settings used across the API layer.
 
 import json
 import logging
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -15,8 +16,13 @@ BACKEND_DIR = API_DIR.parent
 PROJECT_DIR = BACKEND_DIR.parent
 DATA_DIR = PROJECT_DIR / "data"
 
-# Database
-DB_PATH = DATA_DIR / "stories.db"
+# Database configuration
+# PostgreSQL connection URL (required for production)
+# Format: postgresql+asyncpg://user:password@host:port/dbname
+DATABASE_URL = os.getenv("DATABASE_URL", "")
+
+# Legacy SQLite path (for migration reference only)
+SQLITE_DB_PATH = DATA_DIR / "stories.db"
 
 # Story file storage
 STORIES_DIR = DATA_DIR / "stories"

@@ -14,7 +14,7 @@ from ..models.responses import (
     StoryRecommendationsResponse,
     JobStatus,
 )
-from ..dependencies import Repository, Service
+from ..dependencies import Repository, Service, CurrentUser
 from ..config import STORIES_DIR
 
 router = APIRouter()
@@ -27,7 +27,7 @@ router = APIRouter()
     summary="Create a new story",
     description="Start a new story generation job. Returns immediately with a job ID that can be polled for status.",
 )
-async def create_story(request: CreateStoryRequest, service: Service):
+async def create_story(request: CreateStoryRequest, service: Service, user: CurrentUser):
     """Start a new story generation job."""
     story_id = await service.create_story_job(goal=request.goal)
 
@@ -45,6 +45,7 @@ async def create_story(request: CreateStoryRequest, service: Service):
 )
 async def list_stories(
     repo: Repository,
+    user: CurrentUser,
     limit: int = Query(default=20, ge=1, le=100, description="Maximum number of stories to return"),
     offset: int = Query(default=0, ge=0, description="Number of stories to skip"),
     status: Optional[str] = Query(default="completed", description="Filter by status (pending, running, completed, failed, or 'all' for no filter)"),
@@ -68,7 +69,7 @@ async def list_stories(
     summary="Get a story",
     description="Get a story by ID. Poll this endpoint to check generation status.",
 )
-async def get_story(story_id: str, repo: Repository):
+async def get_story(story_id: str, repo: Repository, user: CurrentUser):
     """Get a story by ID."""
     story = await repo.get_story(story_id)
 
@@ -90,6 +91,7 @@ async def get_story(story_id: str, repo: Repository):
 async def get_recommendations(
     story_id: str,
     repo: Repository,
+    user: CurrentUser,
     limit: int = Query(default=4, ge=1, le=10, description="Number of recommendations"),
 ):
     """Get story recommendations for the completion screen."""
@@ -110,7 +112,7 @@ async def get_recommendations(
         404: {"description": "Image not found"},
     },
 )
-async def get_spread_image(story_id: str, spread_number: int):
+async def get_spread_image(story_id: str, spread_number: int, user: CurrentUser):
     """Get a spread illustration image."""
     image_path = STORIES_DIR / story_id / "images" / f"spread_{spread_number:02d}.png"
 
@@ -132,7 +134,7 @@ async def get_spread_image(story_id: str, spread_number: int):
         404: {"description": "Image not found"},
     },
 )
-async def get_character_image(story_id: str, character_name: str):
+async def get_character_image(story_id: str, character_name: str, user: CurrentUser):
     """Get a character reference image."""
     refs_dir = STORIES_DIR / story_id / "character_refs"
 
@@ -159,7 +161,7 @@ async def get_character_image(story_id: str, character_name: str):
     summary="Delete a story",
     description="Delete a story and all associated files.",
 )
-async def delete_story(story_id: str, repo: Repository):
+async def delete_story(story_id: str, repo: Repository, user: CurrentUser):
     """Delete a story and its files."""
     deleted = await repo.delete_story(story_id)
 

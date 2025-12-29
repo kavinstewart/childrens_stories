@@ -75,3 +75,6 @@ temp/
 # Runtime data
 data/
 docs/references/
+
+# Playwright test artifacts
+test-results/

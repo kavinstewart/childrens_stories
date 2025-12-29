@@ -1,13 +1,15 @@
-"""Repository for VLM evaluation logging and retrieval."""
+"""Repository for VLM evaluation logging and retrieval using SQLAlchemy ORM."""
 
 import json
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from PIL import Image
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from .db import get_db
+from .models import VLMEvaluation
 from ..config import DATA_DIR
 from ...core.modules.vlm_judge import DetailedCheckResult
 
@@ -18,6 +20,9 @@ VLM_EVALS_DIR = DATA_DIR / "vlm_evals"
 
 class VLMEvalRepository:
     """Repository for VLM evaluation records."""
+
+    def __init__(self, session: AsyncSession):
+        self.session = session
 
     @staticmethod
     def _ensure_dirs():
@@ -33,8 +38,8 @@ class VLMEvalRepository:
         image.save(path, "PNG")
         return f"vlm_evals/{filename}"
 
-    @staticmethod
     async def log_evaluation(
+        self,
         image: Image.Image,
         prompt: str,
         result: DetailedCheckResult,
@@ -56,7 +61,7 @@ class VLMEvalRepository:
         eval_id = str(uuid.uuid4())[:8]
 
         # Save the evaluated image
-        image_path = VLMEvalRepository._save_image(image, eval_id, "_image")
+        image_path = self._save_image(image, eval_id, "_image")
 
         # Save character reference images if present
         ref_paths = []
@@ -66,156 +71,152 @@ class VLMEvalRepository:
                     name, ref_img, _ = ref
                 else:
                     name, ref_img = ref
-                ref_path = VLMEvalRepository._save_image(
+                ref_path = self._save_image(
                     ref_img, eval_id, f"_ref_{i}_{name.replace(' ', '_')}"
                 )
                 ref_paths.append(ref_path)
 
-        async with get_db() as db:
-            await db.execute(
-                """
-                INSERT INTO vlm_evaluations (
-                    id, story_id, spread_number,
-                    prompt, image_path, character_ref_paths,
-                    check_text_free, check_characters, check_composition,
-                    vlm_model, vlm_raw_response, vlm_overall_pass,
-                    vlm_text_free, vlm_character_match_score,
-                    vlm_scene_accuracy_score, vlm_composition_score,
-                    vlm_style_score, vlm_issues
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    eval_id,
-                    story_id,
-                    spread_number,
-                    prompt,
-                    image_path,
-                    json.dumps(ref_paths) if ref_paths else None,
-                    int(check_text_free),
-                    int(check_characters),
-                    int(check_composition),
-                    model,
-                    raw_response,
-                    int(result.overall_pass),
-                    int(result.text_free),
-                    result.character_match_score,
-                    result.scene_accuracy_score,
-                    result.composition_score,
-                    result.style_score,
-                    json.dumps(result.issues) if result.issues else None,
-                ),
-            )
-            await db.commit()
+        evaluation = VLMEvaluation(
+            id=eval_id,
+            story_id=story_id,
+            spread_number=spread_number,
+            prompt=prompt,
+            image_path=image_path,
+            character_ref_paths=json.dumps(ref_paths) if ref_paths else None,
+            check_text_free=check_text_free,
+            check_characters=check_characters,
+            check_composition=check_composition,
+            vlm_model=model,
+            vlm_raw_response=raw_response,
+            vlm_overall_pass=result.overall_pass,
+            vlm_text_free=result.text_free,
+            vlm_character_match_score=result.character_match_score,
+            vlm_scene_accuracy_score=result.scene_accuracy_score,
+            vlm_composition_score=result.composition_score,
+            vlm_style_score=result.style_score,
+            vlm_issues=json.dumps(result.issues) if result.issues else None,
+        )
+        self.session.add(evaluation)
+        await self.session.flush()
 
         return eval_id
 
-    @staticmethod
-    async def get_evaluation(eval_id: str) -> Optional[dict]:
+    async def get_evaluation(self, eval_id: str) -> Optional[dict]:
         """Get a single evaluation by ID."""
-        async with get_db() as db:
-            cursor = await db.execute(
-                "SELECT * FROM vlm_evaluations WHERE id = ?",
-                (eval_id,),
-            )
-            row = await cursor.fetchone()
-            if row:
-                return dict(row)
-            return None
+        result = await self.session.execute(
+            select(VLMEvaluation).where(VLMEvaluation.id == eval_id)
+        )
+        evaluation = result.scalar_one_or_none()
+        if evaluation:
+            return self._model_to_dict(evaluation)
+        return None
 
-    @staticmethod
     async def list_evaluations(
+        self,
         unannotated_only: bool = False,
         story_id: Optional[str] = None,
         limit: int = 50,
         offset: int = 0,
     ) -> list[dict]:
         """List evaluations with optional filters."""
-        conditions = []
-        params = []
+        query = select(VLMEvaluation)
 
         if unannotated_only:
-            conditions.append("human_verdict IS NULL")
+            query = query.where(VLMEvaluation.human_verdict.is_(None))
 
         if story_id:
-            conditions.append("story_id = ?")
-            params.append(story_id)
+            query = query.where(VLMEvaluation.story_id == story_id)
 
-        where_clause = " AND ".join(conditions) if conditions else "1=1"
-        params.extend([limit, offset])
+        query = query.order_by(VLMEvaluation.created_at.desc()).limit(limit).offset(offset)
 
-        async with get_db() as db:
-            cursor = await db.execute(
-                f"""
-                SELECT * FROM vlm_evaluations
-                WHERE {where_clause}
-                ORDER BY created_at DESC
-                LIMIT ? OFFSET ?
-                """,
-                params,
-            )
-            rows = await cursor.fetchall()
-            return [dict(row) for row in rows]
+        result = await self.session.execute(query)
+        evaluations = result.scalars().all()
+        return [self._model_to_dict(e) for e in evaluations]
 
-    @staticmethod
     async def annotate(
+        self,
         eval_id: str,
         human_verdict: bool,
         human_notes: Optional[str] = None,
     ) -> bool:
         """Add human annotation to an evaluation."""
-        async with get_db() as db:
-            cursor = await db.execute(
-                """
-                UPDATE vlm_evaluations
-                SET human_verdict = ?, human_notes = ?, annotated_at = ?
-                WHERE id = ?
-                """,
-                (
-                    int(human_verdict),
-                    human_notes,
-                    datetime.utcnow().isoformat(),
-                    eval_id,
-                ),
-            )
-            await db.commit()
-            return cursor.rowcount > 0
+        result = await self.session.execute(
+            select(VLMEvaluation).where(VLMEvaluation.id == eval_id)
+        )
+        evaluation = result.scalar_one_or_none()
 
-    @staticmethod
-    async def get_stats() -> dict:
+        if not evaluation:
+            return False
+
+        evaluation.human_verdict = human_verdict
+        evaluation.human_notes = human_notes
+        evaluation.annotated_at = datetime.now(timezone.utc)
+        await self.session.flush()
+        return True
+
+    async def get_stats(self) -> dict:
         """Get annotation statistics."""
-        async with get_db() as db:
-            cursor = await db.execute(
-                """
-                SELECT
-                    COUNT(*) as total,
-                    SUM(CASE WHEN human_verdict IS NOT NULL THEN 1 ELSE 0 END) as annotated,
-                    SUM(CASE WHEN human_verdict = vlm_overall_pass THEN 1 ELSE 0 END) as agreement
-                FROM vlm_evaluations
-                """
-            )
-            row = await cursor.fetchone()
-            total = row["total"] or 0
-            annotated = row["annotated"] or 0
-            agreement = row["agreement"] or 0
+        total_result = await self.session.execute(
+            select(func.count()).select_from(VLMEvaluation)
+        )
+        total = total_result.scalar() or 0
 
-            return {
-                "total": total,
-                "annotated": annotated,
-                "unannotated": total - annotated,
-                "agreement_count": agreement,
-                "agreement_rate": agreement / annotated if annotated > 0 else None,
-            }
+        annotated_result = await self.session.execute(
+            select(func.count())
+            .select_from(VLMEvaluation)
+            .where(VLMEvaluation.human_verdict.is_not(None))
+        )
+        annotated = annotated_result.scalar() or 0
 
-    @staticmethod
-    async def export_for_gepa() -> list[dict]:
+        # For agreement, we need to compare human_verdict with vlm_overall_pass
+        agreement_result = await self.session.execute(
+            select(func.count())
+            .select_from(VLMEvaluation)
+            .where(VLMEvaluation.human_verdict == VLMEvaluation.vlm_overall_pass)
+        )
+        agreement = agreement_result.scalar() or 0
+
+        return {
+            "total": total,
+            "annotated": annotated,
+            "unannotated": total - annotated,
+            "agreement_count": agreement,
+            "agreement_rate": agreement / annotated if annotated > 0 else None,
+        }
+
+    async def export_for_gepa(self) -> list[dict]:
         """Export annotated evaluations for GEPA optimization."""
-        async with get_db() as db:
-            cursor = await db.execute(
-                """
-                SELECT * FROM vlm_evaluations
-                WHERE human_verdict IS NOT NULL
-                ORDER BY created_at
-                """
-            )
-            rows = await cursor.fetchall()
-            return [dict(row) for row in rows]
+        result = await self.session.execute(
+            select(VLMEvaluation)
+            .where(VLMEvaluation.human_verdict.is_not(None))
+            .order_by(VLMEvaluation.created_at)
+        )
+        evaluations = result.scalars().all()
+        return [self._model_to_dict(e) for e in evaluations]
+
+    def _model_to_dict(self, evaluation: VLMEvaluation) -> dict:
+        """Convert SQLAlchemy model to dictionary."""
+        return {
+            "id": evaluation.id,
+            "story_id": evaluation.story_id,
+            "spread_number": evaluation.spread_number,
+            "prompt": evaluation.prompt,
+            "image_path": evaluation.image_path,
+            "character_ref_paths": evaluation.character_ref_paths,
+            "check_text_free": evaluation.check_text_free,
+            "check_characters": evaluation.check_characters,
+            "check_composition": evaluation.check_composition,
+            "vlm_model": evaluation.vlm_model,
+            "vlm_raw_response": evaluation.vlm_raw_response,
+            "vlm_overall_pass": evaluation.vlm_overall_pass,
+            "vlm_text_free": evaluation.vlm_text_free,
+            "vlm_character_match_score": evaluation.vlm_character_match_score,
+            "vlm_scene_accuracy_score": evaluation.vlm_scene_accuracy_score,
+            "vlm_composition_score": evaluation.vlm_composition_score,
+            "vlm_style_score": evaluation.vlm_style_score,
+            "vlm_issues": evaluation.vlm_issues,
+            "human_verdict": evaluation.human_verdict,
+            "human_notes": evaluation.human_notes,
+            "annotated_at": evaluation.annotated_at.isoformat() if evaluation.annotated_at else None,
+            "created_at": evaluation.created_at.isoformat() if evaluation.created_at else None,
+        }
