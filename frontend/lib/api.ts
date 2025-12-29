@@ -1,10 +1,8 @@
 // API client for the children's stories backend
 
-// For Expo Go on device, use your Mac's IP address
-// For simulator, localhost works
-const API_BASE_URL = __DEV__
-  ? 'http://192.168.86.39:8000'  // Your Mac's IP for device testing
-  : 'http://localhost:8000';
+import { authStorage } from './auth-storage';
+
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://dev.exoselfsystems.com';
 
 export type JobStatus = 'pending' | 'running' | 'completed' | 'failed';
 export type GenerationType = 'simple' | 'standard' | 'illustrated';
@@ -112,6 +110,15 @@ export interface RecommendationsResponse {
   recommendations: StoryRecommendation[];
 }
 
+export interface LoginRequest {
+  pin: string;
+}
+
+export interface LoginResponse {
+  access_token: string;
+  token_type: string;
+}
+
 class ApiError extends Error {
   constructor(public status: number, message: string) {
     super(message);
@@ -125,10 +132,18 @@ async function fetchApi<T>(
 ): Promise<T> {
   const url = `${API_BASE_URL}${endpoint}`;
 
+  // Get auth token if available
+  const token = await authStorage.getToken();
+  const authHeaders: Record<string, string> = {};
+  if (token) {
+    authHeaders['Authorization'] = `Bearer ${token}`;
+  }
+
   const response = await fetch(url, {
     ...options,
     headers: {
       'Content-Type': 'application/json',
+      ...authHeaders,
       ...options?.headers,
     },
   });
@@ -201,5 +216,13 @@ export const api = {
   // Health check
   healthCheck: async (): Promise<{ status: string }> => {
     return fetchApi('/health');
+  },
+
+  // Authentication
+  login: async (request: LoginRequest): Promise<LoginResponse> => {
+    return fetchApi('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    });
   },
 };
