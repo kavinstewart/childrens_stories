@@ -1,0 +1,15 @@
+[Unit]
+Description=Children's Stories API Server
+After=network.target redis.service postgresql.service
+
+[Service]
+Type=simple
+User=kavin
+WorkingDirectory=/home/kavin/childrens_stories
+Environment="PATH=/home/kavin/.cache/pypoetry/virtualenvs/childrens-stories-6rIxPkgJ-py3.12/bin:/usr/local/bin:/usr/bin:/bin"
+ExecStart=/home/kavin/.cache/pypoetry/virtualenvs/childrens-stories-6rIxPkgJ-py3.12/bin/uvicorn backend.api.main:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
