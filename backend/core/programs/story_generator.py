@@ -146,21 +146,27 @@ class StoryGenerator(dspy.Module):
 
             story_summary = f"{title}. {story_text[:500]}..."
 
+            # Capture the current LM for propagating to worker threads
+            # ThreadPoolExecutor creates new threads that don't inherit dspy.context
+            current_lm = self._lm or dspy.settings.lm
+
             def select_style():
-                result = llm_retry(self.style_selector)(
-                    story_summary=story_summary,
-                    available_styles=get_all_styles_for_selection(),
-                )
-                return result
+                with dspy.context(lm=current_lm):
+                    result = llm_retry(self.style_selector)(
+                        story_summary=story_summary,
+                        available_styles=get_all_styles_for_selection(),
+                    )
+                    return result
 
             def judge_quality():
                 if skip_quality_loop:
                     return None
-                return llm_retry(self.quality_judge)(
-                    story_text=story_text,
-                    original_goal=goal,
-                    target_age_range=target_age_range,
-                )
+                with dspy.context(lm=current_lm):
+                    return llm_retry(self.quality_judge)(
+                        story_text=story_text,
+                        original_goal=goal,
+                        target_age_range=target_age_range,
+                    )
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
                 style_future = executor.submit(select_style)
