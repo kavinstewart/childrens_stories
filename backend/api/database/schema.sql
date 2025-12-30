@@ -3,7 +3,7 @@
 
 -- Stories table with JSON for complex nested data
 CREATE TABLE IF NOT EXISTS stories (
-    id VARCHAR(36) PRIMARY KEY,
+    id UUID PRIMARY KEY,
     status VARCHAR(20) NOT NULL DEFAULT 'pending',  -- pending/running/completed/failed
     goal TEXT NOT NULL,
     target_age_range VARCHAR(10) DEFAULT '4-7',
@@ -14,9 +14,9 @@ CREATE TABLE IF NOT EXISTS stories (
     spread_count INTEGER,  -- Number of spreads (typically 12)
     attempts INTEGER,
     is_illustrated BOOLEAN DEFAULT FALSE,
-    outline_json TEXT,
-    judgment_json TEXT,
-    progress_json TEXT,
+    outline_json JSONB,
+    judgment_json JSONB,
+    progress_json JSONB,
     error_message TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     started_at TIMESTAMPTZ,
@@ -25,32 +25,30 @@ CREATE TABLE IF NOT EXISTS stories (
 
 -- Normalized spreads for efficient queries (a spread = two facing pages)
 CREATE TABLE IF NOT EXISTS story_spreads (
-    id SERIAL PRIMARY KEY,
-    story_id VARCHAR(36) NOT NULL REFERENCES stories(id) ON DELETE CASCADE,
+    story_id UUID NOT NULL REFERENCES stories(id) ON DELETE CASCADE,
     spread_number INTEGER NOT NULL,
     text TEXT NOT NULL,
     word_count INTEGER,
-    was_revised BOOLEAN DEFAULT FALSE,
+    was_revised BOOLEAN NOT NULL DEFAULT FALSE,
     page_turn_note TEXT,  -- What makes reader want to turn the page
     illustration_prompt TEXT,
     illustration_path TEXT,
-    UNIQUE(story_id, spread_number)
+    PRIMARY KEY (story_id, spread_number)
 );
 
 -- Character references for illustrated stories
 CREATE TABLE IF NOT EXISTS character_references (
-    id SERIAL PRIMARY KEY,
-    story_id VARCHAR(36) NOT NULL REFERENCES stories(id) ON DELETE CASCADE,
+    story_id UUID NOT NULL REFERENCES stories(id) ON DELETE CASCADE,
     character_name VARCHAR(100) NOT NULL,
     character_description TEXT,
     reference_image_path TEXT,
-    UNIQUE(story_id, character_name)
+    PRIMARY KEY (story_id, character_name)
 );
 
 -- VLM Judge evaluations for optimization training data
 CREATE TABLE IF NOT EXISTS vlm_evaluations (
     id VARCHAR(8) PRIMARY KEY,
-    story_id VARCHAR(36) REFERENCES stories(id) ON DELETE SET NULL,
+    story_id UUID REFERENCES stories(id) ON DELETE SET NULL,
     spread_number INTEGER,
 
     -- Input context

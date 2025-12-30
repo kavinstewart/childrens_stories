@@ -2,6 +2,11 @@
 
 from unittest.mock import AsyncMock
 from datetime import datetime
+from uuid import UUID
+
+# Valid test UUIDs for mocking
+TEST_UUID = UUID("12345678-1234-5678-1234-567812345678")
+TEST_UUID_STR = "12345678-1234-5678-1234-567812345678"
 
 
 class TestCreateStory:
@@ -10,7 +15,7 @@ class TestCreateStory:
     def test_create_story_returns_202_with_job_id(self, client_with_mocks):
         """Creating a story should return 202 Accepted with a job ID."""
         client, mock_repo, mock_service = client_with_mocks
-        mock_service.create_story_job = AsyncMock(return_value="test-uuid-123")
+        mock_service.create_story_job = AsyncMock(return_value=TEST_UUID_STR)
 
         response = client.post(
             "/stories/",
@@ -19,7 +24,7 @@ class TestCreateStory:
 
         assert response.status_code == 202
         data = response.json()
-        assert data["id"] == "test-uuid-123"
+        assert data["id"] == TEST_UUID_STR
         assert data["status"] == "pending"
 
     def test_create_story_validates_goal_min_length(self, client_with_mocks):
@@ -36,7 +41,7 @@ class TestCreateStory:
     def test_create_story_accepts_all_generation_types(self, client_with_mocks):
         """All three generation types should be accepted."""
         client, mock_repo, mock_service = client_with_mocks
-        mock_service.create_story_job = AsyncMock(return_value="test-uuid")
+        mock_service.create_story_job = AsyncMock(return_value=TEST_UUID_STR)
 
         for gen_type in ["simple", "standard", "illustrated"]:
             response = client.post(
@@ -107,7 +112,7 @@ class TestGetStory:
         from backend.api.models.responses import StoryResponse
 
         mock_story = StoryResponse(
-            id="test-id",
+            id=TEST_UUID,
             status=JobStatus.COMPLETED,
             goal="teach about sharing",
             target_age_range="4-7",
@@ -119,11 +124,11 @@ class TestGetStory:
         )
         mock_repo.get_story = AsyncMock(return_value=mock_story)
 
-        response = client.get("/stories/test-id")
+        response = client.get(f"/stories/{TEST_UUID_STR}")
 
         assert response.status_code == 200
         data = response.json()
-        assert data["id"] == "test-id"
+        assert data["id"] == TEST_UUID_STR
         assert data["title"] == "The Sharing Tree"
 
 
@@ -190,7 +195,7 @@ class TestStoryResponseShape:
         from backend.api.models.responses import StoryResponse
 
         mock_story = StoryResponse(
-            id="test-id",
+            id=TEST_UUID,
             status=JobStatus.COMPLETED,
             goal="teach about sharing",
             target_age_range="4-7",
@@ -199,7 +204,7 @@ class TestStoryResponseShape:
         )
         mock_repo.get_story = AsyncMock(return_value=mock_story)
 
-        response = client.get("/stories/test-id")
+        response = client.get(f"/stories/{TEST_UUID_STR}")
 
         assert response.status_code == 200
         data = response.json()
@@ -216,7 +221,7 @@ class TestStoryResponseShape:
         from backend.api.models.responses import StoryResponse, StorySpreadResponse
 
         mock_story = StoryResponse(
-            id="test-id",
+            id=TEST_UUID,
             status=JobStatus.COMPLETED,
             goal="teach about sharing",
             target_age_range="4-7",
@@ -232,7 +237,7 @@ class TestStoryResponseShape:
         )
         mock_repo.get_story = AsyncMock(return_value=mock_story)
 
-        response = client.get("/stories/test-id")
+        response = client.get(f"/stories/{TEST_UUID_STR}")
 
         assert response.status_code == 200
         data = response.json()

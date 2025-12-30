@@ -1,5 +1,6 @@
 """Pydantic models for API responses."""
 
+from uuid import UUID
 from pydantic import BaseModel, Field, computed_field
 from typing import Optional
 from datetime import datetime
@@ -80,7 +81,7 @@ class StoryProgressResponse(BaseModel):
 class StoryResponse(BaseModel):
     """Full story response with all data."""
 
-    id: str
+    id: UUID
     status: JobStatus
     goal: str
     target_age_range: str
@@ -126,7 +127,7 @@ class StoryListResponse(BaseModel):
 class CreateStoryResponse(BaseModel):
     """Response when creating a new story job."""
 
-    id: str
+    id: UUID
     status: JobStatus
     message: str = Field(
         default="Story generation started. Poll GET /stories/{id} for status."
@@ -136,7 +137,7 @@ class CreateStoryResponse(BaseModel):
 class StoryRecommendationItem(BaseModel):
     """A single story recommendation (lightweight)."""
 
-    id: str
+    id: UUID
     title: Optional[str] = None
     goal: str
     cover_url: Optional[str] = None
