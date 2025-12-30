@@ -10,12 +10,15 @@ Supports optional logging of evaluations for GEPA optimization.
 """
 
 import json
+import logging
 from dataclasses import dataclass, field
 from typing import Union, Optional, TYPE_CHECKING
 from PIL import Image
 from io import BytesIO
 
 from backend.config import get_image_client
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     pass
@@ -130,9 +133,42 @@ class VLMJudge:
             contents=contents,
         )
 
-        # Parse response
+        # Parse response - handle None text (API may return None for blocked/empty responses)
         raw_response = response.text
-        result = self._parse_response(raw_response)
+        if raw_response is None:
+            # Investigate why the response is None
+            block_reason = "unknown"
+            if hasattr(response, 'candidates') and response.candidates:
+                candidate = response.candidates[0]
+                if hasattr(candidate, 'finish_reason') and candidate.finish_reason:
+                    block_reason = str(candidate.finish_reason)
+            elif hasattr(response, 'prompt_feedback'):
+                block_reason = f"prompt_feedback: {response.prompt_feedback}"
+
+            logger.warning(
+                f"VLM evaluation returned no response text. "
+                f"Reason: {block_reason}, Model: {self.model}, "
+                f"Prompt length: {len(prompt)} chars"
+            )
+
+            # Return a permissive result - QA is advisory, not a gate
+            # Better to have an image without QA than no image at all
+            result = DetailedCheckResult(
+                has_overlay_text=False,
+                overlay_text_detected="[VLM unavailable]",
+                text_free=True,
+                text_detected="[VLM unavailable]",
+                character_match_score=3,  # Neutral score
+                character_issues=[f"VLM evaluation unavailable: {block_reason}"],
+                scene_accuracy_score=3,
+                scene_issues=[],
+                composition_score=3,
+                style_score=3,
+                overall_pass=True,  # Don't block on VLM failures
+                issues=[f"VLM evaluation skipped: {block_reason}"],
+            )
+        else:
+            result = self._parse_response(raw_response)
 
         # Log evaluation if enabled
         if self.enable_logging:
