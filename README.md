@@ -144,7 +144,7 @@ childrens_stories/
 │   │   ├── routes/       # API endpoints
 │   │   ├── models/       # Request/response schemas
 │   │   ├── services/     # Business logic & job management
-│   │   └── database/     # SQLite persistence
+│   │   └── database/     # PostgreSQL persistence
 │   ├── config/           # Configuration modules
 │   │   ├── llm.py        # LLM setup (Claude, Cerebras, etc.)
 │   │   ├── image.py      # Image generation config
@@ -167,7 +167,7 @@ childrens_stories/
 │   ├── generate_story.py # Main CLI
 │   └── run_api.py        # API server launcher
 ├── examples/             # Sample generated stories
-├── data/                 # Training data & SQLite database
+├── data/                 # Training data & story assets
 ├── tests/                # Unit tests
 ├── output/               # Generated stories (gitignored)
 ├── Makefile              # Common commands

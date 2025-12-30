@@ -63,6 +63,9 @@ node_modules/
 .DS_Store
 Thumbs.db
 
+# Database files
+*.db
+
 # Logs
 *.log
 logs/

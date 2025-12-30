@@ -18,6 +18,13 @@ if not os.getenv("API_KEY"):
 # For unit tests with mocks, we don't set DATABASE_URL - the tests use mocked dependencies
 # This prevents the app from trying to connect to a real database during startup
 
+# Mock the ARQ pool before importing app to avoid Redis connection during tests
+from backend.api import arq_pool as arq_pool_module  # noqa: E402
+mock_arq_pool = MagicMock()
+mock_arq_pool.enqueue_job = AsyncMock()
+mock_arq_pool.aclose = AsyncMock()
+arq_pool_module.set_pool(mock_arq_pool)
+
 from backend.api.main import app  # noqa: E402
 from backend.api.database.repository import StoryRepository  # noqa: E402
 from backend.api.database.vlm_eval_repository import VLMEvalRepository  # noqa: E402
@@ -49,7 +56,6 @@ def temp_data_dir(tmp_path):
 def mock_config(temp_data_dir, monkeypatch):
     """Patch config to use temporary directories."""
     monkeypatch.setattr(config, "DATA_DIR", temp_data_dir)
-    monkeypatch.setattr(config, "SQLITE_DB_PATH", temp_data_dir / "stories.db")
     monkeypatch.setattr(config, "STORIES_DIR", temp_data_dir / "stories")
     return temp_data_dir
 

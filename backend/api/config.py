@@ -21,9 +21,6 @@ DATA_DIR = PROJECT_DIR / "data"
 # Format: postgresql+asyncpg://user:password@host:port/dbname
 DATABASE_URL = os.getenv("DATABASE_URL", "")
 
-# Legacy SQLite path (for migration reference only)
-SQLITE_DB_PATH = DATA_DIR / "stories.db"
-
 # Story file storage
 STORIES_DIR = DATA_DIR / "stories"
 
