@@ -3,13 +3,18 @@
 import logging
 from contextlib import asynccontextmanager
 
+from arq import create_pool
+from arq.connections import RedisSettings
+from dotenv import load_dotenv
+load_dotenv()  # Must run before importing config
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .auth.routes import router as auth_router
 from .config import DATABASE_URL
 from .routes import stories, admin
-from .services.job_manager import job_manager
+from . import arq_pool as arq_pool_module
 
 logger = logging.getLogger(__name__)
 
@@ -26,10 +31,20 @@ async def lifespan(app: FastAPI):
     else:
         logger.warning("DATABASE_URL not set - database not initialized")
 
+    # Startup: Initialize ARQ Redis pool
+    try:
+        pool = await create_pool(RedisSettings())
+        arq_pool_module.set_pool(pool)
+        logger.info("ARQ Redis pool initialized")
+    except Exception as e:
+        logger.error(f"Failed to connect to Redis: {e}")
+        logger.warning("Story generation will not work without Redis")
+
     yield
 
-    # Shutdown: Clean up job manager
-    job_manager.shutdown(wait=True)
+    # Shutdown: Close ARQ pool
+    await arq_pool_module.close_pool()
+    logger.info("ARQ Redis pool closed")
 
 
 app = FastAPI(
