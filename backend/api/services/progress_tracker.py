@@ -6,8 +6,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import create_async_engine
+import asyncpg
 
 from ..config import DATABASE_URL
 
@@ -42,9 +41,10 @@ class ProgressTracker:
         self.last_stage: Optional[str] = None
         self.warnings: list[str] = []
 
-        # Create a dedicated engine for progress updates
+        # Create a dedicated pool for progress updates
         # This avoids issues with sharing connections across threads
-        self._engine = create_async_engine(DATABASE_URL, pool_size=1)
+        self._pool: Optional[asyncpg.Pool] = None
+        self._dsn = DATABASE_URL.replace("+asyncpg", "")
 
     async def update_async(
         self,
@@ -149,6 +149,12 @@ class ProgressTracker:
         # Otherwise, just use stage start
         return start_pct
 
+    async def _get_pool(self) -> asyncpg.Pool:
+        """Get or create the connection pool."""
+        if self._pool is None:
+            self._pool = await asyncpg.create_pool(self._dsn, min_size=1, max_size=1)
+        return self._pool
+
     async def _write_progress_async(
         self,
         stage: str,
@@ -166,15 +172,19 @@ class ProgressTracker:
         }
 
         try:
-            async with self._engine.begin() as conn:
+            pool = await self._get_pool()
+            async with pool.acquire() as conn:
                 await conn.execute(
-                    text("UPDATE stories SET progress_json = :progress WHERE id = :id"),
-                    {"progress": json.dumps(progress_data), "id": self.story_id},
+                    "UPDATE stories SET progress_json = $1 WHERE id = $2",
+                    json.dumps(progress_data),
+                    self.story_id,
                 )
         except Exception as e:
             # Silent fail - progress updates are non-critical
             logger.warning(f"Failed to update progress for {self.story_id}: {e}")
 
     async def close(self) -> None:
-        """Close the dedicated engine."""
-        await self._engine.dispose()
+        """Close the dedicated pool."""
+        if self._pool is not None:
+            await self._pool.close()
+            self._pool = None
