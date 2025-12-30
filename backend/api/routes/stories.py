@@ -112,8 +112,8 @@ async def get_recommendations(
         404: {"description": "Image not found"},
     },
 )
-async def get_spread_image(story_id: str, spread_number: int, user: CurrentUser):
-    """Get a spread illustration image."""
+async def get_spread_image(story_id: str, spread_number: int):
+    """Get a spread illustration image (no auth - images accessed via unguessable UUID)."""
     image_path = STORIES_DIR / story_id / "images" / f"spread_{spread_number:02d}.png"
 
     if not image_path.exists():
@@ -134,8 +134,8 @@ async def get_spread_image(story_id: str, spread_number: int, user: CurrentUser)
         404: {"description": "Image not found"},
     },
 )
-async def get_character_image(story_id: str, character_name: str, user: CurrentUser):
-    """Get a character reference image."""
+async def get_character_image(story_id: str, character_name: str):
+    """Get a character reference image (no auth - images accessed via unguessable UUID)."""
     refs_dir = STORIES_DIR / story_id / "character_refs"
 
     if not refs_dir.exists():
