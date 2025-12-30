@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Optional
 
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+import asyncpg
 
 from ..config import DATABASE_URL, STORIES_DIR, story_logger
 from ..database.repository import StoryRepository
@@ -51,12 +51,11 @@ async def generate_story(
 
     start_time = time.time()
 
-    # Create a dedicated engine for this task
+    # Create a dedicated connection pool for this task
     # This avoids event loop conflicts with the main FastAPI thread
-    engine = create_async_engine(DATABASE_URL, pool_size=2)
-    session_factory = async_sessionmaker(
-        engine, class_=AsyncSession, expire_on_commit=False
-    )
+    # Convert SQLAlchemy-style URL to asyncpg format
+    dsn = DATABASE_URL.replace("+asyncpg", "")
+    pool = await asyncpg.create_pool(dsn, min_size=1, max_size=2)
 
     # Create progress tracker
     tracker = ProgressTracker(story_id)
@@ -66,14 +65,13 @@ async def generate_story(
         story_logger.generation_started(story_id, generation_type)
 
         # Update status to running
-        async with session_factory() as session:
-            repo = StoryRepository(session)
+        async with pool.acquire() as conn:
+            repo = StoryRepository(conn)
             await repo.update_status(
                 story_id,
                 "running",
                 started_at=datetime.now(timezone.utc),
             )
-            await session.commit()
 
         # Initial progress update
         await tracker.update_async("outline", "Crafting your story outline...")
@@ -124,7 +122,7 @@ async def generate_story(
             await tracker.update_async("quality", "Story generation complete")
 
         # Save to database and filesystem
-        await _save_story(story_id, story, session_factory)
+        await _save_story(story_id, story, pool)
 
         # Log completion
         duration = time.time() - start_time
@@ -136,27 +134,26 @@ async def generate_story(
         await tracker.update_async("failed", f"Generation failed: {type(e).__name__}")
 
         # Update status to failed with error message
-        async with session_factory() as session:
-            repo = StoryRepository(session)
+        async with pool.acquire() as conn:
+            repo = StoryRepository(conn)
             await repo.update_status(
                 story_id,
                 "failed",
                 completed_at=datetime.now(timezone.utc),
                 error_message=str(e),
             )
-            await session.commit()
         raise
 
     finally:
         # Clean up resources
         await tracker.close()
-        await engine.dispose()
+        await pool.close()
 
 
 async def _save_story(
     story_id: str,
     story,
-    session_factory: async_sessionmaker,
+    pool: asyncpg.Pool,
 ) -> None:
     """Save generated story to database and filesystem."""
     # Create story directory for images if illustrated
@@ -230,8 +227,8 @@ async def _save_story(
         }
 
     # Save to database
-    async with session_factory() as session:
-        repo = StoryRepository(session)
+    async with pool.acquire() as conn:
+        repo = StoryRepository(conn)
         await repo.save_completed_story(
             story_id=story_id,
             title=story.title,
@@ -244,7 +241,6 @@ async def _save_story(
             spreads=spreads_data,
             character_refs=char_refs_data,
         )
-        await session.commit()
 
 
 def _safe_filename(name: str) -> str:
