@@ -1,18 +1,9 @@
 """Story service for generation and persistence."""
 
 import uuid
-import json
-import asyncio
-import time
-from datetime import datetime, timezone
-
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database.repository import StoryRepository
-from ..database.db import async_session_factory
-from ..config import STORIES_DIR, story_logger
-from .job_manager import job_manager
-from .progress_tracker import ProgressTracker
+from ..arq_pool import get_pool as get_arq_pool
 
 
 class StoryService:
@@ -31,7 +22,14 @@ class StoryService:
         """
         Create a new story generation job.
 
-        Returns the job/story ID which can be used to poll for status.
+        Creates a pending record in the database and enqueues an ARQ job
+        to generate the story in the background.
+
+        Args:
+            goal: The learning goal or theme for the story
+
+        Returns:
+            The story ID which can be used to poll for status.
         """
         # Import here to avoid circular imports
         from backend.config import get_inference_model_name
@@ -48,249 +46,16 @@ class StoryService:
             llm_model=llm_model,
         )
 
-        # Submit background job
-        job_manager.submit(
-            story_id,
-            self._run_generation_sync,
-            story_id,
-            goal,
-            self.DEFAULT_TARGET_AGE_RANGE,
-            self.DEFAULT_GENERATION_TYPE,
-            self.DEFAULT_QUALITY_THRESHOLD,
-            self.DEFAULT_MAX_ATTEMPTS,
+        # Enqueue ARQ job for background generation
+        arq_pool = await get_arq_pool()
+        await arq_pool.enqueue_job(
+            "generate_story_task",
+            story_id=story_id,
+            goal=goal,
+            target_age_range=self.DEFAULT_TARGET_AGE_RANGE,
+            generation_type=self.DEFAULT_GENERATION_TYPE,
+            quality_threshold=self.DEFAULT_QUALITY_THRESHOLD,
+            max_attempts=self.DEFAULT_MAX_ATTEMPTS,
         )
 
         return story_id
-
-    def _run_generation_sync(
-        self,
-        story_id: str,
-        goal: str,
-        target_age_range: str,
-        generation_type: str,
-        quality_threshold: int,
-        max_attempts: int,
-    ) -> None:
-        """
-        Synchronous wrapper for story generation.
-
-        Runs in a background thread, creates its own event loop for async DB calls.
-        """
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-        # Create progress tracker (uses async PostgreSQL writes)
-        tracker = ProgressTracker(story_id)
-
-        try:
-            loop.run_until_complete(
-                self._generate_story(
-                    story_id,
-                    goal,
-                    target_age_range,
-                    generation_type,
-                    quality_threshold,
-                    max_attempts,
-                    tracker,
-                )
-            )
-        finally:
-            # Clean up tracker's engine
-            loop.run_until_complete(tracker.close())
-            loop.close()
-
-    async def _generate_story(
-        self,
-        story_id: str,
-        goal: str,
-        target_age_range: str,
-        generation_type: str,
-        quality_threshold: int,
-        max_attempts: int,
-        tracker: ProgressTracker,
-    ) -> None:
-        """Actual story generation with DB updates and progress tracking."""
-        # Import here to avoid circular imports and slow startup
-        # Using absolute imports to survive directory restructure
-        from backend.core.programs.story_generator import StoryGenerator
-        from backend.config import get_inference_lm
-
-        start_time = time.time()
-
-        # Log generation start
-        story_logger.generation_started(story_id, generation_type)
-
-        # Create a new session for this background task
-        async with async_session_factory() as session:
-            repo = StoryRepository(session)
-
-            # Update status to running
-            await repo.update_status(
-                story_id,
-                "running",
-                started_at=datetime.now(timezone.utc),
-            )
-            await session.commit()
-
-        # Initial progress update
-        await tracker.update_async("outline", "Crafting your story outline...")
-
-        try:
-            # Get the LM for this generation
-            lm = get_inference_lm()
-
-            # Create generator with explicit LM
-            generator = StoryGenerator(
-                quality_threshold=quality_threshold,
-                max_attempts=max_attempts,
-                lm=lm,
-            )
-
-            # Generate based on type
-            if generation_type == "simple":
-                await tracker.update_async("outline", "Crafting your story outline...")
-                story = generator.generate_simple(goal)
-                await tracker.update_async("spreads", "Story complete", completed=1, total=1)
-
-            elif generation_type == "illustrated":
-                # Create progress callback that updates the tracker
-                def on_progress(stage: str, detail: str, completed: int, total: int):
-                    # Schedule async update
-                    asyncio.create_task(
-                        tracker.update_async(stage, detail, completed, total)
-                    )
-
-                story = generator.generate_illustrated(
-                    goal,
-                    target_age_range,
-                    skip_quality_loop=False,
-                    use_image_qa=True,
-                    max_image_attempts=3,
-                    debug=True,  # Enable debug output
-                    on_progress=on_progress,
-                )
-
-            else:  # standard
-                await tracker.update_async("outline", "Crafting your story outline...")
-                story = generator.forward(
-                    goal,
-                    target_age_range,
-                    skip_quality_loop=False,
-                )
-                await tracker.update_async("quality", "Story generation complete")
-
-            # Save to database and filesystem
-            await self._save_story(story_id, story)
-
-            # Log completion
-            duration = time.time() - start_time
-            story_logger.generation_completed(story_id, duration)
-
-        except Exception as e:
-            # Log and track failure
-            story_logger.generation_failed(story_id, e)
-            await tracker.update_async("failed", f"Generation failed: {type(e).__name__}")
-
-            # Update status to failed with error message
-            async with async_session_factory() as session:
-                repo = StoryRepository(session)
-                await repo.update_status(
-                    story_id,
-                    "failed",
-                    completed_at=datetime.now(timezone.utc),
-                    error_message=str(e),
-                )
-                await session.commit()
-            raise
-
-    async def _save_story(self, story_id: str, story) -> None:
-        """Save generated story to database and filesystem."""
-        # Create story directory for images if illustrated
-        story_dir = STORIES_DIR / story_id
-        story_dir.mkdir(parents=True, exist_ok=True)
-
-        # Prepare spreads data
-        spreads_data = []
-        for spread in story.spreads:
-            spread_data = {
-                "spread_number": spread.spread_number,
-                "text": spread.text,
-                "word_count": spread.word_count,
-                "was_revised": spread.was_revised,
-                "page_turn_note": getattr(spread, 'page_turn_note', ''),
-                "illustration_prompt": spread.illustration_prompt,
-                "illustration_path": None,
-            }
-
-            # Save illustration if present
-            if spread.illustration_image:
-                images_dir = story_dir / "images"
-                images_dir.mkdir(exist_ok=True)
-                img_path = images_dir / f"spread_{spread.spread_number:02d}.png"
-                img_path.write_bytes(spread.illustration_image)
-                spread_data["illustration_path"] = str(img_path)
-
-            spreads_data.append(spread_data)
-
-        # Prepare character refs data
-        char_refs_data = None
-        if story.reference_sheets:
-            char_refs_data = []
-            refs_dir = story_dir / "character_refs"
-            refs_dir.mkdir(exist_ok=True)
-
-            for name, sheet in story.reference_sheets.character_sheets.items():
-                ref_path = refs_dir / f"{_safe_filename(name)}_reference.png"
-                ref_path.write_bytes(sheet.reference_image)
-
-                char_refs_data.append({
-                    "character_name": name,
-                    "character_description": sheet.character_description,
-                    "reference_image_path": str(ref_path),
-                })
-
-        # Serialize outline
-        outline_dict = {
-            "title": story.outline.title,
-            "characters": story.outline.characters,
-            "setting": story.outline.setting,
-            "plot_summary": story.outline.plot_summary,
-            "spread_count": story.outline.spread_count,
-        }
-
-        # Serialize judgment if present
-        judgment_dict = None
-        if story.judgment:
-            judgment_dict = {
-                "overall_score": story.judgment.overall_score,
-                "verdict": story.judgment.verdict,
-                "engagement_score": story.judgment.engagement_score,
-                "read_aloud_score": story.judgment.read_aloud_score,
-                "emotional_truth_score": story.judgment.emotional_truth_score,
-                "coherence_score": story.judgment.coherence_score,
-                "chekhov_score": story.judgment.chekhov_score,
-                "has_critical_failures": story.judgment.has_critical_failures,
-                "specific_problems": story.judgment.specific_problems,
-            }
-
-        # Save to database using a new session
-        async with async_session_factory() as session:
-            repo = StoryRepository(session)
-            await repo.save_completed_story(
-                story_id=story_id,
-                title=story.title,
-                word_count=story.word_count,
-                spread_count=story.spread_count,
-                attempts=story.attempts,
-                is_illustrated=story.is_illustrated,
-                outline_json=json.dumps(outline_dict),
-                judgment_json=json.dumps(judgment_dict) if judgment_dict else None,
-                spreads=spreads_data,
-                character_refs=char_refs_data,
-            )
-            await session.commit()
-
-
-def _safe_filename(name: str) -> str:
-    """Convert a string to a safe filename."""
-    return "".join(c if c.isalnum() else "_" for c in name)

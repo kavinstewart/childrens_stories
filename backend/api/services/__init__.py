@@ -1,6 +1,6 @@
-"""Services for story generation and job management."""
+"""Services for story generation."""
 
-from .job_manager import job_manager
 from .story_service import StoryService
+from .story_generation import generate_story
 
-__all__ = ["job_manager", "StoryService"]
+__all__ = ["StoryService", "generate_story"]
