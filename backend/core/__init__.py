@@ -7,7 +7,7 @@ from .types import (
     CharacterReferenceSheet,
     StoryReferenceSheets,
     StoryOutline,
-    StoryPage,
+    StorySpread,
     QualityJudgment,
     GeneratedStory,
 )
@@ -18,7 +18,7 @@ __all__ = [
     "CharacterReferenceSheet",
     "StoryReferenceSheets",
     "StoryOutline",
-    "StoryPage",
+    "StorySpread",
     "QualityJudgment",
     "GeneratedStory",
 ]

@@ -8,9 +8,8 @@ from .spread_illustrator import SpreadIllustrator
 from .quality_judge import QualityJudge
 from .vlm_judge import VLMJudge, DetailedCheckResult
 
-# Legacy outline-first workflow (deprecated - use DirectStoryGenerator instead)
+# Legacy outline-first workflow (kept for potential outline editing)
 from .outline_generator import OutlineGenerator
-from .page_generator import PageGenerator
 from .spread_generator import SpreadGenerator
 
 __all__ = [
@@ -24,8 +23,7 @@ __all__ = [
     "QualityJudge",
     "VLMJudge",
     "DetailedCheckResult",
-    # Legacy (deprecated)
+    # Legacy
     "OutlineGenerator",
-    "PageGenerator",
     "SpreadGenerator",
 ]

@@ -14,11 +14,13 @@ An AI-powered pipeline for generating illustrated children's picture books from 
 ## Architecture
 
 ```
-Goal → OutlineGenerator → PageGenerator → QualityJudge
+Goal → DirectStoryGenerator (12 spreads in one call) → QualityJudge
+                ↓
+        CharacterExtractor → BibleGenerator
                 ↓
         CharacterSheetGenerator (reference portraits)
                 ↓
-        PageIllustrator (with QA loop)
+        SpreadIllustrator (with QA loop)
                 ↓
         Illustrated Story
 ```
@@ -104,8 +106,8 @@ curl http://localhost:8000/stories/{story_id}/pages/1/image --output page1.png
 ### Python API
 
 ```python
-from src.config import configure_dspy
-from src.programs.story_generator import StoryGenerator
+from backend.config import configure_dspy
+from backend.core.programs.story_generator import StoryGenerator
 
 configure_dspy()
 
@@ -139,7 +141,7 @@ The LLM automatically selects the best style based on story content:
 
 ```
 childrens_stories/
-├── src/
+├── backend/
 │   ├── api/              # FastAPI REST server
 │   │   ├── routes/       # API endpoints
 │   │   ├── models/       # Request/response schemas
@@ -149,29 +151,30 @@ childrens_stories/
 │   │   ├── llm.py        # LLM setup (Claude, Cerebras, etc.)
 │   │   ├── image.py      # Image generation config
 │   │   └── story.py      # Story constants
-│   ├── signatures/       # DSPy Signatures (input/output contracts)
-│   ├── modules/          # DSPy Modules (reusable components)
-│   │   ├── outline_generator.py
-│   │   ├── page_generator.py
-│   │   ├── quality_judge.py
-│   │   ├── vlm_judge.py  # VLM-based image quality judge
-│   │   ├── character_sheet_generator.py
-│   │   ├── page_illustrator.py
-│   │   ├── illustration_styles.py
-│   │   └── image_qa.py
-│   ├── programs/         # DSPy Programs (composed pipelines)
-│   │   └── story_generator.py
+│   ├── core/
+│   │   ├── signatures/   # DSPy Signatures (input/output contracts)
+│   │   ├── modules/      # DSPy Modules (reusable components)
+│   │   │   ├── direct_story_generator.py
+│   │   │   ├── character_extractor.py
+│   │   │   ├── bible_generator.py
+│   │   │   ├── quality_judge.py
+│   │   │   ├── vlm_judge.py
+│   │   │   ├── character_sheet_generator.py
+│   │   │   ├── spread_illustrator.py
+│   │   │   └── image_qa.py
+│   │   ├── programs/     # DSPy Programs (composed pipelines)
+│   │   │   └── story_generator.py
+│   │   └── types.py      # Domain types (Story, Spread, Character, etc.)
 │   ├── metrics/          # Evaluation metrics for GEPA optimization
-│   └── types.py          # Domain types (Story, Page, Character, etc.)
-├── scripts/              # CLI entry points
-│   ├── generate_story.py # Main CLI
-│   └── run_api.py        # API server launcher
-├── examples/             # Sample generated stories
-├── data/                 # Training data & story assets
-├── tests/                # Unit tests
+│   └── worker.py         # ARQ background worker
+├── cli/                  # CLI entry points
+│   ├── generate_story.py
+│   └── run_worker.py
+├── frontend/             # React Native app (Expo)
+├── tests/                # Unit & integration tests
+├── data/                 # Runtime data (database, stories)
 ├── output/               # Generated stories (gitignored)
-├── Makefile              # Common commands
-└── pyproject.toml        # Dependencies
+└── pyproject.toml        # Dependencies (Poetry)
 ```
 
 ## Image QA System

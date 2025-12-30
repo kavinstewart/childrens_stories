@@ -199,10 +199,6 @@ class StorySpread:
         return f"Spread {self.spread_number}: {self.text}"
 
 
-# Backwards compatibility alias
-StoryPage = StorySpread
-
-
 # =============================================================================
 # Quality Judgment Types
 # =============================================================================

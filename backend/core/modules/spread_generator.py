@@ -240,15 +240,3 @@ class SpreadGenerator(dspy.Module):
                 print(f"DEBUG Raw output:\n{raw_output[:1000]}...", file=sys.stderr)
 
         return spreads
-
-    def generate_all_spreads(
-        self, outline: StoryOutline, debug: bool = False
-    ) -> list[StorySpread]:
-        """
-        Alias for forward() for API compatibility with PageGenerator.generate_all_pages().
-        """
-        return self.forward(outline, debug=debug)
-
-
-# Backwards compatibility alias
-PageGenerator = SpreadGenerator
