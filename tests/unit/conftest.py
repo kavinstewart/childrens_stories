@@ -6,7 +6,6 @@ from unittest.mock import AsyncMock, MagicMock
 
 from dotenv import find_dotenv, load_dotenv
 from fastapi.testclient import TestClient
-from sqlalchemy.ext.asyncio import AsyncSession
 
 # Load environment variables (find_dotenv searches parent directories)
 load_dotenv(find_dotenv())
@@ -33,7 +32,7 @@ from backend.api.auth.tokens import create_access_token  # noqa: E402
 from backend.api.dependencies import (  # noqa: E402
     get_repository,
     get_story_service,
-    get_session,
+    get_connection,
     get_vlm_eval_repository,
 )
 from backend.api import config  # noqa: E402
@@ -61,26 +60,30 @@ def mock_config(temp_data_dir, monkeypatch):
 
 
 @pytest.fixture
-def mock_session():
-    """Create a mock async session for unit tests."""
-    session = MagicMock(spec=AsyncSession)
-    session.commit = AsyncMock()
-    session.rollback = AsyncMock()
-    session.flush = AsyncMock()
-    session.execute = AsyncMock()
-    session.add = MagicMock()
-    return session
+def mock_connection():
+    """Create a mock asyncpg connection for unit tests."""
+    conn = MagicMock()
+    conn.execute = AsyncMock()
+    conn.executemany = AsyncMock()
+    conn.fetch = AsyncMock(return_value=[])
+    conn.fetchrow = AsyncMock(return_value=None)
+    conn.fetchval = AsyncMock(return_value=0)
+    # Mock transaction context manager
+    conn.transaction = MagicMock()
+    conn.transaction.return_value.__aenter__ = AsyncMock()
+    conn.transaction.return_value.__aexit__ = AsyncMock()
+    return conn
 
 
 @pytest.fixture
-def mock_repository(mock_session):
+def mock_repository(mock_connection):
     """Create a mock repository for unit tests."""
     repo = AsyncMock(spec=StoryRepository)
     return repo
 
 
 @pytest.fixture
-def mock_vlm_eval_repository(mock_session):
+def mock_vlm_eval_repository(mock_connection):
     """Create a mock VLM eval repository for unit tests."""
     repo = AsyncMock(spec=VLMEvalRepository)
     return repo
@@ -122,13 +125,13 @@ class AuthenticatedTestClient:
 
 
 @pytest.fixture
-def client_with_mocks(mock_repository, mock_service, mock_session, mock_vlm_eval_repository):
+def client_with_mocks(mock_repository, mock_service, mock_connection, mock_vlm_eval_repository):
     """TestClient with mocked dependencies and auth headers."""
 
-    async def mock_get_session():
-        yield mock_session
+    async def mock_get_connection():
+        yield mock_connection
 
-    app.dependency_overrides[get_session] = mock_get_session
+    app.dependency_overrides[get_connection] = mock_get_connection
     app.dependency_overrides[get_repository] = lambda: mock_repository
     app.dependency_overrides[get_story_service] = lambda: mock_service
     app.dependency_overrides[get_vlm_eval_repository] = lambda: mock_vlm_eval_repository

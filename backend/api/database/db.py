@@ -1,78 +1,70 @@
-"""PostgreSQL database connection management using SQLAlchemy async."""
+"""PostgreSQL database connection management using asyncpg."""
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import AsyncGenerator, Optional
 
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.orm import DeclarativeBase
+import asyncpg
 
 from ..config import DATABASE_URL
 
 
-class Base(DeclarativeBase):
-    """SQLAlchemy declarative base for all models."""
-
-    pass
+# Global pool - initialized in lifespan handler, not at module import
+_pool: Optional[asyncpg.Pool] = None
 
 
-# Create async engine (only if DATABASE_URL is configured)
-# Pool settings optimized for story generation workload
-engine: Optional[AsyncEngine] = None
-async_session_factory: Optional[async_sessionmaker[AsyncSession]] = None
-
-if DATABASE_URL:
-    engine = create_async_engine(
-        DATABASE_URL,
-        echo=False,  # Set to True for SQL debugging
-        pool_size=5,
-        max_overflow=10,
-        pool_pre_ping=True,  # Verify connections before use
-    )
-
-    # Session factory
-    async_session_factory = async_sessionmaker(
-        engine,
-        class_=AsyncSession,
-        expire_on_commit=False,
-    )
+def get_pool() -> asyncpg.Pool:
+    """Get the connection pool. Raises if not initialized."""
+    if _pool is None:
+        raise RuntimeError(
+            "Database pool not initialized. Ensure init_pool() is called in lifespan."
+        )
+    return _pool
 
 
-def _check_configured():
-    """Raise an error if the database is not configured."""
-    if engine is None or async_session_factory is None:
+async def init_pool() -> asyncpg.Pool:
+    """Create and store the connection pool. Call this in FastAPI lifespan."""
+    global _pool
+    if not DATABASE_URL:
         raise RuntimeError(
             "Database not configured. Set DATABASE_URL environment variable "
             "to a PostgreSQL connection string."
         )
 
+    # Convert SQLAlchemy-style URL to asyncpg format
+    # postgresql+asyncpg://... -> postgresql://...
+    dsn = DATABASE_URL.replace("+asyncpg", "")
+
+    _pool = await asyncpg.create_pool(
+        dsn,
+        min_size=2,
+        max_size=10,
+        command_timeout=60,
+    )
+    return _pool
+
+
+async def close_pool() -> None:
+    """Close the connection pool. Call this in FastAPI lifespan shutdown."""
+    global _pool
+    if _pool is not None:
+        await _pool.close()
+        _pool = None
+
 
 async def init_db() -> None:
-    """Initialize database - create all tables."""
-    _check_configured()
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    """Initialize database - run schema.sql to create tables."""
+    pool = get_pool()
+    schema_path = Path(__file__).parent / "schema.sql"
+
+    async with pool.acquire() as conn:
+        schema_sql = schema_path.read_text()
+        await conn.execute(schema_sql)
 
 
 @asynccontextmanager
-async def get_db() -> AsyncGenerator[AsyncSession, None]:
-    """Async context manager for database sessions."""
-    _check_configured()
-    async with async_session_factory() as session:
-        try:
-            yield session
-            await session.commit()
-        except Exception:
-            await session.rollback()
-            raise
-
-
-async def get_session() -> AsyncGenerator[AsyncSession, None]:
-    """Dependency injection helper for FastAPI."""
-    _check_configured()
-    async with async_session_factory() as session:
-        try:
-            yield session
-            await session.commit()
-        except Exception:
-            await session.rollback()
-            raise
+async def get_connection() -> AsyncGenerator[asyncpg.Connection, None]:
+    """Get a connection from the pool."""
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        yield conn

@@ -1,23 +1,16 @@
-"""Database module for story persistence."""
+"""Database module for story persistence using asyncpg."""
 
-from .db import init_db, get_db, get_session, async_session_factory, engine, Base
-from .models import Story, StorySpread, CharacterReference, VLMEvaluation
+from .db import init_pool, close_pool, init_db, get_pool, get_connection
 from .repository import StoryRepository
 from .vlm_eval_repository import VLMEvalRepository
 
 __all__ = [
     # Connection management
+    "init_pool",
+    "close_pool",
     "init_db",
-    "get_db",
-    "get_session",
-    "async_session_factory",
-    "engine",
-    "Base",
-    # Models
-    "Story",
-    "StorySpread",
-    "CharacterReference",
-    "VLMEvaluation",
+    "get_pool",
+    "get_connection",
     # Repositories
     "StoryRepository",
     "VLMEvalRepository",

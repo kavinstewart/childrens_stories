@@ -2,16 +2,16 @@
 
 from typing import Annotated, AsyncGenerator
 
+import asyncpg
 from dotenv import find_dotenv, load_dotenv
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from sqlalchemy.ext.asyncio import AsyncSession
 
 # Load .env from project root (find_dotenv searches parent directories)
 load_dotenv(find_dotenv())
 
 from .auth.tokens import verify_token  # noqa: E402
-from .database.db import async_session_factory  # noqa: E402
+from .database.db import get_pool  # noqa: E402
 from .database.repository import StoryRepository  # noqa: E402
 from .database.vlm_eval_repository import VLMEvalRepository  # noqa: E402
 from .services.story_service import StoryService  # noqa: E402
@@ -20,32 +20,28 @@ from .services.story_service import StoryService  # noqa: E402
 security = HTTPBearer()
 
 
-# Database session dependency
-async def get_session() -> AsyncGenerator[AsyncSession, None]:
-    """Get an async database session."""
-    async with async_session_factory() as session:
-        try:
-            yield session
-            await session.commit()
-        except Exception:
-            await session.rollback()
-            raise
+# Database connection dependency
+async def get_connection() -> AsyncGenerator[asyncpg.Connection, None]:
+    """Get an async database connection from the pool."""
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        yield conn
 
 
-# Repository - requires session
+# Repository - requires connection
 def get_repository(
-    session: Annotated[AsyncSession, Depends(get_session)]
+    conn: Annotated[asyncpg.Connection, Depends(get_connection)]
 ) -> StoryRepository:
-    """Get a StoryRepository instance with injected session."""
-    return StoryRepository(session)
+    """Get a StoryRepository instance with injected connection."""
+    return StoryRepository(conn)
 
 
-# VLM Eval Repository - requires session
+# VLM Eval Repository - requires connection
 def get_vlm_eval_repository(
-    session: Annotated[AsyncSession, Depends(get_session)]
+    conn: Annotated[asyncpg.Connection, Depends(get_connection)]
 ) -> VLMEvalRepository:
-    """Get a VLMEvalRepository instance with injected session."""
-    return VLMEvalRepository(session)
+    """Get a VLMEvalRepository instance with injected connection."""
+    return VLMEvalRepository(conn)
 
 
 # Service - depends on repository
@@ -57,7 +53,7 @@ def get_story_service(
 
 
 # Type aliases for cleaner route signatures
-Session = Annotated[AsyncSession, Depends(get_session)]
+Connection = Annotated[asyncpg.Connection, Depends(get_connection)]
 Repository = Annotated[StoryRepository, Depends(get_repository)]
 VLMEvalRepo = Annotated[VLMEvalRepository, Depends(get_vlm_eval_repository)]
 Service = Annotated[StoryService, Depends(get_story_service)]

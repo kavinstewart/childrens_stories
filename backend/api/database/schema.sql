@@ -1,32 +1,36 @@
+-- PostgreSQL schema for Children's Story Generator
+-- Run with: psql -f schema.sql -d your_database
+
 -- Stories table with JSON for complex nested data
 CREATE TABLE IF NOT EXISTS stories (
-    id TEXT PRIMARY KEY,
-    status TEXT NOT NULL DEFAULT 'pending',  -- pending/running/completed/failed
+    id VARCHAR(36) PRIMARY KEY,
+    status VARCHAR(20) NOT NULL DEFAULT 'pending',  -- pending/running/completed/failed
     goal TEXT NOT NULL,
-    target_age_range TEXT DEFAULT '4-7',
-    generation_type TEXT NOT NULL,  -- simple/standard/illustrated
-    llm_model TEXT,  -- model used for generation (e.g., 'claude-opus-4-5-20251101')
+    target_age_range VARCHAR(10) DEFAULT '4-7',
+    generation_type VARCHAR(20) NOT NULL,  -- simple/standard/illustrated
+    llm_model VARCHAR(100),  -- model used for generation
     title TEXT,
     word_count INTEGER,
     spread_count INTEGER,  -- Number of spreads (typically 12)
     attempts INTEGER,
-    is_illustrated INTEGER DEFAULT 0,
+    is_illustrated BOOLEAN DEFAULT FALSE,
     outline_json TEXT,
     judgment_json TEXT,
-    created_at TEXT DEFAULT (datetime('now')),
-    started_at TEXT,
-    completed_at TEXT,
-    error_message TEXT
+    progress_json TEXT,
+    error_message TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    started_at TIMESTAMPTZ,
+    completed_at TIMESTAMPTZ
 );
 
 -- Normalized spreads for efficient queries (a spread = two facing pages)
 CREATE TABLE IF NOT EXISTS story_spreads (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    story_id TEXT NOT NULL REFERENCES stories(id) ON DELETE CASCADE,
+    id SERIAL PRIMARY KEY,
+    story_id VARCHAR(36) NOT NULL REFERENCES stories(id) ON DELETE CASCADE,
     spread_number INTEGER NOT NULL,
     text TEXT NOT NULL,
     word_count INTEGER,
-    was_revised INTEGER DEFAULT 0,
+    was_revised BOOLEAN DEFAULT FALSE,
     page_turn_note TEXT,  -- What makes reader want to turn the page
     illustration_prompt TEXT,
     illustration_path TEXT,
@@ -35,9 +39,9 @@ CREATE TABLE IF NOT EXISTS story_spreads (
 
 -- Character references for illustrated stories
 CREATE TABLE IF NOT EXISTS character_references (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    story_id TEXT NOT NULL REFERENCES stories(id) ON DELETE CASCADE,
-    character_name TEXT NOT NULL,
+    id SERIAL PRIMARY KEY,
+    story_id VARCHAR(36) NOT NULL REFERENCES stories(id) ON DELETE CASCADE,
+    character_name VARCHAR(100) NOT NULL,
     character_description TEXT,
     reference_image_path TEXT,
     UNIQUE(story_id, character_name)
@@ -45,23 +49,23 @@ CREATE TABLE IF NOT EXISTS character_references (
 
 -- VLM Judge evaluations for optimization training data
 CREATE TABLE IF NOT EXISTS vlm_evaluations (
-    id TEXT PRIMARY KEY,
-    story_id TEXT REFERENCES stories(id) ON DELETE SET NULL,
+    id VARCHAR(8) PRIMARY KEY,
+    story_id VARCHAR(36) REFERENCES stories(id) ON DELETE SET NULL,
     spread_number INTEGER,
 
     -- Input context
     prompt TEXT NOT NULL,
     image_path TEXT NOT NULL,
     character_ref_paths TEXT,  -- JSON array of paths
-    check_text_free INTEGER DEFAULT 1,
-    check_characters INTEGER DEFAULT 1,
-    check_composition INTEGER DEFAULT 1,
+    check_text_free BOOLEAN DEFAULT TRUE,
+    check_characters BOOLEAN DEFAULT TRUE,
+    check_composition BOOLEAN DEFAULT TRUE,
 
     -- VLM output
-    vlm_model TEXT NOT NULL,
+    vlm_model VARCHAR(100) NOT NULL,
     vlm_raw_response TEXT,  -- Raw JSON from VLM
-    vlm_overall_pass INTEGER,  -- 0 or 1
-    vlm_text_free INTEGER,
+    vlm_overall_pass BOOLEAN,
+    vlm_text_free BOOLEAN,
     vlm_character_match_score INTEGER,
     vlm_scene_accuracy_score INTEGER,
     vlm_composition_score INTEGER,
@@ -69,11 +73,11 @@ CREATE TABLE IF NOT EXISTS vlm_evaluations (
     vlm_issues TEXT,  -- JSON array
 
     -- Human annotation (null until reviewed)
-    human_verdict INTEGER,  -- 0=fail, 1=pass, null=not reviewed
+    human_verdict BOOLEAN,  -- null=not reviewed
     human_notes TEXT,
-    annotated_at TEXT,
+    annotated_at TIMESTAMPTZ,
 
-    created_at TEXT DEFAULT (datetime('now'))
+    created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- Indexes for common queries

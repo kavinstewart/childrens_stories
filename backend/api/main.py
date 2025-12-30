@@ -24,10 +24,12 @@ async def lifespan(app: FastAPI):
     """Application lifespan - startup and shutdown."""
     # Startup: Initialize database (only if DATABASE_URL is configured)
     if DATABASE_URL:
-        from .database.db import init_db
+        from .database.db import init_pool, init_db, close_pool
 
+        await init_pool()
+        logger.info("Database pool initialized")
         await init_db()
-        logger.info("Database initialized")
+        logger.info("Database schema initialized")
     else:
         logger.warning("DATABASE_URL not set - database not initialized")
 
@@ -41,6 +43,12 @@ async def lifespan(app: FastAPI):
         logger.warning("Story generation will not work without Redis")
 
     yield
+
+    # Shutdown: Close database pool
+    if DATABASE_URL:
+        from .database.db import close_pool
+        await close_pool()
+        logger.info("Database pool closed")
 
     # Shutdown: Close ARQ pool
     await arq_pool_module.close_pool()
