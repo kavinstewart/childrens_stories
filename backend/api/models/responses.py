@@ -12,7 +12,7 @@ class StorySpreadResponse(BaseModel):
     """A single spread (two facing pages) of the story.
 
     A picture book has 12 spreads for story content.
-    Each spread has 25-40 words and one illustration.
+    Each spread has 35-50 words and one illustration.
     """
 
     spread_number: int

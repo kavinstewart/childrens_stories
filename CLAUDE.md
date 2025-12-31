@@ -63,10 +63,11 @@ load_dotenv()
 - **Note**: If using OpenRouter with Qwen3 thinking models, add `/no_think` to signature docstrings
 
 ## Children's Book Standards
-- **Page count**: 32 pages (industry standard)
-- **Word count**: 400-600 words total (500 is sweet spot)
+- **Spread count**: 12 spreads (a spread = two facing pages; fixed structural requirement)
+- **Word count**: 400-600 words total (ideal), 300-800 acceptable
+- **Per-spread words**: 35-50 words per spread
 - **Structure**: Three-act (25% beginning, 50% middle, 25% end)
-- **Per-page words**: ~25-50 words per page
+- **Source of truth**: `backend/metrics/story_quality.py` defines scoring; signatures align to it
 
 ## DSPy & GEPA Patterns
 

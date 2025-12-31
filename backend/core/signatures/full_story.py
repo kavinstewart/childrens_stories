@@ -15,8 +15,9 @@ class FullStorySignature(dspy.Signature):
 
     STRUCTURE:
     - 12 spreads (a spread = two facing pages when the book is open)
-    - 300-400 words total (25-35 words per spread on average)
+    - 400-600 words total (35-50 words per spread on average)
     - Target age: 4-7 years old
+    (See story_quality.py for scoring: 400-600 ideal, 300-800 acceptable)
 
     PAGE TURNS ARE STORY ELEMENTS:
     End each spread with something that makes readers WANT to turn the page:
@@ -53,7 +54,7 @@ class FullStorySignature(dspy.Signature):
     )
 
     story: str = dspy.OutputField(
-        desc="The complete story text. Format: 'Spread 1: [text]' through 'Spread 12: [text]'. Each spread should have 25-35 words. Total 300-400 words."
+        desc="The complete story text. Format: 'Spread 1: [text]' through 'Spread 12: [text]'. Each spread should have 35-50 words. Total 400-600 words."
     )
 
 
@@ -73,5 +74,5 @@ class FullStoryWithPromptsSignature(dspy.Signature):
 Spread N: [story text]
 [Illustration: detailed visual description for the illustrator - characters, actions, expressions, setting details, composition]
 
-Include all 12 spreads. Story text: 25-35 words per spread. Illustration prompts should describe the key visual moment."""
+Include all 12 spreads. Story text: 35-50 words per spread (400-600 total). Illustration prompts should describe the key visual moment."""
     )

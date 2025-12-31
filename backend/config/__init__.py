@@ -5,7 +5,6 @@ Re-exports all configuration for backwards compatibility.
 """
 
 from .llm import configure_dspy, get_inference_lm, get_reflection_lm, get_inference_model_name, llm_retry, LLM_TIMEOUT
-from .story import STORY_CONSTANTS
 from .image import (
     IMAGE_CONSTANTS,
     get_image_client,
@@ -22,8 +21,6 @@ __all__ = [
     "get_inference_model_name",
     "llm_retry",
     "LLM_TIMEOUT",
-    # Story
-    "STORY_CONSTANTS",
     # Image
     "IMAGE_CONSTANTS",
     "get_image_client",

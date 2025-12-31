@@ -3,6 +3,13 @@ GEPA-compatible metrics for story quality evaluation.
 
 These metrics return both score AND textual feedback, which GEPA uses
 to reflect on failures and improve prompts.
+
+CANONICAL WORD COUNT TARGETS (signatures should align with these):
+- Ideal: 400-600 words (score 1.0)
+- Acceptable: 300-800 words (score 0.7)
+- Outside acceptable: <300 or >800 (score 0.3)
+
+SPREAD COUNT: Fixed at 12 spreads (structural requirement, not tunable).
 """
 
 import dspy

@@ -19,8 +19,9 @@ class DirectStorySignature(dspy.Signature):
 
     STRUCTURE:
     - 12 spreads (a spread = two facing pages when the book is open)
-    - 300-400 words total (25-35 words per spread on average)
+    - 400-600 words total (35-50 words per spread on average)
     - Target age: 4-7 years old
+    (See story_quality.py for scoring: 400-600 ideal, 300-800 acceptable)
 
     PACING:
     - Spread 1: Hook. Establish character, situation, and emotional stakes.
@@ -91,6 +92,6 @@ Spread 2: [story text]
 
 ... through Spread 12.
 
-Each spread: 25-35 words. Total: 300-400 words.
+Each spread: 35-50 words. Total: 400-600 words.
 Characters field must list ONLY characters who appear in THAT spread's illustration."""
     )

@@ -176,7 +176,7 @@ class StorySpread:
     """Structured representation of a single story spread (two facing pages).
 
     A spread is a double-page unit in a picture book. Standard picture books
-    have 12 spreads for story content, with 25-40 words per spread.
+    have 12 spreads for story content, with 35-50 words per spread.
     """
 
     spread_number: int

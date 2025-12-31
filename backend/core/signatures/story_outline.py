@@ -7,7 +7,7 @@ import dspy
 
 class StoryOutlineSignature(dspy.Signature):
     """
-    Generate an outline for a children's picture book (12 spreads, ~400 words total).
+    Generate an outline for a children's picture book (12 spreads, 400-600 words total).
 
     Write like the classics: Frog and Toad, Harold and the Purple Crayon, Sendak.
     Simple sentences. Real emotions. No lessons announced aloud.
