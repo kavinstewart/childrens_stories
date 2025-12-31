@@ -1,4 +1,4 @@
-import { View, Text, Pressable, ScrollView, ActivityIndicator, useWindowDimensions } from 'react-native';
+import { View, Text, Pressable, ScrollView, ActivityIndicator, useWindowDimensions, RefreshControl } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -13,7 +13,7 @@ const COLUMNS = 4;       // number of columns
 
 export default function StoryLibrary() {
   const router = useRouter();
-  const { data: stories, isLoading, error, refetch } = useStories();
+  const { data: stories, isLoading, isFetching, error, refetch } = useStories();
   const { width: screenWidth } = useWindowDimensions();
 
   // Calculate card dimensions (matching HTML mockup)
@@ -34,6 +34,14 @@ export default function StoryLibrary() {
           className="flex-1"
           contentContainerStyle={{ padding: 24 }}
           showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={isFetching && !isLoading}
+              onRefresh={refetch}
+              tintColor="#7C3AED"
+              colors={['#7C3AED']}
+            />
+          }
         >
           {/* Header */}
           <View className="flex-row items-center justify-between mb-6">
