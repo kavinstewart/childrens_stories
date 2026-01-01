@@ -92,10 +92,12 @@ export function useRegenerateSpread() {
     mutationFn: ({
       storyId,
       spreadNumber,
+      prompt,
     }: {
       storyId: string;
       spreadNumber: number;
-    }) => api.regenerateSpread(storyId, spreadNumber),
+      prompt?: string;
+    }) => api.regenerateSpread(storyId, spreadNumber, prompt),
 
     // Optimistic update: mark spread as regenerating
     onMutate: async ({ storyId, spreadNumber }) => {

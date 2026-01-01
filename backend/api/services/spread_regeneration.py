@@ -23,6 +23,7 @@ async def regenerate_spread(
     job_id: str,
     story_id: str,
     spread_number: int,
+    custom_prompt: Optional[str] = None,
 ) -> None:
     """
     Regenerate a single spread illustration and update the story.
@@ -33,6 +34,8 @@ async def regenerate_spread(
         job_id: ID of the regeneration job
         story_id: ID of the story
         spread_number: Which spread to regenerate (1-12)
+        custom_prompt: Optional custom prompt to use instead of the default composed prompt.
+                      If provided, bypasses the template and uses this prompt directly.
     """
     # Import here to avoid circular imports and slow startup
     from backend.core.modules.spread_illustrator import SpreadIllustrator
@@ -121,6 +124,7 @@ async def regenerate_spread(
             outline=outline,
             reference_sheets=reference_sheets,
             debug=True,
+            custom_prompt=custom_prompt,
         )
 
         # Save new image atomically (write to temp, then rename)

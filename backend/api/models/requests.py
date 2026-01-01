@@ -16,9 +16,11 @@ class CreateStoryRequest(BaseModel):
 
 
 class RegenerateSpreadRequest(BaseModel):
-    """Request body for regenerating a spread illustration.
+    """Request body for regenerating a spread illustration."""
 
-    Currently empty - regenerates with existing prompt.
-    Future: add optional new_prompt field for prompt editing.
-    """
-    pass
+    prompt: str | None = Field(
+        default=None,
+        max_length=4000,  # Prevent excessively long prompts that could exceed model limits
+        description="Optional custom prompt to use instead of the default composed prompt. "
+                    "If not provided, uses the original illustration_prompt with style template.",
+    )

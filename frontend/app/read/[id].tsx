@@ -508,14 +508,15 @@ export default function StoryReader() {
       <SpreadEditOverlay
         isVisible={showEditOverlay}
         spreadNumber={currentSpread + 1}
-        currentPrompt={currentSpreadData?.illustration_prompt}
+        composedPrompt={currentSpreadData?.composed_prompt}
         isRegenerating={regenerateSpread.isPending}
-        onRegenerate={() => {
+        onRegenerate={(prompt: string) => {
           if (story && currentSpreadData) {
             regenerateSpread.mutate(
               {
                 storyId: story.id,
                 spreadNumber: currentSpreadData.spread_number,
+                prompt,
               },
               {
                 onSuccess: () => {

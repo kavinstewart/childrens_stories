@@ -159,6 +159,7 @@ Wide shot framing with space at bottom for text overlay. Maintain exact characte
         outline: StoryOutline,
         reference_sheets: Optional[StoryReferenceSheets] = None,
         debug: bool = False,
+        custom_prompt: Optional[str] = None,
     ) -> bytes:
         """
         Generate an illustration for a single spread using Nano Banana Pro.
@@ -171,13 +172,19 @@ Wide shot framing with space at bottom for text overlay. Maintain exact characte
             outline: The story outline with character bibles
             reference_sheets: Character reference images for consistency
             debug: Print debug info
+            custom_prompt: Optional custom prompt to use instead of building from template.
+                          If provided, bypasses _build_scene_prompt entirely.
 
         Returns:
             PNG/JPEG image bytes
         """
         import sys
 
-        scene_prompt = self._build_scene_prompt(spread, outline)
+        # Use custom prompt if provided, otherwise build from template
+        if custom_prompt:
+            scene_prompt = custom_prompt
+        else:
+            scene_prompt = self._build_scene_prompt(spread, outline)
         contents = self._build_contents(spread, outline, reference_sheets, scene_prompt)
 
         if debug:

@@ -32,6 +32,7 @@ export interface StorySpread {
   illustration_prompt?: string;
   illustration_url?: string;
   illustration_updated_at?: string;  // For cache busting after regeneration
+  composed_prompt?: string;  // Full prompt sent to image model (for dev editing)
 }
 
 export interface QualityJudgment {
@@ -229,10 +230,11 @@ export const api = {
   },
 
   // Regenerate a spread illustration
-  regenerateSpread: async (storyId: string, spreadNumber: number): Promise<RegenerateSpreadResponse> => {
+  // Optional prompt parameter allows overriding the default composed prompt
+  regenerateSpread: async (storyId: string, spreadNumber: number, prompt?: string): Promise<RegenerateSpreadResponse> => {
     return fetchApi(`/stories/${storyId}/spreads/${spreadNumber}/regenerate`, {
       method: 'POST',
-      body: JSON.stringify({}),
+      body: JSON.stringify(prompt ? { prompt } : {}),
     });
   },
 

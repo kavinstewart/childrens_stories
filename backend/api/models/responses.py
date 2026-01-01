@@ -23,6 +23,7 @@ class StorySpreadResponse(BaseModel):
     illustration_prompt: Optional[str] = None
     illustration_url: Optional[str] = None
     illustration_updated_at: Optional[datetime] = None  # For cache busting after regeneration
+    composed_prompt: Optional[str] = None  # Full prompt sent to image model (for dev editing)
 
 
 class QualityJudgmentResponse(BaseModel):

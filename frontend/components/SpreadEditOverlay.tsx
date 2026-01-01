@@ -1,4 +1,4 @@
-import { View, Text, Pressable, TextInput, ActivityIndicator, Dimensions } from 'react-native';
+import { View, Text, Pressable, TextInput, ActivityIndicator, Dimensions, ScrollView } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
   useSharedValue,
@@ -7,31 +7,41 @@ import Animated, {
   withTiming,
   runOnJS,
 } from 'react-native-reanimated';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { fontFamily } from '@/lib/fonts';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
-const OVERLAY_HEIGHT = SCREEN_HEIGHT * 0.55;
+const OVERLAY_HEIGHT = SCREEN_HEIGHT * 0.7;
 
 interface SpreadEditOverlayProps {
   isVisible: boolean;
   spreadNumber: number;
-  currentPrompt?: string;
+  composedPrompt?: string;  // Full prompt from backend (single source of truth)
   isRegenerating: boolean;
-  onRegenerate: () => void;
+  onRegenerate: (prompt: string) => void;
   onDismiss: () => void;
 }
 
 export function SpreadEditOverlay({
   isVisible,
   spreadNumber,
-  currentPrompt,
+  composedPrompt = '',
   isRegenerating,
   onRegenerate,
   onDismiss,
 }: SpreadEditOverlayProps) {
   const translateY = useSharedValue(SCREEN_HEIGHT);
   const backdropOpacity = useSharedValue(0);
+
+  // Track edited prompt
+  const [editedPrompt, setEditedPrompt] = useState(composedPrompt);
+
+  // Reset edited prompt when overlay opens or composed prompt changes
+  useEffect(() => {
+    if (isVisible) {
+      setEditedPrompt(composedPrompt);
+    }
+  }, [isVisible, composedPrompt]);
 
   useEffect(() => {
     if (isVisible) {
@@ -177,45 +187,69 @@ export function SpreadEditOverlay({
           </View>
         ) : (
           /* Edit Form */
-          <>
-            {/* Current Prompt Display */}
-            <Text
+          <View style={{ flex: 1 }}>
+            {/* Prompt Label with Reset */}
+            <View
               style={{
-                color: 'rgba(255,255,255,0.7)',
-                fontSize: 14,
-                fontFamily: fontFamily.nunitoSemiBold,
+                flexDirection: 'row',
+                justifyContent: 'space-between',
+                alignItems: 'center',
                 marginBottom: 8,
               }}
             >
-              Current Prompt
-            </Text>
-            <View
+              <Text
+                style={{
+                  color: 'rgba(255,255,255,0.7)',
+                  fontSize: 14,
+                  fontFamily: fontFamily.nunitoSemiBold,
+                }}
+              >
+                Full Prompt (editable)
+              </Text>
+              {editedPrompt !== composedPrompt && (
+                <Pressable onPress={() => setEditedPrompt(composedPrompt)}>
+                  <Text
+                    style={{
+                      color: '#FBBF24',
+                      fontSize: 13,
+                      fontFamily: fontFamily.nunitoSemiBold,
+                    }}
+                  >
+                    Reset to default
+                  </Text>
+                </Pressable>
+              )}
+            </View>
+
+            {/* Editable Prompt */}
+            <ScrollView
               style={{
+                flex: 1,
                 backgroundColor: '#FAF7F2',
                 borderRadius: 16,
-                padding: 16,
-                marginBottom: 24,
+                marginBottom: 16,
               }}
+              contentContainerStyle={{ padding: 16 }}
             >
               <TextInput
-                value={currentPrompt || 'No prompt available'}
-                editable={false}
+                value={editedPrompt}
+                onChangeText={setEditedPrompt}
                 multiline
                 style={{
                   fontFamily: fontFamily.nunito,
                   fontSize: 14,
                   color: '#374151',
-                  minHeight: 80,
+                  minHeight: 150,
                   textAlignVertical: 'top',
                 }}
               />
-            </View>
+            </ScrollView>
 
             {/* Action Buttons */}
-            <View style={{ gap: 16 }}>
+            <View style={{ gap: 12 }}>
               {/* Regenerate Button */}
               <Pressable
-                onPress={onRegenerate}
+                onPress={() => onRegenerate(editedPrompt)}
                 style={({ pressed }) => ({
                   opacity: pressed ? 0.9 : 1,
                   transform: [{ scale: pressed ? 0.98 : 1 }],
@@ -248,18 +282,6 @@ export function SpreadEditOverlay({
                 </LinearGradient>
               </Pressable>
 
-              {/* Helper Text */}
-              <Text
-                style={{
-                  color: 'rgba(255,255,255,0.5)',
-                  fontSize: 13,
-                  fontFamily: fontFamily.nunito,
-                  textAlign: 'center',
-                }}
-              >
-                Generate a new illustration using the same prompt
-              </Text>
-
               {/* Cancel Button */}
               <Pressable
                 onPress={onDismiss}
@@ -280,7 +302,7 @@ export function SpreadEditOverlay({
                 </Text>
               </Pressable>
             </View>
-          </>
+          </View>
         )}
       </Animated.View>
     </>

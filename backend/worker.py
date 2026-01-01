@@ -73,6 +73,7 @@ async def regenerate_spread_task(
     job_id: str,
     story_id: str,
     spread_number: int,
+    custom_prompt: str | None = None,
 ) -> dict[str, Any]:
     """
     ARQ task for regenerating a spread illustration.
@@ -84,6 +85,7 @@ async def regenerate_spread_task(
         job_id: ID of the regeneration job record
         story_id: UUID of the story
         spread_number: Which spread to regenerate (1-12)
+        custom_prompt: Optional custom prompt to use instead of the default
 
     Returns:
         Dict with job_id and status
@@ -96,6 +98,7 @@ async def regenerate_spread_task(
             job_id=job_id,
             story_id=story_id,
             spread_number=spread_number,
+            custom_prompt=custom_prompt,
         )
         logger.info(f"Completed spread regeneration job {arq_job_id}")
         return {"job_id": job_id, "status": "completed"}

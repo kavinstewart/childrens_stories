@@ -10,6 +10,7 @@ import asyncpg
 from ..models.enums import GenerationType, JobStatus
 from ..models.responses import (
     CharacterReferenceResponse,
+    IllustrationStyleResponse,
     QualityJudgmentResponse,
     StoryOutlineResponse,
     StoryProgressResponse,
@@ -17,6 +18,34 @@ from ..models.responses import (
     StoryResponse,
     StorySpreadResponse,
 )
+
+
+def _build_composed_prompt(
+    illustration_prompt: str,
+    setting: str,
+    style: Optional[IllustrationStyleResponse],
+) -> str:
+    """
+    Build the full composed prompt for image generation.
+
+    Single source of truth - this matches SpreadIllustrator._build_scene_prompt().
+    """
+    style_direction = (
+        style.prompt_prefix if style
+        else "Warm, inviting children's book illustration in soft watercolor and gouache style"
+    )
+    lighting = (
+        style.lighting_direction if style and style.lighting_direction
+        else "soft diffused natural light with gentle shadows"
+    )
+
+    return f"""{style_direction}, 16:9 double-page spread composition.
+
+Scene: {illustration_prompt}
+
+Setting: {setting}. Lighting: {lighting}.
+
+Wide shot framing with space at bottom for text overlay. Maintain exact character identity from reference images above."""
 
 
 class StoryRepository:
@@ -410,6 +439,10 @@ class StoryRepository:
         # Convert spreads
         spread_responses = None
         if spreads:
+            # Extract style info for composed prompt
+            style = outline.illustration_style if outline else None
+            setting = outline.setting if outline else ""
+
             spread_responses = [
                 StorySpreadResponse(
                     spread_number=s["spread_number"],
@@ -422,6 +455,11 @@ class StoryRepository:
                     if s["illustration_path"]
                     else None,
                     illustration_updated_at=s.get("illustration_updated_at"),
+                    composed_prompt=_build_composed_prompt(
+                        s["illustration_prompt"] or "",
+                        setting,
+                        style,
+                    ) if s["illustration_prompt"] else None,
                 )
                 for s in spreads
             ]

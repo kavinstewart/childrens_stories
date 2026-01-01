@@ -207,6 +207,7 @@ async def regenerate_spread(
     job_id = await service.regenerate_spread_job(
         story_id=story_id,
         spread_number=spread_number,
+        custom_prompt=request.prompt,
     )
 
     return RegenerateSpreadResponse(

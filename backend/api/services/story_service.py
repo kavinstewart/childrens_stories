@@ -64,6 +64,7 @@ class StoryService:
         self,
         story_id: str,
         spread_number: int,
+        custom_prompt: str | None = None,
     ) -> str:
         """
         Create a new spread regeneration job.
@@ -74,6 +75,7 @@ class StoryService:
         Args:
             story_id: ID of the story containing the spread
             spread_number: Which spread to regenerate (1-12)
+            custom_prompt: Optional custom prompt to use instead of the default
 
         Returns:
             The job ID which can be used to track status.
@@ -95,6 +97,7 @@ class StoryService:
             job_id=job_id,
             story_id=story_id,
             spread_number=spread_number,
+            custom_prompt=custom_prompt,
         )
 
         return job_id
