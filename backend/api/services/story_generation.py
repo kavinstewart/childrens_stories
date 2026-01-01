@@ -93,16 +93,25 @@ async def generate_story(
             await tracker.update_async("spreads", "Story complete", completed=1, total=1)
 
         elif generation_type == "illustrated":
+            # Get reference to running event loop for thread-safe scheduling
+            loop = asyncio.get_running_loop()
+
             # Create progress callback that updates the tracker
+            # Uses run_coroutine_threadsafe since the callback is called from
+            # within a sync function running in a thread pool
             def progress_callback(stage: str, detail: str, completed: int, total: int):
-                asyncio.create_task(
-                    tracker.update_async(stage, detail, completed, total)
+                asyncio.run_coroutine_threadsafe(
+                    tracker.update_async(stage, detail, completed, total),
+                    loop
                 )
                 # Also call user callback if provided
                 if on_progress:
                     on_progress(stage, detail, completed, total)
 
-            story = generator.generate_illustrated(
+            # Run the blocking generate_illustrated in a thread pool so the
+            # event loop stays responsive and can process progress updates
+            story = await asyncio.to_thread(
+                generator.generate_illustrated,
                 goal,
                 target_age_range,
                 skip_quality_loop=False,

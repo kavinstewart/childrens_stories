@@ -180,8 +180,8 @@ class ProgressTracker:
                     self.story_id,
                 )
         except Exception as e:
-            # Silent fail - progress updates are non-critical
-            logger.warning(f"Failed to update progress for {self.story_id}: {e}")
+            # Log full exception for debugging - progress failures indicate DB issues
+            logger.error(f"Failed to update progress for {self.story_id}: {e}", exc_info=True)
 
     async def close(self) -> None:
         """Close the dedicated pool."""
