@@ -31,6 +31,7 @@ export interface StorySpread {
   page_turn_note?: string;  // What makes reader want to turn the page
   illustration_prompt?: string;
   illustration_url?: string;
+  illustration_updated_at?: string;  // For cache busting after regeneration
 }
 
 export interface QualityJudgment {
@@ -108,6 +109,14 @@ export interface StoryRecommendation {
 
 export interface RecommendationsResponse {
   recommendations: StoryRecommendation[];
+}
+
+export interface RegenerateSpreadResponse {
+  job_id: string;
+  story_id: string;
+  spread_number: number;
+  status: JobStatus;
+  message: string;
 }
 
 export interface LoginRequest {
@@ -199,8 +208,14 @@ export const api = {
   },
 
   // Get spread image URL (a spread = two facing pages)
-  getSpreadImageUrl: (storyId: string, spreadNumber: number): string => {
-    return `${API_BASE_URL}/stories/${storyId}/spreads/${spreadNumber}/image`;
+  // Optional updatedAt param for cache busting after regeneration
+  getSpreadImageUrl: (storyId: string, spreadNumber: number, updatedAt?: string): string => {
+    const baseUrl = `${API_BASE_URL}/stories/${storyId}/spreads/${spreadNumber}/image`;
+    if (updatedAt) {
+      const timestamp = new Date(updatedAt).getTime();
+      return `${baseUrl}?v=${timestamp}`;
+    }
+    return baseUrl;
   },
 
   // Get character reference image URL
@@ -211,6 +226,14 @@ export const api = {
   // Get story recommendations
   getRecommendations: async (storyId: string, limit: number = 4): Promise<RecommendationsResponse> => {
     return fetchApi(`/stories/${storyId}/recommendations?limit=${limit}`);
+  },
+
+  // Regenerate a spread illustration
+  regenerateSpread: async (storyId: string, spreadNumber: number): Promise<RegenerateSpreadResponse> => {
+    return fetchApi(`/stories/${storyId}/spreads/${spreadNumber}/regenerate`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
   },
 
   // Health check

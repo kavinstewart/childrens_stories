@@ -59,3 +59,42 @@ class StoryService:
         )
 
         return story_id
+
+    async def regenerate_spread_job(
+        self,
+        story_id: str,
+        spread_number: int,
+    ) -> str:
+        """
+        Create a new spread regeneration job.
+
+        Creates a pending job record in the database and enqueues an ARQ job
+        to regenerate the spread illustration in the background.
+
+        Args:
+            story_id: ID of the story containing the spread
+            spread_number: Which spread to regenerate (1-12)
+
+        Returns:
+            The job ID which can be used to track status.
+        """
+        # Generate short job ID (8 chars)
+        job_id = str(uuid.uuid4())[:8]
+
+        # Create pending job record in database
+        await self.repo.create_spread_regen_job(
+            job_id=job_id,
+            story_id=story_id,
+            spread_number=spread_number,
+        )
+
+        # Enqueue ARQ job for background regeneration
+        arq_pool = await get_arq_pool()
+        await arq_pool.enqueue_job(
+            "regenerate_spread_task",
+            job_id=job_id,
+            story_id=story_id,
+            spread_number=spread_number,
+        )
+
+        return job_id

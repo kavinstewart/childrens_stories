@@ -276,6 +276,118 @@ class StoryRepository:
             for row in selected
         ]
 
+    # --- Spread Regeneration Job Methods ---
+
+    async def create_spread_regen_job(
+        self,
+        job_id: str,
+        story_id: str,
+        spread_number: int,
+    ) -> None:
+        """Create a new spread regeneration job record."""
+        await self.conn.execute(
+            """
+            INSERT INTO spread_regen_jobs (id, story_id, spread_number, status)
+            VALUES ($1, $2, $3, 'pending')
+            """,
+            job_id,
+            story_id,
+            spread_number,
+        )
+
+    async def get_spread_regen_job(self, job_id: str) -> Optional[dict]:
+        """Get a spread regeneration job by ID."""
+        row = await self.conn.fetchrow(
+            "SELECT * FROM spread_regen_jobs WHERE id = $1",
+            job_id,
+        )
+        return dict(row) if row else None
+
+    async def get_active_spread_regen_job(
+        self, story_id: str, spread_number: int
+    ) -> Optional[dict]:
+        """Get an active (pending/running) regeneration job for a spread."""
+        row = await self.conn.fetchrow(
+            """
+            SELECT * FROM spread_regen_jobs
+            WHERE story_id = $1 AND spread_number = $2 AND status IN ('pending', 'running')
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            story_id,
+            spread_number,
+        )
+        return dict(row) if row else None
+
+    async def update_spread_regen_status(
+        self,
+        job_id: str,
+        status: str,
+        started_at: Optional[datetime] = None,
+        completed_at: Optional[datetime] = None,
+        error_message: Optional[str] = None,
+    ) -> None:
+        """Update spread regeneration job status."""
+        await self.conn.execute(
+            """
+            UPDATE spread_regen_jobs
+            SET status = $2,
+                started_at = COALESCE($3, started_at),
+                completed_at = COALESCE($4, completed_at),
+                error_message = COALESCE($5, error_message)
+            WHERE id = $1
+            """,
+            job_id,
+            status,
+            started_at,
+            completed_at,
+            error_message,
+        )
+
+    async def update_spread_regen_progress(
+        self,
+        job_id: str,
+        progress_json: str,
+    ) -> None:
+        """Update spread regeneration progress JSON."""
+        await self.conn.execute(
+            "UPDATE spread_regen_jobs SET progress_json = $2 WHERE id = $1",
+            job_id,
+            progress_json,
+        )
+
+    async def save_regenerated_spread(
+        self,
+        story_id: str,
+        spread_number: int,
+        illustration_path: str,
+    ) -> None:
+        """Update a spread's illustration after successful regeneration."""
+        await self.conn.execute(
+            """
+            UPDATE story_spreads
+            SET illustration_path = $3,
+                illustration_updated_at = $4
+            WHERE story_id = $1 AND spread_number = $2
+            """,
+            story_id,
+            spread_number,
+            illustration_path,
+            datetime.now(timezone.utc),
+        )
+
+    async def get_spread(self, story_id: str, spread_number: int) -> Optional[dict]:
+        """Get a single spread by story ID and spread number."""
+        row = await self.conn.fetchrow(
+            """
+            SELECT * FROM story_spreads
+            WHERE story_id = $1 AND spread_number = $2
+            """,
+            story_id,
+            spread_number,
+        )
+        return dict(row) if row else None
+
     def _record_to_response(
         self,
         story: asyncpg.Record,
@@ -309,6 +421,7 @@ class StoryRepository:
                     illustration_url=f"/stories/{story['id']}/spreads/{s['spread_number']}/image"
                     if s["illustration_path"]
                     else None,
+                    illustration_updated_at=s.get("illustration_updated_at"),
                 )
                 for s in spreads
             ]

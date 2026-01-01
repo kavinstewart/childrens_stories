@@ -220,6 +220,17 @@ async def _save_story(
         "spread_count": story.outline.spread_count,
     }
 
+    # Include illustration style if available (for regeneration consistency)
+    if story.outline.illustration_style:
+        style = story.outline.illustration_style
+        outline_dict["illustration_style"] = {
+            "name": style.name,
+            "description": style.description,
+            "prompt_prefix": style.prompt_prefix,
+            "best_for": style.best_for,
+            "lighting_direction": style.lighting_direction,
+        }
+
     # Serialize judgment if present
     judgment_dict = None
     if story.judgment:

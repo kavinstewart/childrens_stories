@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS story_spreads (
     page_turn_note TEXT,  -- What makes reader want to turn the page
     illustration_prompt TEXT,
     illustration_path TEXT,
+    illustration_updated_at TIMESTAMPTZ,  -- When illustration was last regenerated (for cache busting)
     PRIMARY KEY (story_id, spread_number)
 );
 
@@ -78,6 +79,20 @@ CREATE TABLE IF NOT EXISTS vlm_evaluations (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Spread regeneration jobs (for individual illustration regeneration)
+CREATE TABLE IF NOT EXISTS spread_regen_jobs (
+    id VARCHAR(8) PRIMARY KEY,
+    story_id UUID NOT NULL REFERENCES stories(id) ON DELETE CASCADE,
+    spread_number INTEGER NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'pending',  -- pending/running/completed/failed
+    progress_json JSONB,
+    error_message TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    started_at TIMESTAMPTZ,
+    completed_at TIMESTAMPTZ,
+    FOREIGN KEY (story_id, spread_number) REFERENCES story_spreads(story_id, spread_number) ON DELETE CASCADE
+);
+
 -- Indexes for common queries
 CREATE INDEX IF NOT EXISTS idx_stories_status ON stories(status);
 CREATE INDEX IF NOT EXISTS idx_stories_created_at ON stories(created_at DESC);
@@ -85,3 +100,5 @@ CREATE INDEX IF NOT EXISTS idx_story_spreads_story_id ON story_spreads(story_id)
 CREATE INDEX IF NOT EXISTS idx_character_refs_story_id ON character_references(story_id);
 CREATE INDEX IF NOT EXISTS idx_vlm_evals_story_id ON vlm_evaluations(story_id);
 CREATE INDEX IF NOT EXISTS idx_vlm_evals_unannotated ON vlm_evaluations(human_verdict) WHERE human_verdict IS NULL;
+CREATE INDEX IF NOT EXISTS idx_spread_regen_jobs_story_spread ON spread_regen_jobs(story_id, spread_number);
+CREATE INDEX IF NOT EXISTS idx_spread_regen_jobs_status ON spread_regen_jobs(status);

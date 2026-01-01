@@ -13,3 +13,12 @@ class CreateStoryRequest(BaseModel):
         description="Learning goal or theme for the story",
         examples=["teach kids that feedback is a gift", "explain friendship to children"],
     )
+
+
+class RegenerateSpreadRequest(BaseModel):
+    """Request body for regenerating a spread illustration.
+
+    Currently empty - regenerates with existing prompt.
+    Future: add optional new_prompt field for prompt editing.
+    """
+    pass

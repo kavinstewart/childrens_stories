@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { api, Story, CreateStoryRequest, JobStatus } from '@/lib/api';
+import { api, Story, CreateStoryRequest, JobStatus, RegenerateSpreadResponse } from '@/lib/api';
 
 // Query keys
 export const storyKeys = {
@@ -81,5 +81,64 @@ export function useRecommendations(storyId: string | undefined, limit: number = 
     queryFn: () => api.getRecommendations(storyId!, limit),
     enabled: !!storyId,
     select: (data) => data.recommendations,
+  });
+}
+
+// Hook to regenerate a spread illustration
+export function useRegenerateSpread() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      storyId,
+      spreadNumber,
+    }: {
+      storyId: string;
+      spreadNumber: number;
+    }) => api.regenerateSpread(storyId, spreadNumber),
+
+    // Optimistic update: mark spread as regenerating
+    onMutate: async ({ storyId, spreadNumber }) => {
+      // Cancel any outgoing queries to prevent race conditions
+      await queryClient.cancelQueries({
+        queryKey: storyKeys.detail(storyId),
+      });
+
+      // Snapshot previous value
+      const previousStory = queryClient.getQueryData<Story>(
+        storyKeys.detail(storyId)
+      );
+
+      // Optimistically update the story to mark spread as regenerating
+      if (previousStory) {
+        queryClient.setQueryData<Story>(storyKeys.detail(storyId), {
+          ...previousStory,
+          spreads: previousStory.spreads?.map((s) =>
+            s.spread_number === spreadNumber
+              ? { ...s, _regenerating: true } as typeof s & { _regenerating: boolean }
+              : s
+          ),
+        });
+      }
+
+      return { previousStory, storyId };
+    },
+
+    // On success, invalidate to get fresh data with new timestamp
+    onSuccess: (_, { storyId }) => {
+      queryClient.invalidateQueries({
+        queryKey: storyKeys.detail(storyId),
+      });
+    },
+
+    // On error, restore previous state
+    onError: (_, __, context) => {
+      if (context?.previousStory) {
+        queryClient.setQueryData(
+          storyKeys.detail(context.storyId),
+          context.previousStory
+        );
+      }
+    },
   });
 }

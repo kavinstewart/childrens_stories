@@ -15,6 +15,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from backend.api.services.story_generation import generate_story
+from backend.api.services.spread_regeneration import regenerate_spread
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +68,43 @@ async def generate_story_task(
         raise
 
 
+async def regenerate_spread_task(
+    ctx: dict[str, Any],
+    job_id: str,
+    story_id: str,
+    spread_number: int,
+) -> dict[str, Any]:
+    """
+    ARQ task for regenerating a spread illustration.
+
+    This is a thin wrapper around the standalone regenerate_spread function.
+
+    Args:
+        ctx: ARQ context (contains job_id, redis connection, etc.)
+        job_id: ID of the regeneration job record
+        story_id: UUID of the story
+        spread_number: Which spread to regenerate (1-12)
+
+    Returns:
+        Dict with job_id and status
+    """
+    arq_job_id = ctx.get("job_id", "unknown")
+    logger.info(f"Starting spread regeneration job {arq_job_id} for story {story_id} spread {spread_number}")
+
+    try:
+        await regenerate_spread(
+            job_id=job_id,
+            story_id=story_id,
+            spread_number=spread_number,
+        )
+        logger.info(f"Completed spread regeneration job {arq_job_id}")
+        return {"job_id": job_id, "status": "completed"}
+
+    except Exception as e:
+        logger.error(f"Failed spread regeneration job {arq_job_id}: {e}")
+        raise
+
+
 async def startup(ctx: dict[str, Any]) -> None:
     """Called when worker starts up."""
     logger.info("ARQ worker starting up")
@@ -81,7 +119,7 @@ class WorkerSettings:
     """ARQ worker configuration."""
 
     # Task functions to register
-    functions = [generate_story_task]
+    functions = [generate_story_task, regenerate_spread_task]
 
     # Lifecycle hooks
     on_startup = startup

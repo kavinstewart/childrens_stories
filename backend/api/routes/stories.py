@@ -6,12 +6,13 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, status, Query
 from fastapi.responses import FileResponse
 
-from ..models.requests import CreateStoryRequest
+from ..models.requests import CreateStoryRequest, RegenerateSpreadRequest
 from ..models.responses import (
     StoryResponse,
     StoryListResponse,
     CreateStoryResponse,
     StoryRecommendationsResponse,
+    RegenerateSpreadResponse,
     JobStatus,
 )
 from ..dependencies import Repository, Service, CurrentUser
@@ -152,6 +153,67 @@ async def get_character_image(story_id: str, character_name: str):
     raise HTTPException(
         status_code=status.HTTP_404_NOT_FOUND,
         detail=f"Character '{character_name}' not found",
+    )
+
+
+@router.post(
+    "/{story_id}/spreads/{spread_number}/regenerate",
+    response_model=RegenerateSpreadResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Regenerate spread illustration",
+    description="Start regenerating the illustration for a specific spread. Returns immediately with a job ID.",
+)
+async def regenerate_spread(
+    story_id: str,
+    spread_number: int,
+    request: RegenerateSpreadRequest,
+    repo: Repository,
+    service: Service,
+    user: CurrentUser,
+):
+    """Start regeneration of a single spread illustration."""
+    # Verify story exists
+    story = await repo.get_story(story_id)
+    if not story:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Story {story_id} not found",
+        )
+
+    # Verify story is illustrated
+    if not story.is_illustrated:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot regenerate illustration for non-illustrated story",
+        )
+
+    # Verify spread exists
+    spread = await repo.get_spread(story_id, spread_number)
+    if not spread:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Spread {spread_number} not found in story {story_id}",
+        )
+
+    # Check if already regenerating
+    active_job = await repo.get_active_spread_regen_job(story_id, spread_number)
+    if active_job:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Spread {spread_number} is already being regenerated (job {active_job['id']})",
+        )
+
+    # Create regeneration job
+    job_id = await service.regenerate_spread_job(
+        story_id=story_id,
+        spread_number=spread_number,
+    )
+
+    return RegenerateSpreadResponse(
+        job_id=job_id,
+        story_id=story_id,
+        spread_number=spread_number,
+        status=JobStatus.PENDING,
     )
 
 

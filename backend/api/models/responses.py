@@ -22,6 +22,7 @@ class StorySpreadResponse(BaseModel):
     page_turn_note: Optional[str] = None  # What makes reader want to turn
     illustration_prompt: Optional[str] = None
     illustration_url: Optional[str] = None
+    illustration_updated_at: Optional[datetime] = None  # For cache busting after regeneration
 
 
 class QualityJudgmentResponse(BaseModel):
@@ -38,6 +39,16 @@ class QualityJudgmentResponse(BaseModel):
     specific_problems: str
 
 
+class IllustrationStyleResponse(BaseModel):
+    """Illustration style definition for consistency."""
+
+    name: str
+    description: str
+    prompt_prefix: str
+    best_for: list[str] = []
+    lighting_direction: str = ""
+
+
 class StoryOutlineResponse(BaseModel):
     """Story outline metadata."""
 
@@ -46,6 +57,7 @@ class StoryOutlineResponse(BaseModel):
     setting: str = ""
     plot_summary: str = ""
     spread_count: int = 12  # Number of spreads (typically 12)
+    illustration_style: Optional[IllustrationStyleResponse] = None  # For regeneration consistency
 
 
 class CharacterReferenceResponse(BaseModel):
@@ -148,3 +160,15 @@ class StoryRecommendationsResponse(BaseModel):
     """Response for story recommendations."""
 
     recommendations: list[StoryRecommendationItem]
+
+
+class RegenerateSpreadResponse(BaseModel):
+    """Response when starting a spread regeneration job."""
+
+    job_id: str
+    story_id: str
+    spread_number: int
+    status: JobStatus
+    message: str = Field(
+        default="Spread regeneration started. Poll GET /stories/{story_id} for updated illustration."
+    )

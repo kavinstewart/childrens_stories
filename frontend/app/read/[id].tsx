@@ -2,10 +2,11 @@ import { View, Text, Pressable, Image, ActivityIndicator, Dimensions } from 'rea
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useState } from 'react';
-import { useStory, useRecommendations } from '@/features/stories/hooks';
+import { useStory, useRecommendations, useRegenerateSpread } from '@/features/stories/hooks';
 import { api } from '@/lib/api';
 import { fontFamily } from '@/lib/fonts';
 import { StoryCard } from '@/components/StoryCard';
+import { SpreadEditOverlay } from '@/components/SpreadEditOverlay';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -18,6 +19,10 @@ export default function StoryReader() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { data: story, isLoading, error } = useStory(id);
   const [currentSpread, setCurrentSpread] = useState(0);
+  const [showEditOverlay, setShowEditOverlay] = useState(false);
+
+  // Regenerate spread mutation
+  const regenerateSpread = useRegenerateSpread();
 
   const spreads = story?.spreads || [];
   const totalSpreads = spreads.length;
@@ -80,9 +85,10 @@ export default function StoryReader() {
   const lastSpreadData = spreads[totalSpreads - 1];
 
   // Get image URL - use last spread's image on end screen
+  // Include illustration_updated_at for cache busting after regeneration
   const displaySpread = showEndScreen ? lastSpreadData : currentSpreadData;
   const imageUrl = story.is_illustrated && displaySpread
-    ? api.getSpreadImageUrl(story.id, displaySpread.spread_number)
+    ? api.getSpreadImageUrl(story.id, displaySpread.spread_number, displaySpread.illustration_updated_at)
     : null;
 
   const isFirstSpread = currentSpread === 0 && !showEndScreen;
@@ -98,6 +104,7 @@ export default function StoryReader() {
       {/* Full-bleed Illustration */}
       {imageUrl ? (
         <Image
+          key={imageUrl}
           source={{ uri: imageUrl }}
           style={{
             position: 'absolute',
@@ -254,6 +261,30 @@ export default function StoryReader() {
             {currentSpread + 1} / {totalSpreads}
           </Text>
         </View>
+
+        {/* Edit Button - only show when on a spread (not end screen) and story is illustrated */}
+        {!showEndScreen && story.is_illustrated && (
+          <Pressable
+            onPress={() => setShowEditOverlay(true)}
+            style={{
+              backgroundColor: '#FAF7F2',
+              paddingVertical: 16,
+              paddingHorizontal: 22,
+              borderRadius: 22,
+              borderWidth: 2,
+              borderColor: '#EDE8E0',
+              alignItems: 'center',
+              justifyContent: 'center',
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.15,
+              shadowRadius: 6,
+              elevation: 4,
+            }}
+          >
+            <Text style={{ fontSize: 32 }}>✏️</Text>
+          </Pressable>
+        )}
       </View>
 
       {/* Bottom Content */}
@@ -472,6 +503,31 @@ export default function StoryReader() {
           </Pressable>
         </View>
       )}
+
+      {/* Spread Edit Overlay */}
+      <SpreadEditOverlay
+        isVisible={showEditOverlay}
+        spreadNumber={currentSpread + 1}
+        currentPrompt={currentSpreadData?.illustration_prompt}
+        isRegenerating={regenerateSpread.isPending}
+        onRegenerate={() => {
+          if (story && currentSpreadData) {
+            regenerateSpread.mutate(
+              {
+                storyId: story.id,
+                spreadNumber: currentSpreadData.spread_number,
+              },
+              {
+                onSuccess: () => {
+                  // Close overlay after successful regeneration start
+                  setShowEditOverlay(false);
+                },
+              }
+            );
+          }
+        }}
+        onDismiss={() => setShowEditOverlay(false)}
+      />
     </View>
   );
 }
