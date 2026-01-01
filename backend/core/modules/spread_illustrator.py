@@ -13,10 +13,25 @@ Supports optional QA with automatic regeneration:
 """
 
 import re
+import sys
 from typing import TYPE_CHECKING, Optional, Tuple
 
 from backend.config import get_image_client, get_image_model, get_image_config, IMAGE_CONSTANTS, extract_image_from_response
 from ..types import StoryOutline, StorySpread, StoryReferenceSheets
+
+# Stopwords that should never be used for character matching
+# These are common words that appear in text but are not character names
+STOPWORDS = frozenset([
+    "he", "she", "they", "him", "her", "his", "hers", "their", "theirs",
+    "the", "a", "an", "in", "on", "at", "to", "of", "and", "or", "but",
+    "is", "was", "are", "were", "be", "been", "being", "have", "has", "had",
+    "do", "does", "did", "will", "would", "could", "should", "may", "might",
+    "it", "its", "this", "that", "these", "those", "with", "for", "from",
+    "up", "down", "out", "into", "over", "under", "again", "then", "once",
+    "here", "there", "when", "where", "why", "how", "all", "each", "every",
+    "both", "few", "more", "most", "other", "some", "such", "no", "not",
+    "only", "own", "same", "so", "than", "too", "very", "just", "now",
+])
 
 if TYPE_CHECKING:
     from .image_qa import ImageQAResult
@@ -35,6 +50,75 @@ class SpreadIllustrator:
         self.client = get_image_client()
         self.model = get_image_model()
         self.config = get_image_config()
+
+    # =========================================================================
+    # Character Matching Helpers (Bead 1 & 2 fixes)
+    # =========================================================================
+
+    @staticmethod
+    def _normalize(s: str) -> str:
+        """Normalize a string for matching: lowercase, strip, collapse whitespace."""
+        return " ".join(s.lower().strip().split())
+
+    @staticmethod
+    def _strip_leading_article(s: str) -> str:
+        """Remove leading 'the ', 'a ', 'an ' from a string."""
+        normalized = s.lower().strip()
+        for article in ("the ", "a ", "an "):
+            if normalized.startswith(article):
+                return normalized[len(article):].strip()
+        return normalized
+
+    def _build_character_lookup(self, character_bibles: list) -> dict[str, str]:
+        """
+        Build a lookup dict mapping normalized names (and variants) to canonical names.
+
+        Returns:
+            Dict mapping normalized name variants -> canonical character name
+        """
+        lookup = {}
+        for bible in character_bibles:
+            canonical = bible.name
+            # Add normalized canonical name
+            normalized = self._normalize(canonical)
+            lookup[normalized] = canonical
+            # Add article-stripped variant
+            stripped = self._strip_leading_article(canonical)
+            if stripped != normalized:
+                lookup[stripped] = canonical
+        return lookup
+
+    def _name_matches_in_text(self, character_name: str, text: str) -> bool:
+        """
+        Check if a character name (or article-stripped variant) appears as whole word(s) in text.
+
+        Uses word-boundary regex matching to avoid false positives like "He" matching "The".
+        For multi-word names, matches the whole phrase as a unit.
+
+        Args:
+            character_name: The canonical character name (e.g., "The Blue Bird")
+            text: The text to search in
+
+        Returns:
+            True if the name appears as whole word(s), False otherwise
+        """
+        text_lower = text.lower()
+        name_normalized = self._normalize(character_name)
+
+        # Try matching the full name with word boundaries
+        # \b ensures we match whole words only
+        pattern = r'\b' + re.escape(name_normalized) + r'\b'
+        if re.search(pattern, text_lower):
+            return True
+
+        # Try matching article-stripped version (e.g., "Blue Bird" for "The Blue Bird")
+        name_stripped = self._strip_leading_article(character_name)
+        if name_stripped != name_normalized:
+            pattern_stripped = r'\b' + re.escape(name_stripped) + r'\b'
+            if re.search(pattern_stripped, text_lower):
+                return True
+
+        return False
 
     def _build_scene_prompt(
         self,
@@ -185,18 +269,96 @@ Wide shot framing with space at bottom for text overlay. Maintain exact characte
     # === QA-ENABLED METHODS ===
 
     def _extract_character_names(self, text: str) -> list[str]:
+        """
+        Extract potential character names from text.
+
+        Filters out stopwords and short tokens (< 3 chars) to avoid false matches.
+        This is only used as a fallback when present_characters is not populated.
+        """
         words = re.findall(r'\b[A-Z][a-z]+\b', text)
-        return list(set(words))
+        # Filter out stopwords and tokens < 3 chars
+        filtered = [
+            w for w in words
+            if len(w) >= 3 and w.lower() not in STOPWORDS
+        ]
+        return list(set(filtered))
+
+    def _resolve_present_characters(
+        self, present_characters: list[str], character_bibles: list
+    ) -> list[str]:
+        """
+        Resolve present_characters names to canonical character bible names.
+
+        Uses normalization and article-stripping for flexible matching.
+        Unknown names are logged and skipped (no fuzzy/substring matching).
+
+        Args:
+            present_characters: List of character names from spread.present_characters
+            character_bibles: List of CharacterBible objects
+
+        Returns:
+            List of canonical character names that were successfully resolved
+        """
+        lookup = self._build_character_lookup(character_bibles)
+        resolved = []
+
+        for name in present_characters:
+            # Try normalized name
+            normalized = self._normalize(name)
+            if normalized in lookup:
+                resolved.append(lookup[normalized])
+                continue
+
+            # Try article-stripped version
+            stripped = self._strip_leading_article(name)
+            if stripped in lookup:
+                resolved.append(lookup[stripped])
+                continue
+
+            # Unknown character - log and skip (no fuzzy matching!)
+            print(
+                f"WARNING: Character '{name}' in present_characters not found in "
+                f"character_bibles. Skipping. Known characters: "
+                f"{[b.name for b in character_bibles]}",
+                file=sys.stderr
+            )
+
+        return resolved
 
     def _get_characters_for_spread(self, spread: StorySpread, outline: StoryOutline) -> list[str]:
+        """
+        Determine which characters should have reference images included for this spread.
+
+        Priority:
+        1. Use spread.present_characters if populated (from LLM [Characters:] field)
+        2. Fall back to safe text-based detection (word-boundary matching only)
+
+        Returns:
+            List of canonical character names to include reference images for
+        """
+        # Priority 1: Use explicit present_characters if available
         if spread.present_characters is not None:
-            return spread.present_characters
-        mentioned_names = self._extract_character_names(spread.illustration_prompt + ' ' + spread.text)
+            return self._resolve_present_characters(
+                spread.present_characters, outline.character_bibles
+            )
+
+        # Priority 2: Fallback to text-based detection with SAFE matching
+        # WARNING: This path means [Characters:] was missing from story generation
+        print(
+            f"WARNING: Spread {spread.spread_number} has no present_characters. "
+            "Falling back to text-based character detection. "
+            "Consider regenerating story with [Characters:] field.",
+            file=sys.stderr
+        )
+
+        combined_text = spread.illustration_prompt + ' ' + spread.text
         matched_characters = []
+
         for bible in outline.character_bibles:
-            is_mentioned = any(name.lower() in bible.name.lower() for name in mentioned_names)
-            if is_mentioned:
+            # Use safe word-boundary matching (NOT substring matching!)
+            if self._name_matches_in_text(bible.name, combined_text):
                 matched_characters.append(bible.name)
+
         return matched_characters
 
     def _build_contents(

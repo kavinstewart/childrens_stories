@@ -10,6 +10,52 @@ from typing import Optional, TYPE_CHECKING
 import re
 from io import BytesIO
 
+
+# =============================================================================
+# Character Name Matching Helpers
+# =============================================================================
+
+def _normalize_name(s: str) -> str:
+    """Normalize a string for matching: lowercase, strip, collapse whitespace."""
+    return " ".join(s.lower().strip().split())
+
+
+def _strip_leading_article(s: str) -> str:
+    """Remove leading 'the ', 'a ', 'an ' from a string."""
+    normalized = s.lower().strip()
+    for article in ("the ", "a ", "an "):
+        if normalized.startswith(article):
+            return normalized[len(article):].strip()
+    return normalized
+
+
+def _names_match(query: str, canonical: str) -> bool:
+    """
+    Check if query matches canonical name using normalization and article-stripping.
+
+    Supports exact match and article-stripped match (e.g., "Blue Bird" matches "The Blue Bird").
+    Does NOT use substring matching to avoid false positives.
+    """
+    query_norm = _normalize_name(query)
+    canonical_norm = _normalize_name(canonical)
+
+    # Exact match (normalized)
+    if query_norm == canonical_norm:
+        return True
+
+    # Article-stripped match (both directions)
+    query_stripped = _strip_leading_article(query)
+    canonical_stripped = _strip_leading_article(canonical)
+
+    if query_stripped == canonical_stripped:
+        return True
+    if query_norm == canonical_stripped:
+        return True
+    if query_stripped == canonical_norm:
+        return True
+
+    return False
+
 # Conditional import for PIL (only needed at runtime for some methods)
 if TYPE_CHECKING:
     from PIL import Image
@@ -95,10 +141,19 @@ class StoryReferenceSheets:
     character_sheets: dict[str, CharacterReferenceSheet] = field(default_factory=dict)
 
     def get_sheet(self, character_name: str) -> Optional[CharacterReferenceSheet]:
-        """Get reference sheet by character name (case-insensitive partial match)."""
-        name_lower = character_name.lower()
+        """Get reference sheet by character name.
+
+        Uses exact matching with normalization and article-stripping.
+        Does NOT use substring matching to avoid false positives.
+
+        Args:
+            character_name: Name to search for (e.g., "Blue Bird" matches "The Blue Bird")
+
+        Returns:
+            CharacterReferenceSheet if found, None otherwise
+        """
         for name, sheet in self.character_sheets.items():
-            if name_lower in name.lower():
+            if _names_match(character_name, name):
                 return sheet
         return None
 
@@ -163,10 +218,19 @@ class StoryOutline:
         return len(self.get_spreads())
 
     def get_character_bible(self, name: str) -> Optional[CharacterBible]:
-        """Find a character bible by name (case-insensitive partial match)."""
-        name_lower = name.lower()
+        """Find a character bible by name.
+
+        Uses exact matching with normalization and article-stripping.
+        Does NOT use substring matching to avoid false positives.
+
+        Args:
+            name: Name to search for (e.g., "Blue Bird" matches "The Blue Bird")
+
+        Returns:
+            CharacterBible if found, None otherwise
+        """
         for bible in self.character_bibles:
-            if name_lower in bible.name.lower():
+            if _names_match(name, bible.name):
                 return bible
         return None
 

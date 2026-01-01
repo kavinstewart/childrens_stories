@@ -62,11 +62,13 @@ class DirectStorySignature(dspy.Signature):
 
     ... through Spread 12
 
-    IMPORTANT for [Characters:] field:
+    CRITICAL - [Characters:] field is REQUIRED for EVERY spread:
+    - You MUST include a [Characters: ...] line for every single spread
     - List ONLY characters who should be VISIBLE in the illustration
     - If a character hasn't appeared yet in the story, do NOT include them
-    - A spread showing "an empty room" has Characters: none
+    - If NO characters are visible (e.g., empty room, landscape), write: [Characters: none]
     - Be precise: if the text says "soldiers grumbled" but the General hasn't arrived yet, don't list the General
+    - Missing [Characters:] fields will cause illustration errors - do NOT skip this field
     """
 
     goal: str = dspy.InputField(
@@ -93,5 +95,6 @@ Spread 2: [story text]
 ... through Spread 12.
 
 Each spread: 35-50 words. Total: 400-600 words.
-Characters field must list ONLY characters who appear in THAT spread's illustration."""
+CRITICAL: [Characters: ...] is REQUIRED for EVERY spread - never omit it.
+Characters field must list ONLY characters who appear in THAT spread's illustration, or "none" if empty."""
     )

@@ -82,15 +82,21 @@ class DirectStoryGenerator(dspy.Module):
         """
         Parse the raw LLM output into title and spreads.
 
+        Validates that [Characters:] field is present for each spread.
+        Emits warnings for missing fields but continues with None (fallback path).
+
         Returns:
             Tuple of (title, list of StorySpread objects)
         """
+        import sys
+
         # Extract title
         title_match = re.search(r'TITLE:\s*(.+?)(?:\n|$)', raw_output, re.IGNORECASE)
         title = title_match.group(1).strip() if title_match else "Untitled Story"
 
         # Parse spreads
         spreads = []
+        missing_characters_spreads = []  # Track spreads missing [Characters:] field
 
         # Split by "Spread N:" markers
         parts = re.split(r'(?=Spread\s+\d+:)', raw_output, flags=re.IGNORECASE)
@@ -116,13 +122,16 @@ class DirectStoryGenerator(dspy.Module):
                 # Remove illustration prompt from text
                 content = content[:illust_match.start()] + content[illust_match.end():]
 
-            # Extract present characters if present (new field)
+            # Extract present characters - REQUIRED field
             present_characters = None
             chars_match = re.search(r'\[Characters:\s*(.+?)\]', content, re.DOTALL)
             if chars_match:
                 present_characters = self._parse_characters_field(chars_match.group(1))
                 # Remove characters field from text
                 content = content[:chars_match.start()] + content[chars_match.end():]
+            else:
+                # Track missing [Characters:] for warning
+                missing_characters_spreads.append(spread_num)
 
             text = content.strip()
 
@@ -136,6 +145,15 @@ class DirectStoryGenerator(dspy.Module):
 
         # Sort by spread number
         spreads.sort(key=lambda s: s.spread_number)
+
+        # Emit warning if any spreads are missing [Characters:] field
+        if missing_characters_spreads:
+            print(
+                f"WARNING: [Characters:] field missing from {len(missing_characters_spreads)} spread(s): "
+                f"{missing_characters_spreads}. Illustration will use fallback character detection "
+                f"which may be less accurate. Consider regenerating the story.",
+                file=sys.stderr
+            )
 
         return title, spreads
 
