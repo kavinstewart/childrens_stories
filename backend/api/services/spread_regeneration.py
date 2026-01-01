@@ -183,7 +183,13 @@ async def _load_character_refs(story_id: str, story) -> Optional["StoryReference
     if not character_sheets:
         return None
 
-    return StoryReferenceSheets(character_sheets=character_sheets)
+    # Get story title from outline or use a fallback
+    story_title = story.outline.title if story.outline else story.title or "Untitled"
+
+    return StoryReferenceSheets(
+        story_title=story_title,
+        character_sheets=character_sheets,
+    )
 
 
 async def _save_image_atomically(
