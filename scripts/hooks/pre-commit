@@ -1,0 +1,68 @@
+#!/bin/bash
+# Pre-commit hook: bd hooks + Claude code review for source files
+#
+# Runs:
+# 1. bd hooks (beads sync)
+# 2. Claude code review (only for source code changes)
+
+# Run bd hooks first
+if command -v bd >/dev/null 2>&1; then
+    bd hooks run pre-commit "$@"
+    BD_EXIT=$?
+    if [ $BD_EXIT -ne 0 ]; then
+        exit $BD_EXIT
+    fi
+fi
+
+# === Claude Code Review for Source Files ===
+
+# Skip if SKIP_REVIEW is set
+if [ -n "$SKIP_REVIEW" ]; then
+    exit 0
+fi
+
+# Get staged diff for source code files only
+SOURCE_PATTERNS="*.py *.ts *.tsx *.js *.jsx *.go *.rs *.java *.rb *.sh"
+DIFF=$(git diff --cached --diff-filter=ACMR -- $SOURCE_PATTERNS 2>/dev/null)
+
+# Skip if no source code changes
+if [ -z "$DIFF" ]; then
+    exit 0
+fi
+
+# Skip if claude command not available
+if ! command -v claude >/dev/null 2>&1; then
+    echo "Warning: claude command not found, skipping code review" >&2
+    exit 0
+fi
+
+# Run Claude review
+echo "Running Claude code review on source files..."
+ISSUES=$(claude -p "Review this diff for bugs, security issues, and obvious problems. Focus only on serious issues, not style. List each issue on its own line. If no issues, output nothing.
+
+$DIFF" 2>/dev/null)
+
+# Check if claude succeeded
+if [ $? -ne 0 ]; then
+    echo "Warning: Claude review failed, continuing anyway" >&2
+    exit 0
+fi
+
+# Block commit if issues found (filter out "no issues" responses)
+if [ -n "$ISSUES" ]; then
+    # Check if response indicates no issues
+    if echo "$ISSUES" | grep -qiE "^(no issues|none|looks good|no problems|no bugs|lgtm|all good)"; then
+        echo "Code review passed."
+        exit 0
+    fi
+
+    echo ""
+    echo "=== CODE REVIEW: Issues Found ==="
+    echo "$ISSUES"
+    echo ""
+    echo "Fix issues above or bypass with: SKIP_REVIEW=1 git commit ..."
+    exit 1
+fi
+
+echo "Code review passed."
+exit 0

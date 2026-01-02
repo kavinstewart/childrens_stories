@@ -1,0 +1,37 @@
+#!/bin/bash
+# Post-commit hook with bd compatibility
+# Runs bd hooks first (if available), then custom worker restart logic
+
+# Run bd hooks if available
+if command -v bd >/dev/null 2>&1; then
+    bd hooks run post-commit "$@" 2>/dev/null || true
+fi
+
+# === Custom: Auto-restart ARQ workers when backend code changes ===
+CHANGED=$(git diff-tree --no-commit-id --name-only -r HEAD)
+
+# Check if worker-related files changed
+if echo "$CHANGED" | grep -qE "^backend/(worker\.py|api/services/|core/modules/)"; then
+  echo ""
+  echo "=== Worker code changed, restarting workers ==="
+
+  # Kill existing workers (including orphans)
+  pkill -f "arq backend.worker" 2>/dev/null || true
+  pkill -f "run_worker" 2>/dev/null || true
+  sleep 2
+
+  # Restart via systemd if available, otherwise start directly
+  if systemctl is-active --quiet childrens-stories-worker 2>/dev/null; then
+    systemctl restart childrens-stories-worker 2>/dev/null && \
+      echo "Workers restarted via systemd" || \
+      echo "Warning: Failed to restart workers via systemd"
+  else
+    echo "Starting worker directly..."
+    cd /home/kavin/childrens_stories
+    nohup poetry run arq backend.worker.WorkerSettings > /tmp/worker.log 2>&1 &
+    echo "Worker started (PID: $!)"
+  fi
+
+  echo "=== Worker restart complete ==="
+  echo ""
+fi
