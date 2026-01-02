@@ -2,11 +2,10 @@ import { View, Text, Pressable, Image, ActivityIndicator, Dimensions } from 'rea
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useState } from 'react';
-import { useStory, useRecommendations, useRegenerateSpread } from '@/features/stories/hooks';
+import { useStory, useRecommendations } from '@/features/stories/hooks';
 import { api } from '@/lib/api';
 import { fontFamily } from '@/lib/fonts';
 import { StoryCard } from '@/components/StoryCard';
-import { SpreadEditOverlay } from '@/components/SpreadEditOverlay';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -19,10 +18,6 @@ export default function StoryReader() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { data: story, isLoading, error } = useStory(id);
   const [currentSpread, setCurrentSpread] = useState(0);
-  const [showEditOverlay, setShowEditOverlay] = useState(false);
-
-  // Regenerate spread mutation
-  const regenerateSpread = useRegenerateSpread();
 
   const spreads = story?.spreads || [];
   const totalSpreads = spreads.length;
@@ -263,9 +258,18 @@ export default function StoryReader() {
         </View>
 
         {/* Edit Button - only show when on a spread (not end screen) and story is illustrated */}
-        {!showEndScreen && story.is_illustrated && (
+        {!showEndScreen && story.is_illustrated && currentSpreadData && (
           <Pressable
-            onPress={() => setShowEditOverlay(true)}
+            onPress={() => {
+              router.push({
+                pathname: '/edit-prompt',
+                params: {
+                  storyId: story.id,
+                  spreadNumber: currentSpreadData.spread_number.toString(),
+                  composedPrompt: currentSpreadData.composed_prompt || '',
+                },
+              });
+            }}
             style={{
               backgroundColor: '#FAF7F2',
               paddingVertical: 16,
@@ -504,31 +508,6 @@ export default function StoryReader() {
         </View>
       )}
 
-      {/* Spread Edit Overlay */}
-      <SpreadEditOverlay
-        isVisible={showEditOverlay}
-        spreadNumber={currentSpread + 1}
-        composedPrompt={currentSpreadData?.composed_prompt}
-        isRegenerating={regenerateSpread.isPending}
-        onRegenerate={(prompt: string) => {
-          if (story && currentSpreadData) {
-            regenerateSpread.mutate(
-              {
-                storyId: story.id,
-                spreadNumber: currentSpreadData.spread_number,
-                prompt,
-              },
-              {
-                onSuccess: () => {
-                  // Close overlay after successful regeneration start
-                  setShowEditOverlay(false);
-                },
-              }
-            );
-          }
-        }}
-        onDismiss={() => setShowEditOverlay(false)}
-      />
     </View>
   );
 }

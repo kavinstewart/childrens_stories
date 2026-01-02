@@ -69,7 +69,15 @@ export default function RootLayout() {
               headerShown: false,
               animation: 'fade',
             }}
-          />
+          >
+            <Stack.Screen
+              name="edit-prompt"
+              options={{
+                presentation: 'modal',
+                animation: 'slide_from_bottom',
+              }}
+            />
+          </Stack>
         </AuthGate>
       </SafeAreaProvider>
     </QueryClientProvider>
