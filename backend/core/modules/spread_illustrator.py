@@ -17,7 +17,11 @@ import sys
 from typing import TYPE_CHECKING, Optional, Tuple
 
 from backend.config import get_image_client, get_image_model, get_image_config, IMAGE_CONSTANTS, extract_image_from_response
-from ..types import StoryOutline, StorySpread, StoryReferenceSheets, build_illustration_prompt, DEFAULT_LIGHTING
+from ..types import (
+    StoryOutline, StorySpread, StoryReferenceSheets,
+    build_illustration_prompt, DEFAULT_LIGHTING,
+    _normalize_name, _strip_leading_article, build_character_lookup, name_matches_in_text,
+)
 
 # Stopwords that should never be used for character matching
 # These are common words that appear in text but are not character names
@@ -50,75 +54,6 @@ class SpreadIllustrator:
         self.client = get_image_client()
         self.model = get_image_model()
         self.config = get_image_config()
-
-    # =========================================================================
-    # Character Matching Helpers (Bead 1 & 2 fixes)
-    # =========================================================================
-
-    @staticmethod
-    def _normalize(s: str) -> str:
-        """Normalize a string for matching: lowercase, strip, collapse whitespace."""
-        return " ".join(s.lower().strip().split())
-
-    @staticmethod
-    def _strip_leading_article(s: str) -> str:
-        """Remove leading 'the ', 'a ', 'an ' from a string."""
-        normalized = s.lower().strip()
-        for article in ("the ", "a ", "an "):
-            if normalized.startswith(article):
-                return normalized[len(article):].strip()
-        return normalized
-
-    def _build_character_lookup(self, character_bibles: list) -> dict[str, str]:
-        """
-        Build a lookup dict mapping normalized names (and variants) to canonical names.
-
-        Returns:
-            Dict mapping normalized name variants -> canonical character name
-        """
-        lookup = {}
-        for bible in character_bibles:
-            canonical = bible.name
-            # Add normalized canonical name
-            normalized = self._normalize(canonical)
-            lookup[normalized] = canonical
-            # Add article-stripped variant
-            stripped = self._strip_leading_article(canonical)
-            if stripped != normalized:
-                lookup[stripped] = canonical
-        return lookup
-
-    def _name_matches_in_text(self, character_name: str, text: str) -> bool:
-        """
-        Check if a character name (or article-stripped variant) appears as whole word(s) in text.
-
-        Uses word-boundary regex matching to avoid false positives like "He" matching "The".
-        For multi-word names, matches the whole phrase as a unit.
-
-        Args:
-            character_name: The canonical character name (e.g., "The Blue Bird")
-            text: The text to search in
-
-        Returns:
-            True if the name appears as whole word(s), False otherwise
-        """
-        text_lower = text.lower()
-        name_normalized = self._normalize(character_name)
-
-        # Try matching the full name with word boundaries
-        # \b ensures we match whole words only
-        pattern = r'\b' + re.escape(name_normalized) + r'\b'
-        if re.search(pattern, text_lower):
-            return True
-
-        # Try matching article-stripped version (e.g., "Blue Bird" for "The Blue Bird")
-        name_stripped = self._strip_leading_article(character_name)
-        if name_stripped != name_normalized:
-            pattern_stripped = r'\b' + re.escape(name_stripped) + r'\b'
-            if re.search(pattern_stripped, text_lower):
-                return True
-
-        return False
 
     def _build_scene_prompt(
         self,
@@ -299,18 +234,18 @@ class SpreadIllustrator:
         Returns:
             List of canonical character names that were successfully resolved
         """
-        lookup = self._build_character_lookup(character_bibles)
+        lookup = build_character_lookup(character_bibles)
         resolved = []
 
         for name in present_characters:
             # Try normalized name
-            normalized = self._normalize(name)
+            normalized = _normalize_name(name)
             if normalized in lookup:
                 resolved.append(lookup[normalized])
                 continue
 
             # Try article-stripped version
-            stripped = self._strip_leading_article(name)
+            stripped = _strip_leading_article(name)
             if stripped in lookup:
                 resolved.append(lookup[stripped])
                 continue
@@ -356,7 +291,7 @@ class SpreadIllustrator:
 
         for bible in outline.character_bibles:
             # Use safe word-boundary matching (NOT substring matching!)
-            if self._name_matches_in_text(bible.name, combined_text):
+            if name_matches_in_text(bible.name, combined_text):
                 matched_characters.append(bible.name)
 
         return matched_characters

@@ -56,6 +56,63 @@ def _names_match(query: str, canonical: str) -> bool:
 
     return False
 
+
+def build_character_lookup(character_bibles: list) -> dict[str, str]:
+    """
+    Build a lookup dict mapping normalized names (and variants) to canonical names.
+
+    Args:
+        character_bibles: List of CharacterBible objects
+
+    Returns:
+        Dict mapping normalized name variants -> canonical character name
+    """
+    lookup = {}
+    for bible in character_bibles:
+        canonical = bible.name
+        # Add normalized canonical name
+        normalized = _normalize_name(canonical)
+        lookup[normalized] = canonical
+        # Add article-stripped variant
+        stripped = _strip_leading_article(canonical)
+        if stripped != normalized:
+            lookup[stripped] = canonical
+    return lookup
+
+
+def name_matches_in_text(character_name: str, text: str) -> bool:
+    """
+    Check if a character name (or article-stripped variant) appears as whole word(s) in text.
+
+    Uses word-boundary regex matching to avoid false positives like "He" matching "The".
+    For multi-word names, matches the whole phrase as a unit.
+
+    Args:
+        character_name: The canonical character name (e.g., "The Blue Bird")
+        text: The text to search in
+
+    Returns:
+        True if the name appears as whole word(s), False otherwise
+    """
+    text_lower = text.lower()
+    name_normalized = _normalize_name(character_name)
+
+    # Try matching the full name with word boundaries
+    # \b ensures we match whole words only
+    pattern = r'\b' + re.escape(name_normalized) + r'\b'
+    if re.search(pattern, text_lower):
+        return True
+
+    # Try matching article-stripped version (e.g., "Blue Bird" for "The Blue Bird")
+    name_stripped = _strip_leading_article(character_name)
+    if name_stripped != name_normalized:
+        pattern_stripped = r'\b' + re.escape(name_stripped) + r'\b'
+        if re.search(pattern_stripped, text_lower):
+            return True
+
+    return False
+
+
 # Conditional import for PIL (only needed at runtime for some methods)
 if TYPE_CHECKING:
     from PIL import Image
