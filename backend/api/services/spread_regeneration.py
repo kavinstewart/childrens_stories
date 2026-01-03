@@ -39,6 +39,7 @@ async def regenerate_spread(
     """
     # Import here to avoid circular imports and slow startup
     from backend.core.modules.spread_illustrator import SpreadIllustrator
+    from backend.core.modules.illustration_styles import DEFAULT_FALLBACK_STYLE
     from backend.core.types import StorySpread, StoryMetadata, StoryReferenceSheets, StyleDefinition
 
     start_time = time.time()
@@ -94,13 +95,7 @@ async def regenerate_spread(
             )
         else:
             # Fall back to default style for older stories without stored style
-            illustration_style = StyleDefinition(
-                name="children's book illustration",
-                description="Warm, inviting children's book illustration style",
-                prompt_prefix="Warm, inviting children's book illustration in soft watercolor and gouache style",
-                best_for=["any"],
-                lighting_direction="soft diffused natural light with gentle shadows",
-            )
+            illustration_style = DEFAULT_FALLBACK_STYLE
 
         metadata = None
         if story.metadata:
