@@ -77,6 +77,41 @@ class StyleDefinition:
     lighting_direction: str = ""  # Specific lighting for this style
 
 
+# Default style values when no style is provided
+DEFAULT_STYLE_PREFIX = "Warm, inviting children's book illustration in soft watercolor and gouache style"
+DEFAULT_LIGHTING = "soft diffused natural light with gentle shadows"
+
+
+def build_illustration_prompt(
+    illustration_prompt: str,
+    setting: str,
+    style_prefix: str,
+    lighting: str,
+) -> str:
+    """
+    Build the composed prompt for image generation.
+
+    This is the single source of truth for illustration prompt composition.
+    Used by both SpreadIllustrator (generation) and StoryRepository (API responses).
+
+    Args:
+        illustration_prompt: Scene description for this spread
+        setting: Story setting (location, time of day, etc.)
+        style_prefix: Style direction (e.g., "Warm watercolor style")
+        lighting: Lighting direction (e.g., "soft diffused natural light")
+
+    Returns:
+        Complete prompt string for image generation
+    """
+    return f"""{style_prefix}, 16:9 aspect ratio in landscape format.
+
+Scene: {illustration_prompt}
+
+Setting: {setting}. Lighting: {lighting}.
+
+Wide shot framing with space at bottom for text overlay. Maintain exact character identity from reference images above."""
+
+
 # =============================================================================
 # Character Types
 # =============================================================================

@@ -17,7 +17,7 @@ import sys
 from typing import TYPE_CHECKING, Optional, Tuple
 
 from backend.config import get_image_client, get_image_model, get_image_config, IMAGE_CONSTANTS, extract_image_from_response
-from ..types import StoryOutline, StorySpread, StoryReferenceSheets
+from ..types import StoryOutline, StorySpread, StoryReferenceSheets, build_illustration_prompt, DEFAULT_LIGHTING
 
 # Stopwords that should never be used for character matching
 # These are common words that appear in text but are not character names
@@ -139,19 +139,12 @@ class SpreadIllustrator:
             raise ValueError("illustration_style is required - OutlineGenerator should always set this")
 
         style = outline.illustration_style
-        style_direction = style.prompt_prefix
-        lighting = style.lighting_direction or "soft diffused natural light with gentle shadows"
-
-        # Build concise, narrative prompt (Nano Banana Pro prefers <25 words for core direction)
-        prompt = f"""{style_direction}, 16:9 double-page spread composition.
-
-Scene: {spread.illustration_prompt}
-
-Setting: {outline.setting}. Lighting: {lighting}.
-
-Wide shot framing with space at bottom for text overlay. Maintain exact character identity from reference images above."""
-
-        return prompt
+        return build_illustration_prompt(
+            illustration_prompt=spread.illustration_prompt,
+            setting=outline.setting,
+            style_prefix=style.prompt_prefix,
+            lighting=style.lighting_direction or DEFAULT_LIGHTING,
+        )
 
     def illustrate_spread(
         self,
