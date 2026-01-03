@@ -69,9 +69,9 @@ class SpreadIllustrator:
         - Clear style specification without conflicts
         - Identity locking for character consistency
         """
-        # Get style info (style is always set by OutlineGenerator)
+        # Get style info (style is always set by StoryGenerator)
         if not outline.illustration_style:
-            raise ValueError("illustration_style is required - OutlineGenerator should always set this")
+            raise ValueError("illustration_style is required - StoryGenerator should always set this")
 
         style = outline.illustration_style
         return build_illustration_prompt(
