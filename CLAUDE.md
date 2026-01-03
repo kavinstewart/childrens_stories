@@ -124,6 +124,41 @@ optimized = optimizer.compile(program, trainset=train, valset=val)
 - **Fixtures**: `tests/unit/conftest.py` provides `client_with_mocks`, `mock_repository`, etc.
 - **Always run relevant tests** before closing implementation beads
 
+## Frontend Development
+
+### Port Configuration
+The frontend uses different ports for different contexts:
+- **Development (`npm run dev`)**: Port 3000 - used for local development and E2E tests
+- **Systemd service**: Port 8081 - background service with `--host lan` for network access
+
+### Running E2E Tests
+Playwright is configured to use port 3000 (matching `npm run dev`):
+```bash
+cd frontend
+npx playwright test              # Runs all E2E tests
+npx playwright test --headed     # Watch tests run in browser
+npx playwright test e2e/app.spec.ts  # Run specific test file
+```
+
+The Playwright config (`frontend/playwright.config.ts`):
+- Automatically starts `npm run dev` if no server is running (via `webServer` config)
+- Uses `reuseExistingServer: !process.env.CI` to reuse existing dev server locally
+- Requires `APP_PIN` environment variable (loaded from `../.env`)
+
+### Systemd Service
+A user systemd service runs the Expo server for persistent network access:
+```bash
+# Service status and logs
+systemctl --user status expo-frontend
+journalctl --user -u expo-frontend -f
+
+# Restart after changes
+systemctl --user restart expo-frontend
+```
+Config location: `~/.config/systemd/user/expo-frontend.service`
+
+**Note**: The systemd service runs on port 8081, separate from the dev server on port 3000. E2E tests use the dev server (port 3000), not the systemd service.
+
 ## Development Workflow
 1. **Implement baseline** - Get end-to-end pipeline working without optimization
 2. **Create training data** - Goals + reference stories for optimization
