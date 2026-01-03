@@ -17,7 +17,7 @@ Includes retry with exponential backoff for transient network errors.
 import dspy
 
 from backend.config import llm_retry
-from ..types import GeneratedStory, StoryMetadata
+from ..types import GeneratedStory, StoryMetadata, StorySpread
 from ..modules.direct_story_generator import DirectStoryGenerator
 from ..modules.character_extractor import CharacterExtractor
 from ..modules.bible_generator import BibleGenerator
@@ -26,6 +26,11 @@ from ..modules.character_sheet_generator import CharacterSheetGenerator
 from ..modules.spread_illustrator import SpreadIllustrator
 from ..modules.illustration_styles import get_style_by_name, get_all_styles_for_selection
 from ..signatures.illustration_style import IllustrationStyleSignature
+
+
+def _format_spreads_for_llm(spreads: list[StorySpread]) -> str:
+    """Format spreads with numbered prefixes for LLM context."""
+    return "\n\n".join(f"Spread {s.spread_number}: {s.text}" for s in spreads)
 
 
 class StoryGenerator(dspy.Module):
@@ -122,9 +127,7 @@ class StoryGenerator(dspy.Module):
             )
 
             # Compile story text for downstream processing
-            story_text = "\n\n".join(
-                f"Spread {s.spread_number}: {s.text}" for s in spreads
-            )
+            story_text = _format_spreads_for_llm(spreads)
 
             # Step 2: Extract characters from the story
             extracted_characters = llm_retry(self.character_extractor)(

@@ -421,11 +421,6 @@ class GeneratedStory:
     is_illustrated: bool = False
 
     @property
-    def full_text(self) -> str:
-        """Get the complete story text."""
-        return "\n\n".join(spread.text for spread in self.spreads)
-
-    @property
     def word_count(self) -> int:
         """Total word count of the story."""
         return sum(spread.word_count for spread in self.spreads)
