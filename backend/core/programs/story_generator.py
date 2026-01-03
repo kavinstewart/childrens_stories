@@ -17,7 +17,7 @@ Includes retry with exponential backoff for transient network errors.
 import dspy
 
 from backend.config import llm_retry
-from ..types import GeneratedStory, StoryOutline
+from ..types import GeneratedStory, StoryMetadata
 from ..modules.direct_story_generator import DirectStoryGenerator
 from ..modules.character_extractor import CharacterExtractor
 from ..modules.bible_generator import BibleGenerator
@@ -180,14 +180,9 @@ class StoryGenerator(dspy.Module):
 
             print(f"DEBUG Selected style: {selected_style_name}", file=sys.stderr)
 
-            # Build outline object for downstream compatibility
-            outline = StoryOutline(
+            # Build metadata for illustration
+            metadata = StoryMetadata(
                 title=title,
-                characters="",  # Not used in story-first workflow
-                setting="",  # Extracted from story context in illustrations
-                plot_summary="",  # Not used in story-first workflow
-                spread_breakdown="",  # Not used in story-first workflow
-                goal=goal,
                 character_bibles=character_bibles,
                 illustration_style=illustration_style,
                 style_rationale=style_result.style_rationale,
@@ -196,7 +191,7 @@ class StoryGenerator(dspy.Module):
             story = GeneratedStory(
                 title=title,
                 goal=goal,
-                outline=outline,
+                metadata=metadata,
                 spreads=spreads,
                 judgment=judgment,
                 attempts=attempt,
@@ -276,17 +271,17 @@ class StoryGenerator(dspy.Module):
         if on_progress:
             on_progress("spreads", "Story text complete", 1, 1)
 
-        if debug and story.outline.illustration_style:
-            print(f"Selected illustration style: {story.outline.illustration_style.name}", file=sys.stderr)
-            print(f"  Rationale: {story.outline.style_rationale}", file=sys.stderr)
+        if debug and story.metadata.illustration_style:
+            print(f"Selected illustration style: {story.metadata.illustration_style.name}", file=sys.stderr)
+            print(f"  Rationale: {story.metadata.style_rationale}", file=sys.stderr)
 
         # Step 4: Generate character reference images
         if debug:
-            print(f"Step 2: Generating reference images for {len(story.outline.character_bibles)} characters...", file=sys.stderr)
+            print(f"Step 2: Generating reference images for {len(story.metadata.character_bibles)} characters...", file=sys.stderr)
 
         sheet_generator = CharacterSheetGenerator()
         reference_sheets = sheet_generator.generate_for_story(
-            outline=story.outline,
+            outline=story.metadata,
             debug=debug,
             on_progress=on_progress,
         )
@@ -303,7 +298,7 @@ class StoryGenerator(dspy.Module):
         if use_image_qa:
             story.spreads, qa_summary = illustrator.illustrate_story_with_qa(
                 spreads=story.spreads,
-                outline=story.outline,
+                outline=story.metadata,
                 reference_sheets=reference_sheets,
                 max_attempts_per_spread=max_image_attempts,
                 debug=debug,
@@ -317,7 +312,7 @@ class StoryGenerator(dspy.Module):
         else:
             story.spreads = illustrator.illustrate_story(
                 spreads=story.spreads,
-                outline=story.outline,
+                outline=story.metadata,
                 reference_sheets=reference_sheets,
                 debug=debug,
                 on_progress=on_progress,

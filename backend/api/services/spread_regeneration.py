@@ -39,7 +39,7 @@ async def regenerate_spread(
     """
     # Import here to avoid circular imports and slow startup
     from backend.core.modules.spread_illustrator import SpreadIllustrator
-    from backend.core.types import StorySpread, StoryOutline, StoryReferenceSheets, StyleDefinition
+    from backend.core.types import StorySpread, StoryMetadata, StoryReferenceSheets, StyleDefinition
 
     start_time = time.time()
 
@@ -79,12 +79,12 @@ async def regenerate_spread(
             illustration_prompt=spread_data.get("illustration_prompt", ""),
         )
 
-        # Build outline from story data
+        # Build metadata from story data
         # Use stored illustration style if available, otherwise fall back to default
         illustration_style = None
-        if story.outline and story.outline.illustration_style:
+        if story.metadata and story.metadata.illustration_style:
             # Use the original style from the story
-            stored_style = story.outline.illustration_style
+            stored_style = story.metadata.illustration_style
             illustration_style = StyleDefinition(
                 name=stored_style.name,
                 description=stored_style.description,
@@ -102,15 +102,11 @@ async def regenerate_spread(
                 lighting_direction="soft diffused natural light with gentle shadows",
             )
 
-        outline = None
-        if story.outline:
-            outline = StoryOutline(
-                title=story.outline.title,
-                characters=story.outline.characters,
-                setting=story.outline.setting,
-                plot_summary=story.outline.plot_summary,
-                spread_breakdown="",  # Not needed for regeneration
-                goal="",  # Not needed for regeneration
+        metadata = None
+        if story.metadata:
+            metadata = StoryMetadata(
+                title=story.metadata.title,
+                setting=story.metadata.setting,
                 illustration_style=illustration_style,
             )
 
@@ -121,7 +117,7 @@ async def regenerate_spread(
         illustrator = SpreadIllustrator()
         image_bytes = illustrator.illustrate_spread(
             spread=spread,
-            outline=outline,
+            outline=metadata,
             reference_sheets=reference_sheets,
             debug=True,
             custom_prompt=custom_prompt,
@@ -187,8 +183,8 @@ async def _load_character_refs(story_id: str, story) -> Optional["StoryReference
     if not character_sheets:
         return None
 
-    # Get story title from outline or use a fallback
-    story_title = story.outline.title if story.outline else story.title or "Untitled"
+    # Get story title from metadata or use a fallback
+    story_title = story.metadata.title if story.metadata else story.title or "Untitled"
 
     return StoryReferenceSheets(
         story_title=story_title,

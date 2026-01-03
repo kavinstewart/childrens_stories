@@ -50,14 +50,11 @@ class IllustrationStyleResponse(BaseModel):
     lighting_direction: str = ""
 
 
-class StoryOutlineResponse(BaseModel):
-    """Story outline metadata."""
+class StoryMetadataResponse(BaseModel):
+    """Story metadata for illustration: style, setting, etc."""
 
     title: str
-    characters: str = ""
     setting: str = ""
-    plot_summary: str = ""
-    spread_count: int = 12  # Number of spreads (typically 12)
     illustration_style: Optional[IllustrationStyleResponse] = None  # For regeneration consistency
 
 
@@ -110,7 +107,7 @@ class StoryResponse(BaseModel):
     spread_count: Optional[int] = None  # Number of spreads (typically 12)
     attempts: Optional[int] = None
 
-    outline: Optional[StoryOutlineResponse] = None
+    metadata: Optional[StoryMetadataResponse] = None
     spreads: Optional[list[StorySpreadResponse]] = None
     judgment: Optional[QualityJudgmentResponse] = None
     character_references: Optional[list[CharacterReferenceResponse]] = None

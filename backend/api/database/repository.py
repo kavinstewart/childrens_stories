@@ -13,7 +13,7 @@ from ..models.responses import (
     CharacterReferenceResponse,
     IllustrationStyleResponse,
     QualityJudgmentResponse,
-    StoryOutlineResponse,
+    StoryMetadataResponse,
     StoryProgressResponse,
     StoryRecommendationItem,
     StoryResponse,
@@ -427,11 +427,11 @@ class StoryRepository:
         char_refs: Optional[list[asyncpg.Record]] = None,
     ) -> StoryResponse:
         """Convert asyncpg Record to response model."""
-        # Parse outline JSON
-        outline = None
+        # Parse metadata JSON (stored as outline_json for backwards compatibility)
+        metadata = None
         if story["outline_json"]:
-            outline_data = json.loads(story["outline_json"])
-            outline = StoryOutlineResponse(**outline_data)
+            metadata_data = json.loads(story["outline_json"])
+            metadata = StoryMetadataResponse(**metadata_data)
 
         # Parse judgment JSON
         judgment = None
@@ -443,8 +443,8 @@ class StoryRepository:
         spread_responses = None
         if spreads:
             # Extract style info for composed prompt
-            style = outline.illustration_style if outline else None
-            setting = outline.setting if outline else ""
+            style = metadata.illustration_style if metadata else None
+            setting = metadata.setting if metadata else ""
 
             spread_responses = [
                 StorySpreadResponse(
@@ -504,7 +504,7 @@ class StoryRepository:
             word_count=story["word_count"],
             spread_count=story["spread_count"],
             attempts=story["attempts"],
-            outline=outline,
+            metadata=metadata,
             spreads=spread_responses,
             judgment=judgment,
             character_references=char_ref_responses,

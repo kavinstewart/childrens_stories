@@ -9,7 +9,7 @@ following Google's recommended prompting practices.
 from backend.config import get_image_client, get_image_model, get_image_config, extract_image_from_response
 from ..types import (
     CharacterBible,
-    StoryOutline,
+    StoryMetadata,
     StyleDefinition,
     CharacterReferenceSheet,
     StoryReferenceSheets,
@@ -90,7 +90,7 @@ Layout: Front view, 3/4 view, side profile (all full body), plus 4 expression he
 
     def generate_for_story(
         self,
-        outline: StoryOutline,
+        outline: StoryMetadata,
         debug: bool = False,
         on_progress: callable = None,
     ) -> StoryReferenceSheets:

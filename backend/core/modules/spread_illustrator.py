@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Optional, Tuple
 
 from backend.config import get_image_client, get_image_model, get_image_config, IMAGE_CONSTANTS, extract_image_from_response
 from ..types import (
-    StoryOutline, StorySpread, StoryReferenceSheets,
+    StoryMetadata, StorySpread, StoryReferenceSheets,
     build_illustration_prompt, DEFAULT_LIGHTING,
     _normalize_name, _strip_leading_article, build_character_lookup, name_matches_in_text,
 )
@@ -58,7 +58,7 @@ class SpreadIllustrator:
     def _build_scene_prompt(
         self,
         spread: StorySpread,
-        outline: StoryOutline,
+        outline: StoryMetadata,
     ) -> str:
         """
         Build scene prompt optimized for Nano Banana Pro.
@@ -84,7 +84,7 @@ class SpreadIllustrator:
     def illustrate_spread(
         self,
         spread: StorySpread,
-        outline: StoryOutline,
+        outline: StoryMetadata,
         reference_sheets: Optional[StoryReferenceSheets] = None,
         debug: bool = False,
         custom_prompt: Optional[str] = None,
@@ -130,7 +130,7 @@ class SpreadIllustrator:
     def illustrate_story(
         self,
         spreads: list[StorySpread],
-        outline: StoryOutline,
+        outline: StoryMetadata,
         reference_sheets: Optional[StoryReferenceSheets] = None,
         debug: bool = False,
         on_progress: callable = None,
@@ -260,7 +260,7 @@ class SpreadIllustrator:
 
         return resolved
 
-    def _get_characters_for_spread(self, spread: StorySpread, outline: StoryOutline) -> list[str]:
+    def _get_characters_for_spread(self, spread: StorySpread, outline: StoryMetadata) -> list[str]:
         """
         Determine which characters should have reference images included for this spread.
 
@@ -299,7 +299,7 @@ class SpreadIllustrator:
     def _build_contents(
         self,
         spread: StorySpread,
-        outline: StoryOutline,
+        outline: StoryMetadata,
         reference_sheets: Optional[StoryReferenceSheets],
         scene_prompt: str,
     ) -> list:
@@ -352,7 +352,7 @@ class SpreadIllustrator:
     def illustrate_spread_with_qa(
         self,
         spread: StorySpread,
-        outline: StoryOutline,
+        outline: StoryMetadata,
         reference_sheets: Optional[StoryReferenceSheets] = None,
         max_attempts: int = 3,
         debug: bool = False,
@@ -428,7 +428,7 @@ class SpreadIllustrator:
     def illustrate_story_with_qa(
         self,
         spreads: list[StorySpread],
-        outline: StoryOutline,
+        outline: StoryMetadata,
         reference_sheets: Optional[StoryReferenceSheets] = None,
         max_attempts_per_spread: int = 3,
         debug: bool = False,

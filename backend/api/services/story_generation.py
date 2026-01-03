@@ -211,19 +211,16 @@ async def _save_story(
                 }
             )
 
-    # Serialize outline
-    outline_dict = {
-        "title": story.outline.title,
-        "characters": story.outline.characters,
-        "setting": story.outline.setting,
-        "plot_summary": story.outline.plot_summary,
-        "spread_count": story.outline.spread_count,
+    # Serialize metadata (stored as outline_json for backwards compatibility)
+    metadata_dict = {
+        "title": story.metadata.title,
+        "setting": story.metadata.setting,
     }
 
     # Include illustration style if available (for regeneration consistency)
-    if story.outline.illustration_style:
-        style = story.outline.illustration_style
-        outline_dict["illustration_style"] = {
+    if story.metadata.illustration_style:
+        style = story.metadata.illustration_style
+        metadata_dict["illustration_style"] = {
             "name": style.name,
             "description": style.description,
             "prompt_prefix": style.prompt_prefix,
@@ -256,7 +253,7 @@ async def _save_story(
             spread_count=story.spread_count,
             attempts=story.attempts,
             is_illustrated=story.is_illustrated,
-            outline_json=json.dumps(outline_dict),
+            outline_json=json.dumps(metadata_dict),
             judgment_json=json.dumps(judgment_dict) if judgment_dict else None,
             spreads=spreads_data,
             character_refs=char_refs_data,

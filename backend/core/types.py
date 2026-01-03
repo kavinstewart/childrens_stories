@@ -270,44 +270,21 @@ class StoryReferenceSheets:
 
 
 @dataclass
-class StoryOutline:
-    """Structured representation of a story outline."""
+class StoryMetadata:
+    """Metadata for story illustration: style, characters, and setting.
+
+    This is NOT an outline - the story-first workflow generates the complete
+    story directly. This container holds metadata needed for illustration:
+    - Character visual descriptions (bibles) for consistent illustration
+    - Selected illustration style
+    - Title and setting for prompt composition
+    """
 
     title: str
-    characters: str
-    setting: str
-    plot_summary: str
-    spread_breakdown: str  # 12 spreads
-    goal: str  # Original goal for reference
+    setting: str = ""
     character_bibles: list[CharacterBible] = field(default_factory=list)
     illustration_style: Optional[StyleDefinition] = None
     style_rationale: str = ""
-
-    def get_spreads(self) -> list[dict]:
-        """Parse spread_breakdown into structured list."""
-        spreads = []
-        if not self.spread_breakdown:
-            return spreads
-        for line in self.spread_breakdown.split("\n"):
-            line = line.strip()
-            # Remove markdown formatting like *Spread 1* or **Spread 1**
-            clean_line = re.sub(r"^\*+", "", line).strip()
-            clean_line = re.sub(r"\*+$", "", clean_line.split(":")[0] if ":" in clean_line else clean_line).strip()
-
-            if clean_line.lower().startswith("spread"):
-                # Try to extract spread number and content
-                parts = line.split(":", 1)
-                if len(parts) == 2:
-                    # Clean up the spread identifier too
-                    spread_num = re.sub(r"[\*_]", "", parts[0]).strip()
-                    content = parts[1].strip()
-                    spreads.append({"spread": spread_num, "content": content})
-        return spreads
-
-    @property
-    def spread_count(self) -> int:
-        """Return the number of spreads in the outline."""
-        return len(self.get_spreads())
 
     def get_character_bible(self, name: str) -> Optional[CharacterBible]:
         """Find a character bible by name.
@@ -436,7 +413,7 @@ class GeneratedStory:
 
     title: str
     goal: str
-    outline: StoryOutline
+    metadata: StoryMetadata
     spreads: list[StorySpread]
     judgment: Optional[QualityJudgment]
     attempts: int
@@ -505,10 +482,10 @@ class GeneratedStory:
         lines.append(f"Spreads: {self.spread_count}")
         lines.append(f"Illustrated: {'Yes' if self.is_illustrated else 'No'}")
 
-        if self.outline.illustration_style:
-            lines.append(f"Illustration style: {self.outline.illustration_style.name}")
-            if self.outline.style_rationale:
-                lines.append(f"Style rationale: {self.outline.style_rationale}")
+        if self.metadata.illustration_style:
+            lines.append(f"Illustration style: {self.metadata.illustration_style.name}")
+            if self.metadata.style_rationale:
+                lines.append(f"Style rationale: {self.metadata.style_rationale}")
 
         if self.judgment:
             lines.append(f"Quality score: {self.judgment.overall_score}/10")
