@@ -36,6 +36,12 @@ STORIES_DIR = DATA_DIR / "stories"
 # Job manager settings
 MAX_CONCURRENT_JOBS = 2
 
+# Story generation defaults
+DEFAULT_TARGET_AGE_RANGE = "4-7"
+DEFAULT_GENERATION_TYPE = "illustrated"
+DEFAULT_QUALITY_THRESHOLD = 7
+DEFAULT_MAX_ATTEMPTS = 3
+
 
 # Structured JSON logging
 class JSONFormatter(logging.Formatter):
