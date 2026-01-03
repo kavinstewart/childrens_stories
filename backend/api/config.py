@@ -21,6 +21,15 @@ DATA_DIR = PROJECT_DIR / "data"
 # Format: postgresql+asyncpg://user:password@host:port/dbname
 DATABASE_URL = os.getenv("DATABASE_URL", "")
 
+
+def get_dsn() -> str:
+    """Get asyncpg-compatible DSN from DATABASE_URL.
+
+    Converts SQLAlchemy-style URL (postgresql+asyncpg://...) to
+    plain asyncpg format (postgresql://...).
+    """
+    return DATABASE_URL.replace("+asyncpg", "")
+
 # Story file storage
 STORIES_DIR = DATA_DIR / "stories"
 

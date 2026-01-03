@@ -15,7 +15,7 @@ from typing import Optional
 
 import asyncpg
 
-from ..config import DATABASE_URL, STORIES_DIR, story_logger
+from ..config import get_dsn, STORIES_DIR, story_logger
 from ..database.repository import StoryRepository
 
 
@@ -44,7 +44,7 @@ async def regenerate_spread(
     start_time = time.time()
 
     # Create a dedicated connection pool for this task
-    dsn = DATABASE_URL.replace("+asyncpg", "")
+    dsn = get_dsn()
     pool = await asyncpg.create_pool(dsn, min_size=1, max_size=2)
 
     try:

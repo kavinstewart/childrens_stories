@@ -8,7 +8,7 @@ from typing import Optional
 
 import asyncpg
 
-from ..config import DATABASE_URL
+from ..config import get_dsn
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +44,7 @@ class ProgressTracker:
         # Create a dedicated pool for progress updates
         # This avoids issues with sharing connections across threads
         self._pool: Optional[asyncpg.Pool] = None
-        self._dsn = DATABASE_URL.replace("+asyncpg", "")
+        self._dsn = get_dsn()
 
     async def update_async(
         self,

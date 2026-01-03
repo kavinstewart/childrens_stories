@@ -15,7 +15,7 @@ from typing import Callable, Optional
 
 import asyncpg
 
-from ..config import DATABASE_URL, STORIES_DIR, story_logger
+from ..config import get_dsn, STORIES_DIR, story_logger
 from ..database.repository import StoryRepository
 from .progress_tracker import ProgressTracker
 
@@ -53,8 +53,7 @@ async def generate_story(
 
     # Create a dedicated connection pool for this task
     # This avoids event loop conflicts with the main FastAPI thread
-    # Convert SQLAlchemy-style URL to asyncpg format
-    dsn = DATABASE_URL.replace("+asyncpg", "")
+    dsn = get_dsn()
     pool = await asyncpg.create_pool(dsn, min_size=1, max_size=2)
 
     # Create progress tracker
