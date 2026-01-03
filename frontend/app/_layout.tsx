@@ -73,7 +73,7 @@ export default function RootLayout() {
             <Stack.Screen
               name="edit-prompt"
               options={{
-                presentation: 'modal',
+                presentation: 'fullScreenModal',
                 animation: 'slide_from_bottom',
               }}
             />

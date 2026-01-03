@@ -113,6 +113,17 @@ optimized = optimizer.compile(program, trainset=train, valset=val)
 - Run Python code with `poetry run python <script>` or `poetry run pytest`
 - Check dependencies with `poetry show`
 
+## Testing
+- **Backend unit tests**: `poetry run pytest tests/unit/ -v`
+- **Backend integration tests**: `poetry run pytest tests/integration/ -v` (requires running services)
+- **Frontend E2E tests**: `cd frontend && npx playwright test` (requires `APP_PIN` env var)
+- **Test locations**:
+  - `tests/unit/` - Fast, mocked tests (repository, service, endpoint tests)
+  - `tests/integration/` - Slow tests requiring real DB/services
+  - `frontend/e2e/` - Playwright browser tests
+- **Fixtures**: `tests/unit/conftest.py` provides `client_with_mocks`, `mock_repository`, etc.
+- **Always run relevant tests** before closing implementation beads
+
 ## Development Workflow
 1. **Implement baseline** - Get end-to-end pipeline working without optimization
 2. **Create training data** - Goals + reference stories for optimization

@@ -267,6 +267,7 @@ export default function StoryReader() {
                   storyId: story.id,
                   spreadNumber: currentSpreadData.spread_number.toString(),
                   composedPrompt: currentSpreadData.composed_prompt || '',
+                  illustrationUpdatedAt: currentSpreadData.illustration_updated_at || '',
                 },
               });
             }}

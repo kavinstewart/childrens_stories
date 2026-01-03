@@ -138,4 +138,5 @@ class TestRegenerateSpreadEndpoint:
         mock_service.regenerate_spread_job.assert_called_once_with(
             story_id=TEST_UUID_STR,
             spread_number=5,
+            custom_prompt=None,
         )
