@@ -308,11 +308,20 @@ class StoryRepository:
     async def get_active_spread_regen_job(
         self, story_id: str, spread_number: int
     ) -> Optional[dict]:
-        """Get an active (pending/running) regeneration job for a spread."""
+        """Get an active (pending/running) regeneration job for a spread.
+
+        Jobs are considered stale (not active) if:
+        - pending for > 2 minutes (should be picked up quickly)
+        - running for > 12 minutes (job_timeout 600s + 2 min buffer)
+        """
         row = await self.conn.fetchrow(
             """
             SELECT * FROM spread_regen_jobs
-            WHERE story_id = $1 AND spread_number = $2 AND status IN ('pending', 'running')
+            WHERE story_id = $1 AND spread_number = $2
+              AND (
+                (status = 'pending' AND created_at > NOW() - INTERVAL '2 minutes')
+                OR (status = 'running' AND started_at > NOW() - INTERVAL '12 minutes')
+              )
             ORDER BY created_at DESC
             LIMIT 1
             """,
@@ -320,6 +329,27 @@ class StoryRepository:
             spread_number,
         )
         return dict(row) if row else None
+
+    async def cleanup_stale_spread_regen_jobs(self) -> int:
+        """Mark stale pending/running jobs as failed.
+
+        Returns the number of jobs marked as failed.
+        """
+        result = await self.conn.execute(
+            """
+            UPDATE spread_regen_jobs
+            SET status = 'failed',
+                error_message = 'Job timed out (stale job cleanup)',
+                completed_at = NOW()
+            WHERE (
+                (status = 'pending' AND created_at <= NOW() - INTERVAL '2 minutes')
+                OR (status = 'running' AND started_at <= NOW() - INTERVAL '12 minutes')
+            )
+            """
+        )
+        # asyncpg returns "UPDATE N" string
+        count = int(result.split()[-1]) if result else 0
+        return count
 
     async def update_spread_regen_status(
         self,

@@ -5,8 +5,10 @@ Run with: arq backend.worker.WorkerSettings
 """
 
 import logging
+import os
 from typing import Any
 
+import asyncpg
 from arq import cron
 from arq.connections import RedisSettings
 from dotenv import load_dotenv
@@ -16,8 +18,16 @@ load_dotenv()
 
 from backend.api.services.story_generation import generate_story
 from backend.api.services.spread_regeneration import regenerate_spread
+from backend.api.database.repository import StoryRepository
 
 logger = logging.getLogger(__name__)
+
+
+def _get_database_dsn() -> str:
+    """Get PostgreSQL DSN from environment."""
+    dsn = os.getenv("DATABASE_URL", "")
+    # Convert SQLAlchemy-style URL to asyncpg format
+    return dsn.replace("+asyncpg", "")
 
 
 async def generate_story_task(
@@ -108,9 +118,55 @@ async def regenerate_spread_task(
         raise
 
 
+async def cleanup_stale_jobs_task(ctx: dict[str, Any]) -> dict[str, Any]:
+    """
+    Cron task to clean up stale spread regeneration jobs.
+
+    Runs every minute to mark jobs as failed if they've been:
+    - pending for > 2 minutes
+    - running for > 12 minutes
+    """
+    dsn = _get_database_dsn()
+    if not dsn:
+        logger.warning("DATABASE_URL not set, skipping stale job cleanup")
+        return {"cleaned": 0}
+
+    try:
+        conn = await asyncpg.connect(dsn)
+        try:
+            repo = StoryRepository(conn)
+            count = await repo.cleanup_stale_spread_regen_jobs()
+            if count > 0:
+                logger.info(f"Cleaned up {count} stale spread regeneration job(s)")
+            return {"cleaned": count}
+        finally:
+            await conn.close()
+    except Exception as e:
+        logger.error(f"Failed to cleanup stale jobs: {e}")
+        return {"cleaned": 0, "error": str(e)}
+
+
 async def startup(ctx: dict[str, Any]) -> None:
     """Called when worker starts up."""
     logger.info("ARQ worker starting up")
+
+    # Cleanup any jobs left in bad state from previous crash
+    dsn = _get_database_dsn()
+    if not dsn:
+        logger.warning("DATABASE_URL not set, skipping startup cleanup")
+        return
+
+    try:
+        conn = await asyncpg.connect(dsn)
+        try:
+            repo = StoryRepository(conn)
+            count = await repo.cleanup_stale_spread_regen_jobs()
+            if count > 0:
+                logger.info(f"Startup cleanup: marked {count} stale job(s) as failed")
+        finally:
+            await conn.close()
+    except Exception as e:
+        logger.error(f"Failed startup cleanup: {e}")
 
 
 async def shutdown(ctx: dict[str, Any]) -> None:
@@ -123,6 +179,12 @@ class WorkerSettings:
 
     # Task functions to register
     functions = [generate_story_task, regenerate_spread_task]
+
+    # Cron jobs for periodic maintenance
+    cron_jobs = [
+        # Run stale job cleanup every minute
+        cron(cleanup_stale_jobs_task, minute=set(range(60))),
+    ]
 
     # Lifecycle hooks
     on_startup = startup

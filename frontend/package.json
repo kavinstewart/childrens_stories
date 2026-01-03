@@ -10,6 +10,8 @@
     "dev": "expo start --web --port 3000",
     "build:web": "expo export --platform web",
     "serve": "npx serve dist -l 3000",
+    "test": "jest",
+    "test:watch": "jest --watch",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:headed": "playwright test --headed"
@@ -43,8 +45,14 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.57.0",
+    "@testing-library/jest-native": "^5.4.3",
+    "@testing-library/react-native": "^13.3.3",
+    "@types/jest": "^30.0.0",
     "@types/react": "~19.1.0",
     "babel-plugin-module-resolver": "^5.0.2",
+    "jest": "^30.2.0",
+    "jest-expo": "^54.0.16",
+    "ts-jest": "^29.4.6",
     "typescript": "~5.9.2"
   },
   "private": true
