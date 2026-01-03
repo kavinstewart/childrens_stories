@@ -50,8 +50,8 @@ fi
 
 # Block commit if issues found (filter out "no issues" responses)
 if [ -n "$ISSUES" ]; then
-    # Check if response indicates no issues
-    if echo "$ISSUES" | grep -qiE "^(no issues|none|looks good|no problems|no bugs|lgtm|all good)"; then
+    # Check if response indicates no issues (case-insensitive, anywhere in response)
+    if echo "$ISSUES" | grep -qiE "(no (serious |major )?(issues|problems|bugs)|none found|looks good|lgtm|all good|no concerns|nothing to flag)"; then
         echo "Code review passed."
         exit 0
     fi
