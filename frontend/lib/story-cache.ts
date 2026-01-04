@@ -13,6 +13,8 @@ import { cacheStorage, CacheEntry } from './cache-storage';
 import { cacheFiles } from './cache-files';
 
 const DOWNLOAD_CONCURRENCY = 4;
+const MAX_CACHE_SIZE = 500 * 1024 * 1024; // 500MB
+const ESTIMATED_SPREAD_SIZE = 700 * 1024; // 700KB average per spread
 
 export const StoryCacheManager = {
   /**
@@ -28,6 +30,10 @@ export const StoryCacheManager = {
     const storyId = story.id;
 
     try {
+      // Ensure we have enough space (estimate based on spread count)
+      const estimatedSize = (story.spreads?.length || 12) * ESTIMATED_SPREAD_SIZE;
+      await StoryCacheManager.ensureCacheSpace(estimatedSize);
+
       // Create directory
       await cacheFiles.ensureDirectoryExists(storyId);
 
@@ -122,5 +128,58 @@ export const StoryCacheManager = {
    */
   invalidateStory: async (storyId: string): Promise<void> => {
     await StoryCacheManager.evictStory(storyId);
+  },
+
+  /**
+   * Get total size of all cached stories in bytes.
+   */
+  getCacheSize: async (): Promise<number> => {
+    const index = await cacheStorage.getIndex();
+    return Object.values(index).reduce((sum, entry) => sum + entry.sizeBytes, 0);
+  },
+
+  /**
+   * Get list of all cached story IDs.
+   */
+  getCachedStoryIds: async (): Promise<string[]> => {
+    const index = await cacheStorage.getIndex();
+    return Object.keys(index);
+  },
+
+  /**
+   * Ensure there's enough space for a new story.
+   * Evicts oldest-read stories (LRU) if needed.
+   */
+  ensureCacheSpace: async (neededBytes: number): Promise<void> => {
+    const index = await cacheStorage.getIndex();
+    const currentSize = Object.values(index).reduce((sum, e) => sum + e.sizeBytes, 0);
+
+    if (currentSize + neededBytes <= MAX_CACHE_SIZE) {
+      return; // Enough space
+    }
+
+    // Sort by lastRead ascending (oldest first)
+    const sorted = Object.entries(index).sort(([, a], [, b]) => a.lastRead - b.lastRead);
+
+    let freedSpace = 0;
+    const needed = currentSize + neededBytes - MAX_CACHE_SIZE;
+
+    for (const [storyId, entry] of sorted) {
+      if (freedSpace >= needed) break;
+
+      await StoryCacheManager.evictStory(storyId);
+      freedSpace += entry.sizeBytes;
+      console.log(`Evicted story ${storyId} to free ${entry.sizeBytes} bytes`);
+    }
+  },
+
+  /**
+   * Clear all cached stories.
+   */
+  clearAllCache: async (): Promise<void> => {
+    const storyIds = await StoryCacheManager.getCachedStoryIds();
+    for (const storyId of storyIds) {
+      await StoryCacheManager.evictStory(storyId);
+    }
   },
 };

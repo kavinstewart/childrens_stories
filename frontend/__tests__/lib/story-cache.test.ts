@@ -84,6 +84,7 @@ describe('StoryCacheManager', () => {
 
     it('creates directory and downloads all spreads', async () => {
       const story = createMockStory();
+      mockCacheStorage.getIndex.mockResolvedValue({}); // Empty cache, plenty of space
       mockCacheFiles.ensureDirectoryExists.mockResolvedValue(undefined);
       mockCacheFiles.downloadSpreadImage.mockResolvedValue({ success: true, size: 50000 });
       mockCacheFiles.saveStoryMetadata.mockResolvedValue(undefined);
@@ -106,6 +107,7 @@ describe('StoryCacheManager', () => {
 
     it('cleans up on download failure', async () => {
       const story = createMockStory();
+      mockCacheStorage.getIndex.mockResolvedValue({}); // Empty cache
       mockCacheFiles.ensureDirectoryExists.mockResolvedValue(undefined);
       mockCacheFiles.downloadSpreadImage
         .mockResolvedValueOnce({ success: true, size: 50000 })
@@ -135,6 +137,7 @@ describe('StoryCacheManager', () => {
       let concurrentCalls = 0;
       let maxConcurrent = 0;
 
+      mockCacheStorage.getIndex.mockResolvedValue({}); // Empty cache
       mockCacheFiles.ensureDirectoryExists.mockResolvedValue(undefined);
       mockCacheFiles.downloadSpreadImage.mockImplementation(async () => {
         concurrentCalls++;
@@ -155,6 +158,7 @@ describe('StoryCacheManager', () => {
 
     it('calculates total size correctly', async () => {
       const story = createMockStory();
+      mockCacheStorage.getIndex.mockResolvedValue({}); // Empty cache
       mockCacheFiles.ensureDirectoryExists.mockResolvedValue(undefined);
       mockCacheFiles.downloadSpreadImage.mockResolvedValue({ success: true, size: 100000 });
       mockCacheFiles.saveStoryMetadata.mockResolvedValue(undefined);
@@ -170,6 +174,7 @@ describe('StoryCacheManager', () => {
 
     it('uses Untitled for stories without title', async () => {
       const story = createMockStory({ title: undefined });
+      mockCacheStorage.getIndex.mockResolvedValue({}); // Empty cache
       mockCacheFiles.ensureDirectoryExists.mockResolvedValue(undefined);
       mockCacheFiles.downloadSpreadImage.mockResolvedValue({ success: true, size: 50000 });
       mockCacheFiles.saveStoryMetadata.mockResolvedValue(undefined);
@@ -273,6 +278,129 @@ describe('StoryCacheManager', () => {
 
       expect(mockCacheFiles.deleteStoryDirectory).toHaveBeenCalledWith('test-123');
       expect(mockCacheStorage.removeStoryEntry).toHaveBeenCalledWith('test-123');
+    });
+  });
+
+  describe('getCacheSize', () => {
+    it('returns 0 for empty cache', async () => {
+      mockCacheStorage.getIndex.mockResolvedValue({});
+
+      const size = await StoryCacheManager.getCacheSize();
+
+      expect(size).toBe(0);
+    });
+
+    it('returns sum of all story sizes', async () => {
+      mockCacheStorage.getIndex.mockResolvedValue({
+        'story-1': { cachedAt: 1000, lastRead: 1000, sizeBytes: 500000, spreadCount: 12, title: 'A' },
+        'story-2': { cachedAt: 2000, lastRead: 2000, sizeBytes: 300000, spreadCount: 10, title: 'B' },
+        'story-3': { cachedAt: 3000, lastRead: 3000, sizeBytes: 200000, spreadCount: 8, title: 'C' },
+      });
+
+      const size = await StoryCacheManager.getCacheSize();
+
+      expect(size).toBe(1000000); // 500000 + 300000 + 200000
+    });
+  });
+
+  describe('getCachedStoryIds', () => {
+    it('returns empty array for empty cache', async () => {
+      mockCacheStorage.getIndex.mockResolvedValue({});
+
+      const ids = await StoryCacheManager.getCachedStoryIds();
+
+      expect(ids).toEqual([]);
+    });
+
+    it('returns all cached story IDs', async () => {
+      mockCacheStorage.getIndex.mockResolvedValue({
+        'story-1': { cachedAt: 1000, lastRead: 1000, sizeBytes: 500000, spreadCount: 12, title: 'A' },
+        'story-2': { cachedAt: 2000, lastRead: 2000, sizeBytes: 300000, spreadCount: 10, title: 'B' },
+      });
+
+      const ids = await StoryCacheManager.getCachedStoryIds();
+
+      expect(ids).toHaveLength(2);
+      expect(ids).toContain('story-1');
+      expect(ids).toContain('story-2');
+    });
+  });
+
+  describe('ensureCacheSpace', () => {
+    it('does nothing when there is enough space', async () => {
+      mockCacheStorage.getIndex.mockResolvedValue({
+        'story-1': { cachedAt: 1000, lastRead: 1000, sizeBytes: 100000000, spreadCount: 12, title: 'A' },
+      });
+
+      await StoryCacheManager.ensureCacheSpace(50000000); // Need 50MB, have 400MB free
+
+      expect(mockCacheFiles.deleteStoryDirectory).not.toHaveBeenCalled();
+    });
+
+    it('evicts oldest-read stories when over budget', async () => {
+      // Setup: 450MB used, need 100MB, so need to free 50MB
+      // Story-A (oldest) should be evicted
+      mockCacheStorage.getIndex.mockResolvedValue({
+        'story-a': { cachedAt: 1000, lastRead: 1000, sizeBytes: 100000000, spreadCount: 12, title: 'A' }, // oldest
+        'story-b': { cachedAt: 2000, lastRead: 3000, sizeBytes: 150000000, spreadCount: 12, title: 'B' },
+        'story-c': { cachedAt: 3000, lastRead: 2000, sizeBytes: 200000000, spreadCount: 12, title: 'C' },
+      }); // Total: 450MB
+      mockCacheFiles.deleteStoryDirectory.mockResolvedValue(undefined);
+      mockCacheStorage.removeStoryEntry.mockResolvedValue(undefined);
+
+      await StoryCacheManager.ensureCacheSpace(100000000); // Need 100MB
+
+      // story-a has oldest lastRead (1000), should be evicted
+      expect(mockCacheFiles.deleteStoryDirectory).toHaveBeenCalledWith('story-a');
+      expect(mockCacheStorage.removeStoryEntry).toHaveBeenCalledWith('story-a');
+    });
+
+    it('evicts multiple stories if needed', async () => {
+      // Setup: 480MB used, need 100MB, so need to free 80MB
+      // Both story-a (50MB) and story-c (60MB) should be evicted (sorted by lastRead)
+      mockCacheStorage.getIndex.mockResolvedValue({
+        'story-a': { cachedAt: 1000, lastRead: 1000, sizeBytes: 50000000, spreadCount: 12, title: 'A' }, // oldest
+        'story-b': { cachedAt: 2000, lastRead: 3000, sizeBytes: 200000000, spreadCount: 12, title: 'B' }, // newest
+        'story-c': { cachedAt: 3000, lastRead: 2000, sizeBytes: 60000000, spreadCount: 12, title: 'C' }, // middle
+        'story-d': { cachedAt: 4000, lastRead: 4000, sizeBytes: 170000000, spreadCount: 12, title: 'D' },
+      }); // Total: 480MB
+      mockCacheFiles.deleteStoryDirectory.mockResolvedValue(undefined);
+      mockCacheStorage.removeStoryEntry.mockResolvedValue(undefined);
+
+      await StoryCacheManager.ensureCacheSpace(100000000); // Need 100MB
+
+      // story-a (lastRead 1000) evicted first, then story-c (lastRead 2000)
+      expect(mockCacheFiles.deleteStoryDirectory).toHaveBeenCalledWith('story-a');
+      expect(mockCacheFiles.deleteStoryDirectory).toHaveBeenCalledWith('story-c');
+      // story-b and story-d should not be evicted
+      expect(mockCacheFiles.deleteStoryDirectory).not.toHaveBeenCalledWith('story-b');
+      expect(mockCacheFiles.deleteStoryDirectory).not.toHaveBeenCalledWith('story-d');
+    });
+  });
+
+  describe('clearAllCache', () => {
+    it('does nothing for empty cache', async () => {
+      mockCacheStorage.getIndex.mockResolvedValue({});
+
+      await StoryCacheManager.clearAllCache();
+
+      expect(mockCacheFiles.deleteStoryDirectory).not.toHaveBeenCalled();
+    });
+
+    it('evicts all cached stories', async () => {
+      mockCacheStorage.getIndex.mockResolvedValue({
+        'story-1': { cachedAt: 1000, lastRead: 1000, sizeBytes: 500000, spreadCount: 12, title: 'A' },
+        'story-2': { cachedAt: 2000, lastRead: 2000, sizeBytes: 300000, spreadCount: 10, title: 'B' },
+      });
+      mockCacheFiles.deleteStoryDirectory.mockResolvedValue(undefined);
+      mockCacheStorage.removeStoryEntry.mockResolvedValue(undefined);
+
+      await StoryCacheManager.clearAllCache();
+
+      expect(mockCacheFiles.deleteStoryDirectory).toHaveBeenCalledWith('story-1');
+      expect(mockCacheFiles.deleteStoryDirectory).toHaveBeenCalledWith('story-2');
+      expect(mockCacheStorage.removeStoryEntry).toHaveBeenCalledWith('story-1');
+      expect(mockCacheStorage.removeStoryEntry).toHaveBeenCalledWith('story-2');
     });
   });
 });
