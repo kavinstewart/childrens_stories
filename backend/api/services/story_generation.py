@@ -15,7 +15,8 @@ from typing import Callable, Optional
 
 import asyncpg
 
-from ..config import get_dsn, STORIES_DIR, story_logger
+from ..config import get_dsn, STORIES_DIR
+from ..logging import story_logger
 from ..database.repository import StoryRepository
 from .progress_tracker import ProgressTracker
 
