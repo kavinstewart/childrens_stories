@@ -3,7 +3,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useState, useEffect } from 'react';
 import { useStory, useRecommendations } from '@/features/stories/hooks';
-import { api } from '@/lib/api';
+import { api, Story } from '@/lib/api';
 import { fontFamily } from '@/lib/fonts';
 import { StoryCard } from '@/components/StoryCard';
 import { StoryCacheManager } from '@/lib/story-cache';
@@ -18,49 +18,66 @@ const CARD_COUNT = 4;
 export default function StoryReader() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { data: story, isLoading, error } = useStory(id);
+  const { data: networkStory, isLoading, error } = useStory(id);
   const token = useAuthStore((state) => state.token);
   const [currentSpread, setCurrentSpread] = useState(0);
   const [isCaching, setIsCaching] = useState(false);
   const [isCached, setIsCached] = useState(false);
   const [cacheCheckComplete, setCacheCheckComplete] = useState(false);
+  const [cachedStory, setCachedStory] = useState<Story | null>(null);
+
+  // Use cached story (with file:// URLs) if available, otherwise network story
+  const story = cachedStory || networkStory;
 
   const spreads = story?.spreads || [];
   const totalSpreads = spreads.length;
   const [showEndScreen, setShowEndScreen] = useState(false);
   const isLastSpread = currentSpread === totalSpreads - 1;
 
-  // Check if story is already cached on mount
+  // Check if story is already cached on mount and load it
   useEffect(() => {
     if (!id) return;
 
     setCacheCheckComplete(false);
-    StoryCacheManager.isStoryCached(id).then(cached => {
+    StoryCacheManager.isStoryCached(id).then(async (cached) => {
       console.log(`[Cache] isStoryCached(${id}): ${cached}`);
       setIsCached(cached);
+      if (cached) {
+        const loaded = await StoryCacheManager.loadCachedStory(id);
+        if (loaded) {
+          console.log(`[Cache] Loaded cached story with file:// URLs`);
+          setCachedStory(loaded);
+        }
+      }
       setCacheCheckComplete(true);
     });
   }, [id]);
 
   // Trigger background caching when story loads (if eligible)
   // Only runs after cache check completes to avoid race condition
+  // Use networkStory to cache the original URLs, not the cached file:// URLs
   useEffect(() => {
     if (!cacheCheckComplete) return; // Wait for cache check to finish
-    if (story?.is_illustrated && story.status === 'completed' && !isCached && !isCaching) {
+    if (networkStory?.is_illustrated && networkStory.status === 'completed' && !isCached && !isCaching) {
       setIsCaching(true);
-      console.log(`[Cache] Starting cache for story ${story.id}`);
-      StoryCacheManager.cacheStory(story)
-        .then(success => {
-          console.log(`[Cache] Caching ${success ? 'succeeded' : 'failed'} for story ${story.id}`);
+      console.log(`[Cache] Starting cache for story ${networkStory.id}`);
+      StoryCacheManager.cacheStory(networkStory)
+        .then(async (success) => {
+          console.log(`[Cache] Caching ${success ? 'succeeded' : 'failed'} for story ${networkStory.id}`);
           if (success) {
             setIsCached(true);
+            // Load the cached story with file:// URLs
+            const loaded = await StoryCacheManager.loadCachedStory(networkStory.id);
+            if (loaded) {
+              setCachedStory(loaded);
+            }
           }
         })
         .finally(() => {
           setIsCaching(false);
         });
     }
-  }, [story, isCached, isCaching, cacheCheckComplete]);
+  }, [networkStory, isCached, isCaching, cacheCheckComplete]);
 
   // Fetch recommendations (only used on last page, but hook must be called unconditionally)
   const { data: recommendations } = useRecommendations(id, CARD_COUNT);
