@@ -1,5 +1,5 @@
 """API routes."""
 
-from . import stories
+from . import logs, stories
 
-__all__ = ["stories"]
+__all__ = ["logs", "stories"]

@@ -10,6 +10,7 @@ import { fonts } from '@/lib/fonts';
 import { queryClient } from '@/lib/query-client';
 import { useAuthStore } from '@/features/auth/store';
 import { StoryCacheManager } from '@/lib/story-cache';
+import { remoteLogger } from '@/lib/remote-logger';
 
 function AuthGate({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -37,6 +38,13 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 
     initCache();
   }, []);
+
+  // Initialize remote logger when authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      remoteLogger.init();
+    }
+  }, [isAuthenticated]);
 
   // Handle auth routing
   useEffect(() => {
