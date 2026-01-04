@@ -2,12 +2,7 @@
 
 import uuid
 
-from ..config import (
-    DEFAULT_GENERATION_TYPE,
-    DEFAULT_MAX_ATTEMPTS,
-    DEFAULT_QUALITY_THRESHOLD,
-    DEFAULT_TARGET_AGE_RANGE,
-)
+from ..config import DEFAULT_GENERATION_TYPE, DEFAULT_TARGET_AGE_RANGE
 from ..database.repository import SpreadRegenJobRepository, StoryRepository
 from ..arq_pool import get_pool as get_arq_pool
 
@@ -55,8 +50,6 @@ class StoryService:
             goal=goal,
             target_age_range=DEFAULT_TARGET_AGE_RANGE,
             generation_type=DEFAULT_GENERATION_TYPE,
-            quality_threshold=DEFAULT_QUALITY_THRESHOLD,
-            max_attempts=DEFAULT_MAX_ATTEMPTS,
         )
 
         return story_id

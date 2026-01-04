@@ -12,7 +12,6 @@ from ..models.enums import GenerationType, JobStatus
 from ..models.responses import (
     CharacterReferenceResponse,
     IllustrationStyleResponse,
-    QualityJudgmentResponse,
     StoryMetadataResponse,
     StoryProgressResponse,
     StoryRecommendationItem,
@@ -432,13 +431,6 @@ class StoryRepository:
         metadata_data = json.loads(story["outline_json"])
         return StoryMetadataResponse(**metadata_data)
 
-    def _parse_judgment(self, story: asyncpg.Record) -> Optional[QualityJudgmentResponse]:
-        """Parse judgment_json into QualityJudgmentResponse."""
-        if not story["judgment_json"]:
-            return None
-        judgment_data = json.loads(story["judgment_json"])
-        return QualityJudgmentResponse(**judgment_data)
-
     def _parse_progress(self, story: asyncpg.Record) -> Optional[StoryProgressResponse]:
         """Parse progress_json into StoryProgressResponse."""
         if not story["progress_json"]:
@@ -510,7 +502,6 @@ class StoryRepository:
     ) -> StoryResponse:
         """Convert asyncpg Record to response model."""
         metadata = self._parse_metadata(story)
-        judgment = self._parse_judgment(story)
         progress = self._parse_progress(story)
 
         spread_responses = (
@@ -538,7 +529,6 @@ class StoryRepository:
             attempts=story["attempts"],
             metadata=metadata,
             spreads=spread_responses,
-            judgment=judgment,
             character_references=char_ref_responses,
             progress=progress,
             error_message=story["error_message"],

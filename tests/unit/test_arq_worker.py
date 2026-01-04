@@ -20,8 +20,6 @@ class TestGenerateStoryTask:
                 goal="teach about sharing",
                 target_age_range="4-7",
                 generation_type="illustrated",
-                quality_threshold=7,
-                max_attempts=3,
             )
 
             mock_gen.assert_called_once_with(
@@ -29,8 +27,6 @@ class TestGenerateStoryTask:
                 goal="teach about sharing",
                 target_age_range="4-7",
                 generation_type="illustrated",
-                quality_threshold=7,
-                max_attempts=3,
             )
             assert result["story_id"] == "story-uuid-456"
             assert result["status"] == "completed"
@@ -52,8 +48,6 @@ class TestGenerateStoryTask:
             call_kwargs = mock_gen.call_args.kwargs
             assert call_kwargs["target_age_range"] == "4-7"
             assert call_kwargs["generation_type"] == "illustrated"
-            assert call_kwargs["quality_threshold"] == 7
-            assert call_kwargs["max_attempts"] == 3
 
     @pytest.mark.asyncio
     async def test_task_reraises_exceptions(self):

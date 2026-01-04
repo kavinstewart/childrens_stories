@@ -35,29 +35,14 @@ export interface StorySpread {
   composed_prompt?: string;  // Full prompt sent to image model (for dev editing)
 }
 
-export interface QualityJudgment {
-  overall_score: number;
-  verdict: string;
-  engagement_score: number;
-  read_aloud_score: number;
-  emotional_truth_score: number;
-  coherence_score: number;
-  chekhov_score: number;
-  has_critical_failures: boolean;
-  specific_problems: string;
-}
-
 export interface StoryProgress {
-  stage: 'outline' | 'spreads' | 'quality' | 'character_refs' | 'illustrations' | 'failed';
+  stage: 'outline' | 'spreads' | 'character_refs' | 'illustrations' | 'failed';
   stage_detail: string;
   percentage: number;
   characters_total?: number;
   characters_completed?: number;
   spreads_total?: number;
   spreads_completed?: number;
-  quality_attempt?: number;
-  quality_attempts_max?: number;
-  quality_score?: number;
   warnings?: string[];
   updated_at?: string;
 }
@@ -77,7 +62,6 @@ export interface Story {
   attempts?: number;
   outline?: StoryOutline;
   spreads?: StorySpread[];
-  judgment?: QualityJudgment;
   is_illustrated: boolean;
   error_message?: string;
   progress?: StoryProgress;

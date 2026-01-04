@@ -26,8 +26,6 @@ async def generate_story(
     goal: str,
     target_age_range: str = "4-7",
     generation_type: str = "illustrated",
-    quality_threshold: int = 7,
-    max_attempts: int = 3,
     on_progress: Optional[Callable[[str, str, int, int], None]] = None,
 ) -> None:
     """
@@ -42,8 +40,6 @@ async def generate_story(
         goal: The learning goal or theme for the story
         target_age_range: Target reader age range (default "4-7")
         generation_type: "simple", "standard", or "illustrated"
-        quality_threshold: Minimum score (0-10) to accept a story
-        max_attempts: Maximum generation attempts
         on_progress: Optional callback for progress updates
     """
     # Import here to avoid circular imports and slow startup
@@ -80,16 +76,12 @@ async def generate_story(
         lm = get_inference_lm()
 
         # Create generator with explicit LM
-        generator = StoryGenerator(
-            quality_threshold=quality_threshold,
-            max_attempts=max_attempts,
-            lm=lm,
-        )
+        generator = StoryGenerator(lm=lm)
 
         # Generate based on type
         if generation_type == "simple":
             await tracker.update_async("outline", "Crafting your story outline...")
-            story = generator.generate_simple(goal)
+            story = generator.forward(goal)
             await tracker.update_async("spreads", "Story complete", completed=1, total=1)
 
         elif generation_type == "illustrated":
@@ -114,7 +106,6 @@ async def generate_story(
                 generator.generate_illustrated,
                 goal,
                 target_age_range,
-                skip_quality_loop=False,
                 use_image_qa=False,  # Disabled: manual regeneration approach preferred
                 max_image_attempts=3,
                 debug=True,
@@ -123,12 +114,8 @@ async def generate_story(
 
         else:  # standard
             await tracker.update_async("outline", "Crafting your story outline...")
-            story = generator.forward(
-                goal,
-                target_age_range,
-                skip_quality_loop=False,
-            )
-            await tracker.update_async("quality", "Story generation complete")
+            story = generator.forward(goal, target_age_range)
+            await tracker.update_async("spreads", "Story generation complete")
 
         # Save to database and filesystem
         await _save_story(story_id, story, pool)
@@ -228,21 +215,6 @@ async def _save_story(
             "lighting_direction": style.lighting_direction,
         }
 
-    # Serialize judgment if present
-    judgment_dict = None
-    if story.judgment:
-        judgment_dict = {
-            "overall_score": story.judgment.overall_score,
-            "verdict": story.judgment.verdict,
-            "engagement_score": story.judgment.engagement_score,
-            "read_aloud_score": story.judgment.read_aloud_score,
-            "emotional_truth_score": story.judgment.emotional_truth_score,
-            "coherence_score": story.judgment.coherence_score,
-            "chekhov_score": story.judgment.chekhov_score,
-            "has_critical_failures": story.judgment.has_critical_failures,
-            "specific_problems": story.judgment.specific_problems,
-        }
-
     # Save to database
     async with pool.acquire() as conn:
         repo = StoryRepository(conn)
@@ -251,10 +223,10 @@ async def _save_story(
             title=story.title,
             word_count=story.word_count,
             spread_count=story.spread_count,
-            attempts=story.attempts,
+            attempts=1,  # Always single attempt now
             is_illustrated=story.is_illustrated,
             outline_json=json.dumps(metadata_dict),
-            judgment_json=json.dumps(judgment_dict) if judgment_dict else None,
+            judgment_json=None,  # No longer using quality judge
             spreads=spreads_data,
             character_refs=char_refs_data,
         )

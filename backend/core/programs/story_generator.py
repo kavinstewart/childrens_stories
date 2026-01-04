@@ -6,7 +6,6 @@ Story-first workflow:
 2. Extract characters from what was written
 3. Generate character bibles for illustration consistency
 4. Select illustration style
-5. (Optional) Judge quality and iterate
 
 A spread = two facing pages when the book is open. A 32-page picture book
 has 12 spreads of story content.
@@ -21,7 +20,6 @@ from ..types import GeneratedStory, StoryMetadata, StorySpread
 from ..modules.direct_story_generator import DirectStoryGenerator
 from ..modules.character_extractor import CharacterExtractor
 from ..modules.bible_generator import BibleGenerator
-from ..modules.quality_judge import QualityJudge
 from ..modules.character_sheet_generator import CharacterSheetGenerator
 from ..modules.spread_illustrator import SpreadIllustrator
 from ..modules.illustration_styles import get_style_by_name, get_all_styles_for_selection
@@ -42,11 +40,8 @@ class StoryGenerator(dspy.Module):
     2. Extract characters from the written story
     3. Generate character bibles for illustration consistency
     4. Select illustration style based on story content
-    5. (Optional) Judge quality and retry if needed
 
     Args:
-        quality_threshold: Minimum score (0-10) to accept a story
-        max_attempts: Maximum generation attempts
         lm: Optional explicit LM to use. If provided, bypasses global
             dspy.configure() state. Useful for testing and explicit control.
         include_examples: Whether to include reference story examples in prompt
@@ -55,11 +50,12 @@ class StoryGenerator(dspy.Module):
 
     def __init__(
         self,
-        quality_threshold: int = 7,
-        max_attempts: int = 3,
         lm: dspy.LM = None,
         include_examples: bool = True,
         example_count: int = 1,
+        # Deprecated params - kept for backwards compatibility, ignored
+        quality_threshold: int = None,
+        max_attempts: int = None,
     ):
         super().__init__()
         self.story_generator = DirectStoryGenerator(
@@ -69,25 +65,19 @@ class StoryGenerator(dspy.Module):
         self.character_extractor = CharacterExtractor()
         self.bible_generator = BibleGenerator()
         self.style_selector = dspy.ChainOfThought(IllustrationStyleSignature)
-        self.quality_judge = QualityJudge()
-
-        self.quality_threshold = quality_threshold
-        self.max_attempts = max_attempts
         self._lm = lm  # Store explicit LM if provided
 
     def forward(
         self,
         goal: str,
         target_age_range: str = "4-7",
-        skip_quality_loop: bool = False,
     ) -> GeneratedStory:
         """
         Generate a complete children's story.
 
         Args:
             goal: The learning goal or theme for the story
-            target_age_range: Target reader age range
-            skip_quality_loop: If True, generate once without quality iteration
+            target_age_range: Target reader age range (for future use)
 
         Returns:
             GeneratedStory with all components
@@ -95,141 +85,69 @@ class StoryGenerator(dspy.Module):
         # Use explicit LM if provided, otherwise use global config
         if self._lm is not None:
             with dspy.context(lm=self._lm):
-                return self._generate_story(goal, target_age_range, skip_quality_loop)
+                return self._generate_story(goal)
         else:
-            return self._generate_story(goal, target_age_range, skip_quality_loop)
+            return self._generate_story(goal)
 
-    def _generate_story(
-        self,
-        goal: str,
-        target_age_range: str,
-        skip_quality_loop: bool,
-    ) -> GeneratedStory:
+    def _generate_story(self, goal: str) -> GeneratedStory:
         """Internal method that does the actual generation."""
         import sys
 
-        best_story = None
-        best_score = 0
+        # Step 1: Generate complete story (with retry for network errors)
+        title, spreads = llm_retry(self.story_generator)(
+            goal=goal,
+            debug=True,
+        )
 
-        for attempt in range(1, self.max_attempts + 1):
-            # Enhance goal with feedback from previous attempt
-            current_goal = goal
-            if best_story and best_story.judgment:
-                current_goal = (
-                    f"{goal}\n\n"
-                    f"AVOID THESE PROBLEMS from previous attempt:\n{best_story.judgment.specific_problems}"
-                )
+        # Compile story text for downstream processing
+        story_text = _format_spreads_for_llm(spreads)
 
-            # Step 1: Generate complete story (with retry for network errors)
-            title, spreads = llm_retry(self.story_generator)(
-                goal=current_goal,
-                debug=True,
-            )
+        # Step 2: Extract characters from the story
+        extracted_characters = llm_retry(self.character_extractor)(
+            title=title,
+            story_text=story_text,
+            debug=True,
+        )
 
-            # Compile story text for downstream processing
-            story_text = _format_spreads_for_llm(spreads)
+        # Step 3: Generate character bibles
+        character_bibles = llm_retry(self.bible_generator)(
+            title=title,
+            story_text=story_text,
+            extracted_characters=extracted_characters,
+            debug=True,
+        )
 
-            # Step 2: Extract characters from the story
-            extracted_characters = llm_retry(self.character_extractor)(
-                title=title,
-                story_text=story_text,
-                debug=True,
-            )
+        # Step 4: Select illustration style
+        story_summary = f"{title}. {story_text[:500]}..."
+        style_result = llm_retry(self.style_selector)(
+            story_summary=story_summary,
+            available_styles=get_all_styles_for_selection(),
+        )
 
-            # Step 3: Generate character bibles
-            character_bibles = llm_retry(self.bible_generator)(
-                title=title,
-                story_text=story_text,
-                extracted_characters=extracted_characters,
-                debug=True,
-            )
+        selected_style_name = style_result.selected_style.strip().lower()
+        illustration_style = get_style_by_name(selected_style_name)
 
-            # Steps 4 & 5: Select illustration style AND judge quality (in parallel)
-            import concurrent.futures
+        print(f"DEBUG Selected style: {selected_style_name}", file=sys.stderr)
 
-            story_summary = f"{title}. {story_text[:500]}..."
+        # Build metadata for illustration
+        metadata = StoryMetadata(
+            title=title,
+            character_bibles=character_bibles,
+            illustration_style=illustration_style,
+            style_rationale=style_result.style_rationale,
+        )
 
-            # Capture the current LM for propagating to worker threads
-            # ThreadPoolExecutor creates new threads that don't inherit dspy.context
-            current_lm = self._lm or dspy.settings.lm
-
-            def select_style():
-                with dspy.context(lm=current_lm):
-                    result = llm_retry(self.style_selector)(
-                        story_summary=story_summary,
-                        available_styles=get_all_styles_for_selection(),
-                    )
-                    return result
-
-            def judge_quality():
-                if skip_quality_loop:
-                    return None
-                with dspy.context(lm=current_lm):
-                    return llm_retry(self.quality_judge)(
-                        story_text=story_text,
-                        original_goal=goal,
-                        target_age_range=target_age_range,
-                    )
-
-            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-                style_future = executor.submit(select_style)
-                judge_future = executor.submit(judge_quality)
-
-                style_result = style_future.result()
-                judgment = judge_future.result()
-
-            selected_style_name = style_result.selected_style.strip().lower()
-            illustration_style = get_style_by_name(selected_style_name)
-
-            print(f"DEBUG Selected style: {selected_style_name}", file=sys.stderr)
-
-            # Build metadata for illustration
-            metadata = StoryMetadata(
-                title=title,
-                character_bibles=character_bibles,
-                illustration_style=illustration_style,
-                style_rationale=style_result.style_rationale,
-            )
-
-            story = GeneratedStory(
-                title=title,
-                goal=goal,
-                metadata=metadata,
-                spreads=spreads,
-                judgment=judgment,
-                attempts=attempt,
-            )
-
-            # Track best story
-            current_score = judgment.overall_score if judgment else 10
-            if current_score > best_score:
-                best_score = current_score
-                best_story = story
-
-            # Check if quality is good enough
-            if skip_quality_loop or (judgment and judgment.overall_score >= self.quality_threshold):
-                return story
-
-        # Return best attempt if we exhausted retries
-        return best_story
-
-    def generate_simple(self, goal: str) -> GeneratedStory:
-        """
-        Generate a story without quality iteration (faster, cheaper).
-
-        Args:
-            goal: The learning goal or theme
-
-        Returns:
-            GeneratedStory (single attempt, no quality judgment)
-        """
-        return self.forward(goal=goal, skip_quality_loop=True)
+        return GeneratedStory(
+            title=title,
+            goal=goal,
+            metadata=metadata,
+            spreads=spreads,
+        )
 
     def generate_illustrated(
         self,
         goal: str,
         target_age_range: str = "4-7",
-        skip_quality_loop: bool = False,
         use_image_qa: bool = True,
         max_image_attempts: int = 3,
         debug: bool = False,
@@ -239,16 +157,15 @@ class StoryGenerator(dspy.Module):
         Generate a complete illustrated children's story using Nano Banana Pro.
 
         Full pipeline:
-        1. Generate story outline (with character bibles and spread breakdown)
-        2. Generate all 12 spreads in a single LLM call (with illustration prompts)
-        3. Judge quality and iterate
+        1. Generate story text (title + 12 spreads in one call)
+        2. Extract characters and generate bibles
+        3. Select illustration style
         4. Generate character reference portraits
         5. Generate 12 spread illustrations using reference images (with QA)
 
         Args:
             goal: The learning goal or theme for the story
             target_age_range: Target reader age range
-            skip_quality_loop: If True, skip quality iteration
             use_image_qa: If True, run QA on images and regenerate failures
             max_image_attempts: Max regeneration attempts per image
             debug: Print progress info
@@ -259,7 +176,7 @@ class StoryGenerator(dspy.Module):
         """
         import sys
 
-        # Step 1-3: Generate the story text (outline + 12 spreads)
+        # Step 1-3: Generate the story text
         if debug:
             print("Step 1: Generating story text (12 spreads)...", file=sys.stderr)
         if on_progress:
@@ -268,7 +185,6 @@ class StoryGenerator(dspy.Module):
         story = self.forward(
             goal=goal,
             target_age_range=target_age_range,
-            skip_quality_loop=skip_quality_loop,
         )
 
         if on_progress:

@@ -36,8 +36,6 @@ async def generate_story_task(
     goal: str,
     target_age_range: str = "4-7",
     generation_type: str = "illustrated",
-    quality_threshold: int = 7,
-    max_attempts: int = 3,
 ) -> dict[str, Any]:
     """
     ARQ task for generating a story.
@@ -51,8 +49,6 @@ async def generate_story_task(
         goal: The learning goal or theme for the story
         target_age_range: Target reader age range
         generation_type: "simple", "standard", or "illustrated"
-        quality_threshold: Minimum score (0-10) to accept
-        max_attempts: Maximum generation attempts
 
     Returns:
         Dict with story_id and status
@@ -66,8 +62,6 @@ async def generate_story_task(
             goal=goal,
             target_age_range=target_age_range,
             generation_type=generation_type,
-            quality_threshold=quality_threshold,
-            max_attempts=max_attempts,
         )
         logger.info(f"Completed story generation job {job_id} for story {story_id}")
         return {"story_id": story_id, "status": "completed"}

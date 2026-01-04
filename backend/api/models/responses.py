@@ -26,20 +26,6 @@ class StorySpreadResponse(BaseModel):
     composed_prompt: Optional[str] = None  # Full prompt sent to image model (for dev editing)
 
 
-class QualityJudgmentResponse(BaseModel):
-    """Quality assessment of the story."""
-
-    overall_score: int
-    verdict: str
-    engagement_score: int
-    read_aloud_score: int
-    emotional_truth_score: int
-    coherence_score: int
-    chekhov_score: int
-    has_critical_failures: bool
-    specific_problems: str
-
-
 class IllustrationStyleResponse(BaseModel):
     """Illustration style definition for consistency."""
 
@@ -69,7 +55,7 @@ class CharacterReferenceResponse(BaseModel):
 class StoryProgressResponse(BaseModel):
     """Progress tracking for story generation."""
 
-    stage: str  # outline, spreads, quality, character_refs, illustrations, failed
+    stage: str  # outline, spreads, character_refs, illustrations, failed
     stage_detail: str  # Human-readable message
     percentage: int  # 0-100, weighted by stage
 
@@ -78,9 +64,6 @@ class StoryProgressResponse(BaseModel):
     characters_completed: Optional[int] = None
     spreads_total: Optional[int] = None
     spreads_completed: Optional[int] = None
-    quality_attempt: Optional[int] = None
-    quality_attempts_max: Optional[int] = None
-    quality_score: Optional[int] = None
 
     # Error context
     warnings: list[str] = Field(default_factory=list)
@@ -109,7 +92,6 @@ class StoryResponse(BaseModel):
 
     metadata: Optional[StoryMetadataResponse] = None
     spreads: Optional[list[StorySpreadResponse]] = None
-    judgment: Optional[QualityJudgmentResponse] = None
     character_references: Optional[list[CharacterReferenceResponse]] = None
 
     # Progress tracking (populated while running)
