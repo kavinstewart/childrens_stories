@@ -454,7 +454,12 @@ class StoryRepository:
         spreads: list[asyncpg.Record],
         metadata: Optional[StoryMetadataResponse],
     ) -> list[StorySpreadResponse]:
-        """Convert spread records to StorySpreadResponse list."""
+        """Convert spread records to StorySpreadResponse list.
+
+        Note: We compute composed_prompt here rather than storing it or using a
+        service layer. It's a debug-only field and build_illustration_prompt is
+        a pure function. If this grows more complex, consider a response mapper.
+        """
         style = metadata.illustration_style if metadata else None
         setting = metadata.setting if metadata else ""
 
