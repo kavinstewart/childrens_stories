@@ -3,6 +3,7 @@
 
 import * as FileSystem from 'expo-file-system/legacy';
 import { Story } from './api';
+import { authStorage } from './auth-storage';
 
 const CACHE_DIR = `${FileSystem.documentDirectory}stories/`;
 
@@ -27,7 +28,10 @@ export const cacheFiles = {
     const destPath = cacheFiles.getSpreadPath(storyId, spreadNumber);
     try {
       console.log(`[Cache] Downloading spread ${spreadNumber} from: ${sourceUrl}`);
-      const result = await FileSystem.downloadAsync(sourceUrl, destPath);
+      const token = await authStorage.getToken();
+      const result = await FileSystem.downloadAsync(sourceUrl, destPath, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
       if (result.status !== 200) {
         console.error(`[Cache] Download failed for spread ${spreadNumber}: HTTP ${result.status}`);
         return { success: false, size: 0 };

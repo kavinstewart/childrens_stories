@@ -1,7 +1,9 @@
 """Story CRUD endpoints."""
 
+import re
 import shutil
 from typing import Optional
+from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, status, Query
 from fastapi.responses import FileResponse
@@ -19,6 +21,26 @@ from ..dependencies import Repository, SpreadRegenRepository, Service, CurrentUs
 from ..config import STORIES_DIR
 
 router = APIRouter()
+
+
+def validate_story_id(story_id: str) -> None:
+    """Validate story_id is a valid UUID to prevent path traversal."""
+    try:
+        UUID(story_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid story ID format",
+        )
+
+
+def validate_safe_filename(name: str) -> None:
+    """Validate name contains no path separators to prevent path traversal."""
+    if "/" in name or "\\" in name or ".." in name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid character name",
+        )
 
 
 @router.post(
@@ -113,8 +135,9 @@ async def get_recommendations(
         404: {"description": "Image not found"},
     },
 )
-async def get_spread_image(story_id: str, spread_number: int):
-    """Get a spread illustration image (no auth - images accessed via unguessable UUID)."""
+async def get_spread_image(story_id: str, spread_number: int, user: CurrentUser):
+    """Get a spread illustration image."""
+    validate_story_id(story_id)
     image_path = STORIES_DIR / story_id / "images" / f"spread_{spread_number:02d}.png"
 
     if not image_path.exists():
@@ -135,8 +158,10 @@ async def get_spread_image(story_id: str, spread_number: int):
         404: {"description": "Image not found"},
     },
 )
-async def get_character_image(story_id: str, character_name: str):
-    """Get a character reference image (no auth - images accessed via unguessable UUID)."""
+async def get_character_image(story_id: str, character_name: str, user: CurrentUser):
+    """Get a character reference image."""
+    validate_story_id(story_id)
+    validate_safe_filename(character_name)
     refs_dir = STORIES_DIR / story_id / "character_refs"
 
     if not refs_dir.exists():
