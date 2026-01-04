@@ -56,8 +56,11 @@ export const StoryCacheManager = {
           })
         );
 
-        if (results.some(r => !r.success)) {
-          throw new Error('Some downloads failed');
+        const failedIndices = results
+          .map((r, idx) => (!r.success ? batch[idx].spread_number : null))
+          .filter((n): n is number => n !== null);
+        if (failedIndices.length > 0) {
+          throw new Error(`Downloads failed for spreads: ${failedIndices.join(', ')}`);
         }
 
         totalSize += results.reduce((sum, r) => sum + r.size, 0);

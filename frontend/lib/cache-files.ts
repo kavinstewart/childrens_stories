@@ -26,19 +26,23 @@ export const cacheFiles = {
   ): Promise<{ success: boolean; size: number }> => {
     const destPath = cacheFiles.getSpreadPath(storyId, spreadNumber);
     try {
+      console.log(`[Cache] Downloading spread ${spreadNumber} from: ${sourceUrl}`);
       const result = await FileSystem.downloadAsync(sourceUrl, destPath);
       if (result.status !== 200) {
+        console.error(`[Cache] Download failed for spread ${spreadNumber}: HTTP ${result.status}`);
         return { success: false, size: 0 };
       }
       const info = await FileSystem.getInfoAsync(destPath);
       // Validate minimum size (< 1KB is likely an error response)
       if (info.exists && info.size < 1000) {
+        console.error(`[Cache] Download too small for spread ${spreadNumber}: ${info.size} bytes (likely error response)`);
         await FileSystem.deleteAsync(destPath, { idempotent: true });
         return { success: false, size: 0 };
       }
+      console.log(`[Cache] Downloaded spread ${spreadNumber}: ${info.size} bytes`);
       return { success: true, size: info.exists ? info.size : 0 };
     } catch (error) {
-      console.error(`Failed to download spread ${spreadNumber}:`, error);
+      console.error(`[Cache] Exception downloading spread ${spreadNumber}:`, error);
       return { success: false, size: 0 };
     }
   },
