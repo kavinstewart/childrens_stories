@@ -118,10 +118,12 @@ export default function StoryReader() {
   const lastSpreadData = spreads[totalSpreads - 1];
 
   // Get image URL - use last spread's image on end screen
-  // Include illustration_updated_at for cache busting after regeneration
+  // Cached stories have file:// URLs, network stories have relative paths
   const displaySpread = showEndScreen ? lastSpreadData : currentSpreadData;
-  const imageUrl = story.is_illustrated && displaySpread
-    ? api.getSpreadImageUrl(story.id, displaySpread.spread_number, displaySpread.illustration_updated_at)
+  const rawImageUrl = displaySpread?.illustration_url;
+  const isLocalFile = rawImageUrl?.startsWith('file://');
+  const imageUrl = story.is_illustrated && rawImageUrl
+    ? (isLocalFile ? rawImageUrl : api.getSpreadImageUrl(story.id, displaySpread.spread_number, displaySpread.illustration_updated_at))
     : null;
 
   const isFirstSpread = currentSpread === 0 && !showEndScreen;
@@ -140,7 +142,7 @@ export default function StoryReader() {
           key={imageUrl}
           source={{
             uri: imageUrl,
-            headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+            headers: (!isLocalFile && token) ? { Authorization: `Bearer ${token}` } : undefined,
           }}
           style={{
             position: 'absolute',
