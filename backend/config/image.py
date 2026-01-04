@@ -2,15 +2,47 @@
 Image generation configuration for the Children's Story Generator.
 
 Uses Nano Banana Pro (Gemini 3 Pro Image) for illustration generation.
+
+Includes:
+- Retry with exponential backoff for transient network errors
 """
 
+import logging
 import os
+
 from dotenv import find_dotenv, load_dotenv
 from google import genai
 from google.genai.types import GenerateContentConfig, Modality
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    retry_if_exception_type,
+    before_sleep_log,
+)
 
 # Load environment variables from .env file (find_dotenv searches parent directories)
 load_dotenv(find_dotenv())
+
+# Logging for retry attempts
+logger = logging.getLogger(__name__)
+
+# Network errors that should trigger retry (same as llm.py)
+RETRYABLE_EXCEPTIONS = (
+    ConnectionError,
+    TimeoutError,
+    BrokenPipeError,
+    OSError,  # Catches [Errno 32] Broken pipe
+)
+
+# Retry decorator for image API calls with network errors
+image_retry = retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=2, min=2, max=10),
+    retry=retry_if_exception_type(RETRYABLE_EXCEPTIONS),
+    before_sleep=before_sleep_log(logger, logging.WARNING),
+    reraise=True,
+)
 
 # Image generation constants
 IMAGE_CONSTANTS = {

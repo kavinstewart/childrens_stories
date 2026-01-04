@@ -14,7 +14,7 @@ from typing import Union, Optional
 from PIL import Image
 from io import BytesIO
 
-from backend.config import get_image_client
+from backend.config import get_image_client, image_retry
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +58,14 @@ class VLMJudge:
         if self._client is None:
             self._client = get_image_client()
         return self._client
+
+    @image_retry
+    def _call_vlm(self, contents: list):
+        """Call VLM API with retry for network errors."""
+        return self.client.models.generate_content(
+            model=self.model,
+            contents=contents,
+        )
 
     def evaluate(
         self,
@@ -122,10 +130,7 @@ class VLMJudge:
         ))
 
         # Call VLM
-        response = self.client.models.generate_content(
-            model=self.model,
-            contents=contents,
-        )
+        response = self._call_vlm(contents)
 
         # Parse response - handle None text (API may return None for blocked/empty responses)
         raw_response = response.text

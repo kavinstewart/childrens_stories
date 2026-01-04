@@ -16,7 +16,7 @@ import re
 import sys
 from typing import TYPE_CHECKING, Optional, Tuple
 
-from backend.config import get_image_client, get_image_model, get_image_config, IMAGE_CONSTANTS, extract_image_from_response
+from backend.config import get_image_client, get_image_model, get_image_config, IMAGE_CONSTANTS, extract_image_from_response, image_retry
 from ..types import (
     StoryMetadata, StorySpread, StoryReferenceSheets,
     build_illustration_prompt, DEFAULT_LIGHTING,
@@ -337,6 +337,7 @@ class SpreadIllustrator:
         contents.append(scene_prompt)
         return contents
 
+    @image_retry
     def _generate_image(self, contents: list) -> bytes:
         """Generate image from multimodal contents."""
         response = self.client.models.generate_content(
