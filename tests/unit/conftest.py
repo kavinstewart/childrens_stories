@@ -26,14 +26,12 @@ arq_pool_module.set_pool(mock_arq_pool)
 
 from backend.api.main import app  # noqa: E402
 from backend.api.database.repository import StoryRepository  # noqa: E402
-from backend.api.database.vlm_eval_repository import VLMEvalRepository  # noqa: E402
 from backend.api.services.story_service import StoryService  # noqa: E402
 from backend.api.auth.tokens import create_access_token  # noqa: E402
 from backend.api.dependencies import (  # noqa: E402
     get_repository,
     get_story_service,
     get_connection,
-    get_vlm_eval_repository,
 )
 from backend.api import config  # noqa: E402
 
@@ -83,13 +81,6 @@ def mock_repository(mock_connection):
 
 
 @pytest.fixture
-def mock_vlm_eval_repository(mock_connection):
-    """Create a mock VLM eval repository for unit tests."""
-    repo = AsyncMock(spec=VLMEvalRepository)
-    return repo
-
-
-@pytest.fixture
 def mock_service(mock_repository):
     """Create a mock service for unit tests."""
     service = AsyncMock(spec=StoryService)
@@ -125,7 +116,7 @@ class AuthenticatedTestClient:
 
 
 @pytest.fixture
-def client_with_mocks(mock_repository, mock_service, mock_connection, mock_vlm_eval_repository):
+def client_with_mocks(mock_repository, mock_service, mock_connection):
     """TestClient with mocked dependencies and auth headers."""
 
     async def mock_get_connection():
@@ -134,7 +125,6 @@ def client_with_mocks(mock_repository, mock_service, mock_connection, mock_vlm_e
     app.dependency_overrides[get_connection] = mock_get_connection
     app.dependency_overrides[get_repository] = lambda: mock_repository
     app.dependency_overrides[get_story_service] = lambda: mock_service
-    app.dependency_overrides[get_vlm_eval_repository] = lambda: mock_vlm_eval_repository
 
     with TestClient(app) as base_client:
         client = AuthenticatedTestClient(base_client, TEST_TOKEN)

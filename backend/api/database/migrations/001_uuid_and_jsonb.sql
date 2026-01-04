@@ -9,7 +9,6 @@
 -- Drop foreign key constraints first (they reference the VARCHAR id)
 ALTER TABLE story_spreads DROP CONSTRAINT IF EXISTS story_spreads_story_id_fkey;
 ALTER TABLE character_references DROP CONSTRAINT IF EXISTS character_references_story_id_fkey;
-ALTER TABLE vlm_evaluations DROP CONSTRAINT IF EXISTS vlm_evaluations_story_id_fkey;
 
 -- Convert primary key to UUID
 ALTER TABLE stories ALTER COLUMN id TYPE UUID USING id::uuid;
@@ -17,7 +16,6 @@ ALTER TABLE stories ALTER COLUMN id TYPE UUID USING id::uuid;
 -- Convert foreign keys to UUID
 ALTER TABLE story_spreads ALTER COLUMN story_id TYPE UUID USING story_id::uuid;
 ALTER TABLE character_references ALTER COLUMN story_id TYPE UUID USING story_id::uuid;
-ALTER TABLE vlm_evaluations ALTER COLUMN story_id TYPE UUID USING story_id::uuid;
 
 -- Re-add foreign key constraints
 ALTER TABLE story_spreads
@@ -27,10 +25,6 @@ ALTER TABLE story_spreads
 ALTER TABLE character_references
     ADD CONSTRAINT character_references_story_id_fkey
     FOREIGN KEY (story_id) REFERENCES stories(id) ON DELETE CASCADE;
-
-ALTER TABLE vlm_evaluations
-    ADD CONSTRAINT vlm_evaluations_story_id_fkey
-    FOREIGN KEY (story_id) REFERENCES stories(id) ON DELETE SET NULL;
 
 -- Convert JSON columns from TEXT to JSONB
 ALTER TABLE stories ALTER COLUMN outline_json TYPE JSONB USING outline_json::jsonb;

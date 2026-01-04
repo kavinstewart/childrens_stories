@@ -13,7 +13,6 @@ load_dotenv(find_dotenv())
 from .auth.tokens import verify_token  # noqa: E402
 from .database.db import get_pool  # noqa: E402
 from .database.repository import StoryRepository  # noqa: E402
-from .database.vlm_eval_repository import VLMEvalRepository  # noqa: E402
 from .services.story_service import StoryService  # noqa: E402
 
 # Security scheme for bearer token authentication
@@ -36,14 +35,6 @@ def get_repository(
     return StoryRepository(conn)
 
 
-# VLM Eval Repository - requires connection
-def get_vlm_eval_repository(
-    conn: Annotated[asyncpg.Connection, Depends(get_connection)]
-) -> VLMEvalRepository:
-    """Get a VLMEvalRepository instance with injected connection."""
-    return VLMEvalRepository(conn)
-
-
 # Service - depends on repository
 def get_story_service(
     repo: Annotated[StoryRepository, Depends(get_repository)]
@@ -55,7 +46,6 @@ def get_story_service(
 # Type aliases for cleaner route signatures
 Connection = Annotated[asyncpg.Connection, Depends(get_connection)]
 Repository = Annotated[StoryRepository, Depends(get_repository)]
-VLMEvalRepo = Annotated[VLMEvalRepository, Depends(get_vlm_eval_repository)]
 Service = Annotated[StoryService, Depends(get_story_service)]
 
 
