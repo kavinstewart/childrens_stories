@@ -106,8 +106,6 @@ class SpreadIllustrator:
         Returns:
             PNG/JPEG image bytes
         """
-        import sys
-
         # Use custom prompt if provided, otherwise build from template
         if custom_prompt:
             scene_prompt = custom_prompt
@@ -148,7 +146,6 @@ class SpreadIllustrator:
         Returns:
             List of StorySpread objects with illustration_image populated
         """
-        import sys
         import concurrent.futures
 
         total_spreads = len(spreads)
@@ -370,7 +367,6 @@ class SpreadIllustrator:
         Returns:
             Tuple of (image_bytes, qa_result)
         """
-        import sys
         from .image_qa import ImageQA, QAVerdict
 
         qa = ImageQA(max_regeneration_attempts=max_attempts)
@@ -448,7 +444,6 @@ class SpreadIllustrator:
         Returns:
             Tuple of (spreads with illustrations, qa_summary dict)
         """
-        import sys
         import concurrent.futures
         import threading
         from .image_qa import QAVerdict
