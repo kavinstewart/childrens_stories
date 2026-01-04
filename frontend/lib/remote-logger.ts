@@ -5,9 +5,7 @@
  * Includes offline queueing and automatic retry.
  */
 
-import { authStorage } from './auth-storage';
-
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://dev.exoselfsystems.com';
+import { api } from './api';
 
 const BATCH_INTERVAL_MS = 5000; // Send every 5 seconds
 const MAX_BATCH_SIZE = 50; // Or when we hit 50 entries
@@ -74,30 +72,11 @@ async function flushLogs(): Promise<void> {
   logQueue = [];
 
   try {
-    const token = await authStorage.getToken();
-    if (!token) {
-      // Not authenticated yet, put entries back
-      logQueue = [...entriesToSend, ...logQueue].slice(-MAX_QUEUE_SIZE);
-      return;
-    }
-
-    const response = await fetch(`${API_BASE_URL}/logs/ingest`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ entries: entriesToSend }),
-    });
-
-    if (!response.ok) {
-      // Put entries back on failure
-      logQueue = [...entriesToSend, ...logQueue].slice(-MAX_QUEUE_SIZE);
-      originalConsole.warn(`[RemoteLogger] Failed to send logs: ${response.status}`);
-    }
-  } catch {
-    // Put entries back on network error
+    await api.sendLogs(entriesToSend);
+  } catch (error) {
+    // Put entries back on failure
     logQueue = [...entriesToSend, ...logQueue].slice(-MAX_QUEUE_SIZE);
+    originalConsole.warn(`[RemoteLogger] Failed to send logs:`, error);
   } finally {
     isSending = false;
   }

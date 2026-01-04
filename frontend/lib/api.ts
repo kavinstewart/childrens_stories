@@ -234,4 +234,17 @@ export const api = {
       body: JSON.stringify(request),
     });
   },
+
+  // Send frontend logs to backend
+  sendLogs: async (entries: Array<{
+    level: string;
+    message: string;
+    timestamp: string;
+    context?: Record<string, unknown>;
+  }>): Promise<void> => {
+    return fetchApi('/logs/ingest', {
+      method: 'POST',
+      body: JSON.stringify({ entries }),
+    });
+  },
 };
