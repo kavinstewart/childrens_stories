@@ -33,9 +33,6 @@ def get_dsn() -> str:
 # Story file storage
 STORIES_DIR = DATA_DIR / "stories"
 
-# Job manager settings
-MAX_CONCURRENT_JOBS = 2
-
 # Story generation defaults
 DEFAULT_TARGET_AGE_RANGE = "4-7"
 DEFAULT_GENERATION_TYPE = "illustrated"
