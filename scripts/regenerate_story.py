@@ -194,7 +194,7 @@ async def main(story_id: str):
         goal=goal,
         target_age_range=target_age_range,
         skip_quality_loop=False,
-        use_image_qa=True,
+        use_image_qa=False,  # Disabled: manual regeneration approach preferred
         max_image_attempts=3,
         debug=True,
     )
