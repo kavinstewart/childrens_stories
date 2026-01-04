@@ -7,6 +7,7 @@ import { api } from '@/lib/api';
 import { fontFamily } from '@/lib/fonts';
 import { StoryCard } from '@/components/StoryCard';
 import { StoryCacheManager } from '@/lib/story-cache';
+import { useAuthStore } from '@/features/auth/store';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -18,6 +19,7 @@ export default function StoryReader() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { data: story, isLoading, error } = useStory(id);
+  const token = useAuthStore((state) => state.token);
   const [currentSpread, setCurrentSpread] = useState(0);
   const [isCaching, setIsCaching] = useState(false);
   const [isCached, setIsCached] = useState(false);
@@ -136,7 +138,10 @@ export default function StoryReader() {
       {imageUrl ? (
         <Image
           key={imageUrl}
-          source={{ uri: imageUrl }}
+          source={{
+            uri: imageUrl,
+            headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+          }}
           style={{
             position: 'absolute',
             top: 0,

@@ -1,6 +1,7 @@
 import { View, Text, Pressable, Image } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { api, Story, StoryRecommendation } from '@/lib/api';
+import { useAuthStore } from '@/features/auth/store';
 
 // Color gradients for story cards based on index or id
 const cardColors: readonly [string, string][] = [
@@ -54,6 +55,8 @@ export function StoryCard({
   onPress,
   showStatusBadge = false,
 }: StoryCardProps) {
+  const token = useAuthStore((state) => state.token);
+
   // Normalize data from either story or recommendation
   const id = story?.id || recommendation?.id || '';
   const title = story?.title || recommendation?.title;
@@ -101,7 +104,10 @@ export function StoryCard({
         }}>
           {coverUrl ? (
             <Image
-              source={{ uri: coverUrl }}
+              source={{
+                uri: coverUrl,
+                headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+              }}
               style={{ width: '100%', height: '100%' }}
               resizeMode="cover"
               onError={(e) => console.error(`[Image] StoryCard failed to load: ${coverUrl}`, e.nativeEvent.error)}
