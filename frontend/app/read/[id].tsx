@@ -21,6 +21,7 @@ export default function StoryReader() {
   const [currentSpread, setCurrentSpread] = useState(0);
   const [isCaching, setIsCaching] = useState(false);
   const [isCached, setIsCached] = useState(false);
+  const [cacheCheckComplete, setCacheCheckComplete] = useState(false);
 
   const spreads = story?.spreads || [];
   const totalSpreads = spreads.length;
@@ -31,17 +32,24 @@ export default function StoryReader() {
   useEffect(() => {
     if (!id) return;
 
+    setCacheCheckComplete(false);
     StoryCacheManager.isStoryCached(id).then(cached => {
+      console.log(`[Cache] isStoryCached(${id}): ${cached}`);
       setIsCached(cached);
+      setCacheCheckComplete(true);
     });
   }, [id]);
 
   // Trigger background caching when story loads (if eligible)
+  // Only runs after cache check completes to avoid race condition
   useEffect(() => {
+    if (!cacheCheckComplete) return; // Wait for cache check to finish
     if (story?.is_illustrated && story.status === 'completed' && !isCached && !isCaching) {
       setIsCaching(true);
+      console.log(`[Cache] Starting cache for story ${story.id}`);
       StoryCacheManager.cacheStory(story)
         .then(success => {
+          console.log(`[Cache] Caching ${success ? 'succeeded' : 'failed'} for story ${story.id}`);
           if (success) {
             setIsCached(true);
           }
@@ -50,7 +58,7 @@ export default function StoryReader() {
           setIsCaching(false);
         });
     }
-  }, [story, isCached, isCaching]);
+  }, [story, isCached, isCaching, cacheCheckComplete]);
 
   // Fetch recommendations (only used on last page, but hook must be called unconditionally)
   const { data: recommendations } = useRecommendations(id, CARD_COUNT);
