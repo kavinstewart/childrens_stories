@@ -420,6 +420,78 @@ class StoryRepository:
         )
         return dict(row) if row else None
 
+    def _parse_metadata(self, story: asyncpg.Record) -> Optional[StoryMetadataResponse]:
+        """Parse outline_json into StoryMetadataResponse."""
+        if not story["outline_json"]:
+            return None
+        metadata_data = json.loads(story["outline_json"])
+        return StoryMetadataResponse(**metadata_data)
+
+    def _parse_judgment(self, story: asyncpg.Record) -> Optional[QualityJudgmentResponse]:
+        """Parse judgment_json into QualityJudgmentResponse."""
+        if not story["judgment_json"]:
+            return None
+        judgment_data = json.loads(story["judgment_json"])
+        return QualityJudgmentResponse(**judgment_data)
+
+    def _parse_progress(self, story: asyncpg.Record) -> Optional[StoryProgressResponse]:
+        """Parse progress_json into StoryProgressResponse."""
+        if not story["progress_json"]:
+            return None
+        progress_data = json.loads(story["progress_json"])
+        if progress_data.get("updated_at"):
+            progress_data["updated_at"] = datetime.fromisoformat(progress_data["updated_at"])
+        return StoryProgressResponse(**progress_data)
+
+    def _build_spread_responses(
+        self,
+        story_id: str,
+        spreads: list[asyncpg.Record],
+        metadata: Optional[StoryMetadataResponse],
+    ) -> list[StorySpreadResponse]:
+        """Convert spread records to StorySpreadResponse list."""
+        style = metadata.illustration_style if metadata else None
+        setting = metadata.setting if metadata else ""
+
+        return [
+            StorySpreadResponse(
+                spread_number=s["spread_number"],
+                text=s["text"],
+                word_count=s["word_count"],
+                was_revised=s["was_revised"],
+                page_turn_note=s["page_turn_note"],
+                illustration_prompt=s["illustration_prompt"],
+                illustration_url=f"/stories/{story_id}/spreads/{s['spread_number']}/image"
+                if s["illustration_path"]
+                else None,
+                illustration_updated_at=s.get("illustration_updated_at"),
+                composed_prompt=build_illustration_prompt(
+                    illustration_prompt=s["illustration_prompt"] or "",
+                    setting=setting,
+                    style_prefix=style.prompt_prefix if style else DEFAULT_STYLE_PREFIX,
+                    lighting=style.lighting_direction if style and style.lighting_direction else DEFAULT_LIGHTING,
+                ) if s["illustration_prompt"] else None,
+            )
+            for s in spreads
+        ]
+
+    def _build_character_ref_responses(
+        self,
+        story_id: str,
+        char_refs: list[asyncpg.Record],
+    ) -> list[CharacterReferenceResponse]:
+        """Convert character reference records to CharacterReferenceResponse list."""
+        return [
+            CharacterReferenceResponse(
+                character_name=r["character_name"],
+                character_description=r["character_description"],
+                reference_image_url=f"/stories/{story_id}/characters/{r['character_name']}/image"
+                if r["reference_image_path"]
+                else None,
+            )
+            for r in char_refs
+        ]
+
     def _record_to_response(
         self,
         story: asyncpg.Record,
@@ -427,68 +499,18 @@ class StoryRepository:
         char_refs: Optional[list[asyncpg.Record]] = None,
     ) -> StoryResponse:
         """Convert asyncpg Record to response model."""
-        # Parse metadata JSON (stored as outline_json for backwards compatibility)
-        metadata = None
-        if story["outline_json"]:
-            metadata_data = json.loads(story["outline_json"])
-            metadata = StoryMetadataResponse(**metadata_data)
+        metadata = self._parse_metadata(story)
+        judgment = self._parse_judgment(story)
+        progress = self._parse_progress(story)
 
-        # Parse judgment JSON
-        judgment = None
-        if story["judgment_json"]:
-            judgment_data = json.loads(story["judgment_json"])
-            judgment = QualityJudgmentResponse(**judgment_data)
-
-        # Convert spreads
-        spread_responses = None
-        if spreads:
-            # Extract style info for composed prompt
-            style = metadata.illustration_style if metadata else None
-            setting = metadata.setting if metadata else ""
-
-            spread_responses = [
-                StorySpreadResponse(
-                    spread_number=s["spread_number"],
-                    text=s["text"],
-                    word_count=s["word_count"],
-                    was_revised=s["was_revised"],
-                    page_turn_note=s["page_turn_note"],
-                    illustration_prompt=s["illustration_prompt"],
-                    illustration_url=f"/stories/{story['id']}/spreads/{s['spread_number']}/image"
-                    if s["illustration_path"]
-                    else None,
-                    illustration_updated_at=s.get("illustration_updated_at"),
-                    composed_prompt=build_illustration_prompt(
-                        illustration_prompt=s["illustration_prompt"] or "",
-                        setting=setting,
-                        style_prefix=style.prompt_prefix if style else DEFAULT_STYLE_PREFIX,
-                        lighting=style.lighting_direction if style and style.lighting_direction else DEFAULT_LIGHTING,
-                    ) if s["illustration_prompt"] else None,
-                )
-                for s in spreads
-            ]
-
-        # Convert character refs
-        char_ref_responses = None
-        if char_refs:
-            char_ref_responses = [
-                CharacterReferenceResponse(
-                    character_name=r["character_name"],
-                    character_description=r["character_description"],
-                    reference_image_url=f"/stories/{story['id']}/characters/{r['character_name']}/image"
-                    if r["reference_image_path"]
-                    else None,
-                )
-                for r in char_refs
-            ]
-
-        # Parse progress JSON
-        progress = None
-        if story["progress_json"]:
-            progress_data = json.loads(story["progress_json"])
-            if progress_data.get("updated_at"):
-                progress_data["updated_at"] = datetime.fromisoformat(progress_data["updated_at"])
-            progress = StoryProgressResponse(**progress_data)
+        spread_responses = (
+            self._build_spread_responses(story["id"], spreads, metadata)
+            if spreads else None
+        )
+        char_ref_responses = (
+            self._build_character_ref_responses(story["id"], char_refs)
+            if char_refs else None
+        )
 
         return StoryResponse(
             id=story["id"],
