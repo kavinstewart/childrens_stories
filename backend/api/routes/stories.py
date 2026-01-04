@@ -15,7 +15,7 @@ from ..models.responses import (
     RegenerateSpreadResponse,
     JobStatus,
 )
-from ..dependencies import Repository, Service, CurrentUser
+from ..dependencies import Repository, SpreadRegenRepository, Service, CurrentUser
 from ..config import STORIES_DIR
 
 router = APIRouter()
@@ -168,6 +168,7 @@ async def regenerate_spread(
     spread_number: int,
     request: RegenerateSpreadRequest,
     repo: Repository,
+    regen_repo: SpreadRegenRepository,
     service: Service,
     user: CurrentUser,
 ):
@@ -188,7 +189,7 @@ async def regenerate_spread(
         )
 
     # Verify spread exists
-    spread = await repo.get_spread(story_id, spread_number)
+    spread = await regen_repo.get_spread(story_id, spread_number)
     if not spread:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -196,7 +197,7 @@ async def regenerate_spread(
         )
 
     # Check if already regenerating
-    active_job = await repo.get_active_spread_regen_job(story_id, spread_number)
+    active_job = await regen_repo.get_active_job(story_id, spread_number)
     if active_job:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

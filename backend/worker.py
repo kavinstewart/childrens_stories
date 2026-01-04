@@ -18,7 +18,7 @@ load_dotenv()
 
 from backend.api.services.story_generation import generate_story
 from backend.api.services.spread_regeneration import regenerate_spread
-from backend.api.database.repository import StoryRepository
+from backend.api.database.repository import SpreadRegenJobRepository
 
 logger = logging.getLogger(__name__)
 
@@ -134,8 +134,8 @@ async def cleanup_stale_jobs_task(ctx: dict[str, Any]) -> dict[str, Any]:
     try:
         conn = await asyncpg.connect(dsn)
         try:
-            repo = StoryRepository(conn)
-            count = await repo.cleanup_stale_spread_regen_jobs()
+            regen_repo = SpreadRegenJobRepository(conn)
+            count = await regen_repo.cleanup_stale_jobs()
             if count > 0:
                 logger.info(f"Cleaned up {count} stale spread regeneration job(s)")
             return {"cleaned": count}
@@ -159,8 +159,8 @@ async def startup(ctx: dict[str, Any]) -> None:
     try:
         conn = await asyncpg.connect(dsn)
         try:
-            repo = StoryRepository(conn)
-            count = await repo.cleanup_stale_spread_regen_jobs()
+            regen_repo = SpreadRegenJobRepository(conn)
+            count = await regen_repo.cleanup_stale_jobs()
             if count > 0:
                 logger.info(f"Startup cleanup: marked {count} stale job(s) as failed")
         finally:

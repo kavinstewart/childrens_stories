@@ -21,6 +21,153 @@ from ..models.responses import (
 )
 
 
+class SpreadRegenJobRepository:
+    """Repository for spread regeneration job operations."""
+
+    def __init__(self, conn: asyncpg.Connection):
+        self.conn = conn
+
+    async def create_job(
+        self,
+        job_id: str,
+        story_id: str,
+        spread_number: int,
+    ) -> None:
+        """Create a new spread regeneration job record."""
+        await self.conn.execute(
+            """
+            INSERT INTO spread_regen_jobs (id, story_id, spread_number, status)
+            VALUES ($1, $2, $3, 'pending')
+            """,
+            job_id,
+            story_id,
+            spread_number,
+        )
+
+    async def get_job(self, job_id: str) -> Optional[dict]:
+        """Get a spread regeneration job by ID."""
+        row = await self.conn.fetchrow(
+            "SELECT * FROM spread_regen_jobs WHERE id = $1",
+            job_id,
+        )
+        return dict(row) if row else None
+
+    async def get_active_job(
+        self, story_id: str, spread_number: int
+    ) -> Optional[dict]:
+        """Get an active (pending/running) regeneration job for a spread.
+
+        Jobs are considered stale (not active) if:
+        - pending for > 2 minutes (should be picked up quickly)
+        - running for > 12 minutes (job_timeout 600s + 2 min buffer)
+        """
+        row = await self.conn.fetchrow(
+            """
+            SELECT * FROM spread_regen_jobs
+            WHERE story_id = $1 AND spread_number = $2
+              AND (
+                (status = 'pending' AND created_at > NOW() - INTERVAL '2 minutes')
+                OR (status = 'running' AND started_at > NOW() - INTERVAL '12 minutes')
+              )
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            story_id,
+            spread_number,
+        )
+        return dict(row) if row else None
+
+    async def cleanup_stale_jobs(self) -> int:
+        """Mark stale pending/running jobs as failed.
+
+        Returns the number of jobs marked as failed.
+        """
+        result = await self.conn.execute(
+            """
+            UPDATE spread_regen_jobs
+            SET status = 'failed',
+                error_message = 'Job timed out (stale job cleanup)',
+                completed_at = NOW()
+            WHERE (
+                (status = 'pending' AND created_at <= NOW() - INTERVAL '2 minutes')
+                OR (status = 'running' AND started_at <= NOW() - INTERVAL '12 minutes')
+            )
+            """
+        )
+        # asyncpg returns "UPDATE N" string
+        count = int(result.split()[-1]) if result else 0
+        return count
+
+    async def update_status(
+        self,
+        job_id: str,
+        status: str,
+        started_at: Optional[datetime] = None,
+        completed_at: Optional[datetime] = None,
+        error_message: Optional[str] = None,
+    ) -> None:
+        """Update spread regeneration job status."""
+        await self.conn.execute(
+            """
+            UPDATE spread_regen_jobs
+            SET status = $2,
+                started_at = COALESCE($3, started_at),
+                completed_at = COALESCE($4, completed_at),
+                error_message = COALESCE($5, error_message)
+            WHERE id = $1
+            """,
+            job_id,
+            status,
+            started_at,
+            completed_at,
+            error_message,
+        )
+
+    async def update_progress(
+        self,
+        job_id: str,
+        progress_json: str,
+    ) -> None:
+        """Update spread regeneration progress JSON."""
+        await self.conn.execute(
+            "UPDATE spread_regen_jobs SET progress_json = $2 WHERE id = $1",
+            job_id,
+            progress_json,
+        )
+
+    async def save_regenerated_spread(
+        self,
+        story_id: str,
+        spread_number: int,
+        illustration_path: str,
+    ) -> None:
+        """Update a spread's illustration after successful regeneration."""
+        await self.conn.execute(
+            """
+            UPDATE story_spreads
+            SET illustration_path = $3,
+                illustration_updated_at = $4
+            WHERE story_id = $1 AND spread_number = $2
+            """,
+            story_id,
+            spread_number,
+            illustration_path,
+            datetime.now(timezone.utc),
+        )
+
+    async def get_spread(self, story_id: str, spread_number: int) -> Optional[dict]:
+        """Get a single spread by story ID and spread number."""
+        row = await self.conn.fetchrow(
+            """
+            SELECT * FROM story_spreads
+            WHERE story_id = $1 AND spread_number = $2
+            """,
+            story_id,
+            spread_number,
+        )
+        return dict(row) if row else None
+
+
 class StoryRepository:
     """Repository for story persistence operations."""
 
@@ -277,148 +424,6 @@ class StoryRepository:
             )
             for row in selected
         ]
-
-    # --- Spread Regeneration Job Methods ---
-
-    async def create_spread_regen_job(
-        self,
-        job_id: str,
-        story_id: str,
-        spread_number: int,
-    ) -> None:
-        """Create a new spread regeneration job record."""
-        await self.conn.execute(
-            """
-            INSERT INTO spread_regen_jobs (id, story_id, spread_number, status)
-            VALUES ($1, $2, $3, 'pending')
-            """,
-            job_id,
-            story_id,
-            spread_number,
-        )
-
-    async def get_spread_regen_job(self, job_id: str) -> Optional[dict]:
-        """Get a spread regeneration job by ID."""
-        row = await self.conn.fetchrow(
-            "SELECT * FROM spread_regen_jobs WHERE id = $1",
-            job_id,
-        )
-        return dict(row) if row else None
-
-    async def get_active_spread_regen_job(
-        self, story_id: str, spread_number: int
-    ) -> Optional[dict]:
-        """Get an active (pending/running) regeneration job for a spread.
-
-        Jobs are considered stale (not active) if:
-        - pending for > 2 minutes (should be picked up quickly)
-        - running for > 12 minutes (job_timeout 600s + 2 min buffer)
-        """
-        row = await self.conn.fetchrow(
-            """
-            SELECT * FROM spread_regen_jobs
-            WHERE story_id = $1 AND spread_number = $2
-              AND (
-                (status = 'pending' AND created_at > NOW() - INTERVAL '2 minutes')
-                OR (status = 'running' AND started_at > NOW() - INTERVAL '12 minutes')
-              )
-            ORDER BY created_at DESC
-            LIMIT 1
-            """,
-            story_id,
-            spread_number,
-        )
-        return dict(row) if row else None
-
-    async def cleanup_stale_spread_regen_jobs(self) -> int:
-        """Mark stale pending/running jobs as failed.
-
-        Returns the number of jobs marked as failed.
-        """
-        result = await self.conn.execute(
-            """
-            UPDATE spread_regen_jobs
-            SET status = 'failed',
-                error_message = 'Job timed out (stale job cleanup)',
-                completed_at = NOW()
-            WHERE (
-                (status = 'pending' AND created_at <= NOW() - INTERVAL '2 minutes')
-                OR (status = 'running' AND started_at <= NOW() - INTERVAL '12 minutes')
-            )
-            """
-        )
-        # asyncpg returns "UPDATE N" string
-        count = int(result.split()[-1]) if result else 0
-        return count
-
-    async def update_spread_regen_status(
-        self,
-        job_id: str,
-        status: str,
-        started_at: Optional[datetime] = None,
-        completed_at: Optional[datetime] = None,
-        error_message: Optional[str] = None,
-    ) -> None:
-        """Update spread regeneration job status."""
-        await self.conn.execute(
-            """
-            UPDATE spread_regen_jobs
-            SET status = $2,
-                started_at = COALESCE($3, started_at),
-                completed_at = COALESCE($4, completed_at),
-                error_message = COALESCE($5, error_message)
-            WHERE id = $1
-            """,
-            job_id,
-            status,
-            started_at,
-            completed_at,
-            error_message,
-        )
-
-    async def update_spread_regen_progress(
-        self,
-        job_id: str,
-        progress_json: str,
-    ) -> None:
-        """Update spread regeneration progress JSON."""
-        await self.conn.execute(
-            "UPDATE spread_regen_jobs SET progress_json = $2 WHERE id = $1",
-            job_id,
-            progress_json,
-        )
-
-    async def save_regenerated_spread(
-        self,
-        story_id: str,
-        spread_number: int,
-        illustration_path: str,
-    ) -> None:
-        """Update a spread's illustration after successful regeneration."""
-        await self.conn.execute(
-            """
-            UPDATE story_spreads
-            SET illustration_path = $3,
-                illustration_updated_at = $4
-            WHERE story_id = $1 AND spread_number = $2
-            """,
-            story_id,
-            spread_number,
-            illustration_path,
-            datetime.now(timezone.utc),
-        )
-
-    async def get_spread(self, story_id: str, spread_number: int) -> Optional[dict]:
-        """Get a single spread by story ID and spread number."""
-        row = await self.conn.fetchrow(
-            """
-            SELECT * FROM story_spreads
-            WHERE story_id = $1 AND spread_number = $2
-            """,
-            story_id,
-            spread_number,
-        )
-        return dict(row) if row else None
 
     def _parse_metadata(self, story: asyncpg.Record) -> Optional[StoryMetadataResponse]:
         """Parse outline_json into StoryMetadataResponse."""

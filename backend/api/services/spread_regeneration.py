@@ -16,7 +16,7 @@ from typing import Optional
 import asyncpg
 
 from ..config import get_dsn, STORIES_DIR, story_logger
-from ..database.repository import StoryRepository
+from ..database.repository import SpreadRegenJobRepository, StoryRepository
 
 
 async def regenerate_spread(
@@ -54,8 +54,8 @@ async def regenerate_spread(
 
         # Update job status to running
         async with pool.acquire() as conn:
-            repo = StoryRepository(conn)
-            await repo.update_spread_regen_status(
+            regen_repo = SpreadRegenJobRepository(conn)
+            await regen_repo.update_status(
                 job_id,
                 "running",
                 started_at=datetime.now(timezone.utc),
@@ -64,11 +64,12 @@ async def regenerate_spread(
         # Fetch story data
         async with pool.acquire() as conn:
             repo = StoryRepository(conn)
+            regen_repo = SpreadRegenJobRepository(conn)
             story = await repo.get_story(story_id)
             if not story:
                 raise ValueError(f"Story {story_id} not found")
 
-            spread_data = await repo.get_spread(story_id, spread_number)
+            spread_data = await regen_repo.get_spread(story_id, spread_number)
             if not spread_data:
                 raise ValueError(f"Spread {spread_number} not found in story {story_id}")
 
@@ -123,8 +124,8 @@ async def regenerate_spread(
 
         # Update job status to completed
         async with pool.acquire() as conn:
-            repo = StoryRepository(conn)
-            await repo.update_spread_regen_status(
+            regen_repo = SpreadRegenJobRepository(conn)
+            await regen_repo.update_status(
                 job_id,
                 "completed",
                 completed_at=datetime.now(timezone.utc),
@@ -140,8 +141,8 @@ async def regenerate_spread(
 
         # Update job status to failed
         async with pool.acquire() as conn:
-            repo = StoryRepository(conn)
-            await repo.update_spread_regen_status(
+            regen_repo = SpreadRegenJobRepository(conn)
+            await regen_repo.update_status(
                 job_id,
                 "failed",
                 completed_at=datetime.now(timezone.utc),
@@ -218,8 +219,8 @@ async def _save_image_atomically(
 
     # Update database with new path and timestamp
     async with pool.acquire() as conn:
-        repo = StoryRepository(conn)
-        await repo.save_regenerated_spread(
+        regen_repo = SpreadRegenJobRepository(conn)
+        await regen_repo.save_regenerated_spread(
             story_id=story_id,
             spread_number=spread_number,
             illustration_path=str(final_path),

@@ -8,15 +8,16 @@ from ..config import (
     DEFAULT_QUALITY_THRESHOLD,
     DEFAULT_TARGET_AGE_RANGE,
 )
-from ..database.repository import StoryRepository
+from ..database.repository import SpreadRegenJobRepository, StoryRepository
 from ..arq_pool import get_pool as get_arq_pool
 
 
 class StoryService:
     """Service for creating and managing story generation jobs."""
 
-    def __init__(self, repo: StoryRepository):
+    def __init__(self, repo: StoryRepository, regen_repo: SpreadRegenJobRepository):
         self.repo = repo
+        self.regen_repo = regen_repo
 
     async def create_story_job(self, goal: str) -> str:
         """
@@ -84,7 +85,7 @@ class StoryService:
         job_id = str(uuid.uuid4())[:8]
 
         # Create pending job record in database
-        await self.repo.create_spread_regen_job(
+        await self.regen_repo.create_job(
             job_id=job_id,
             story_id=story_id,
             spread_number=spread_number,

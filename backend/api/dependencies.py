@@ -12,7 +12,7 @@ load_dotenv(find_dotenv())
 
 from .auth.tokens import verify_token  # noqa: E402
 from .database.db import get_pool  # noqa: E402
-from .database.repository import StoryRepository  # noqa: E402
+from .database.repository import SpreadRegenJobRepository, StoryRepository  # noqa: E402
 from .services.story_service import StoryService  # noqa: E402
 
 # Security scheme for bearer token authentication
@@ -35,17 +35,27 @@ def get_repository(
     return StoryRepository(conn)
 
 
-# Service - depends on repository
+# Spread regen job repository - requires connection
+def get_spread_regen_repository(
+    conn: Annotated[asyncpg.Connection, Depends(get_connection)]
+) -> SpreadRegenJobRepository:
+    """Get a SpreadRegenJobRepository instance with injected connection."""
+    return SpreadRegenJobRepository(conn)
+
+
+# Service - depends on both repositories
 def get_story_service(
-    repo: Annotated[StoryRepository, Depends(get_repository)]
+    repo: Annotated[StoryRepository, Depends(get_repository)],
+    regen_repo: Annotated[SpreadRegenJobRepository, Depends(get_spread_regen_repository)],
 ) -> StoryService:
-    """Get a StoryService instance with injected repository."""
-    return StoryService(repo)
+    """Get a StoryService instance with injected repositories."""
+    return StoryService(repo, regen_repo)
 
 
 # Type aliases for cleaner route signatures
 Connection = Annotated[asyncpg.Connection, Depends(get_connection)]
 Repository = Annotated[StoryRepository, Depends(get_repository)]
+SpreadRegenRepository = Annotated[SpreadRegenJobRepository, Depends(get_spread_regen_repository)]
 Service = Annotated[StoryService, Depends(get_story_service)]
 
 

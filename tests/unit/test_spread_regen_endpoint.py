@@ -47,15 +47,15 @@ class TestRegenerateSpreadEndpoint:
 
     def test_regenerate_spread_returns_202_accepted(self, client_with_mocks):
         """POST to valid story/spread returns 202 with job info."""
-        client, mock_repo, mock_service = client_with_mocks
+        client, mock_repo, mock_regen_repo, mock_service = client_with_mocks
 
         mock_repo.get_story = AsyncMock(return_value=make_mock_story())
-        mock_repo.get_spread = AsyncMock(return_value={
+        mock_regen_repo.get_spread = AsyncMock(return_value={
             "spread_number": 3,
             "text": "Test text",
             "illustration_prompt": "Test prompt",
         })
-        mock_repo.get_active_spread_regen_job = AsyncMock(return_value=None)
+        mock_regen_repo.get_active_job = AsyncMock(return_value=None)
         mock_service.regenerate_spread_job = AsyncMock(return_value=TEST_JOB_ID)
 
         response = client.post(f"/stories/{TEST_UUID_STR}/spreads/3/regenerate", json={})
@@ -69,7 +69,7 @@ class TestRegenerateSpreadEndpoint:
 
     def test_regenerate_spread_invalid_story_returns_404(self, client_with_mocks):
         """POST to non-existent story returns 404."""
-        client, mock_repo, _ = client_with_mocks
+        client, mock_repo, mock_regen_repo, _ = client_with_mocks
 
         mock_repo.get_story = AsyncMock(return_value=None)
 
@@ -80,10 +80,10 @@ class TestRegenerateSpreadEndpoint:
 
     def test_regenerate_spread_invalid_spread_returns_404(self, client_with_mocks):
         """POST to non-existent spread returns 404."""
-        client, mock_repo, _ = client_with_mocks
+        client, mock_repo, mock_regen_repo, _ = client_with_mocks
 
         mock_repo.get_story = AsyncMock(return_value=make_mock_story())
-        mock_repo.get_spread = AsyncMock(return_value=None)
+        mock_regen_repo.get_spread = AsyncMock(return_value=None)
 
         response = client.post(f"/stories/{TEST_UUID_STR}/spreads/99/regenerate", json={})
 
@@ -92,7 +92,7 @@ class TestRegenerateSpreadEndpoint:
 
     def test_regenerate_spread_non_illustrated_story_returns_400(self, client_with_mocks):
         """POST to non-illustrated story returns 400."""
-        client, mock_repo, _ = client_with_mocks
+        client, mock_repo, mock_regen_repo, _ = client_with_mocks
 
         mock_repo.get_story = AsyncMock(return_value=make_mock_story(is_illustrated=False))
 
@@ -103,14 +103,14 @@ class TestRegenerateSpreadEndpoint:
 
     def test_regenerate_spread_already_regenerating_returns_409(self, client_with_mocks):
         """POST when already regenerating returns 409 Conflict."""
-        client, mock_repo, _ = client_with_mocks
+        client, mock_repo, mock_regen_repo, _ = client_with_mocks
 
         mock_repo.get_story = AsyncMock(return_value=make_mock_story())
-        mock_repo.get_spread = AsyncMock(return_value={
+        mock_regen_repo.get_spread = AsyncMock(return_value={
             "spread_number": 3,
             "text": "Test text",
         })
-        mock_repo.get_active_spread_regen_job = AsyncMock(return_value={
+        mock_regen_repo.get_active_job = AsyncMock(return_value={
             "id": "existing",
             "status": "running",
         })
@@ -122,14 +122,14 @@ class TestRegenerateSpreadEndpoint:
 
     def test_regenerate_spread_calls_service(self, client_with_mocks):
         """POST calls service.regenerate_spread_job with correct params."""
-        client, mock_repo, mock_service = client_with_mocks
+        client, mock_repo, mock_regen_repo, mock_service = client_with_mocks
 
         mock_repo.get_story = AsyncMock(return_value=make_mock_story())
-        mock_repo.get_spread = AsyncMock(return_value={
+        mock_regen_repo.get_spread = AsyncMock(return_value={
             "spread_number": 5,
             "text": "Test text",
         })
-        mock_repo.get_active_spread_regen_job = AsyncMock(return_value=None)
+        mock_regen_repo.get_active_job = AsyncMock(return_value=None)
         mock_service.regenerate_spread_job = AsyncMock(return_value=TEST_JOB_ID)
 
         response = client.post(f"/stories/{TEST_UUID_STR}/spreads/5/regenerate", json={})
