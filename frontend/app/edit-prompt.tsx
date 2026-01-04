@@ -9,6 +9,7 @@ import { fontFamily } from '@/lib/fonts';
 import { useRegenerateSpread, storyKeys } from '@/features/stories/hooks';
 import { api } from '@/lib/api';
 import { useQueryClient } from '@tanstack/react-query';
+import { StoryCacheManager } from '@/lib/story-cache';
 
 const POLL_INTERVAL_MS = 2000;
 const TIMEOUT_MS = 90000; // 90 seconds for image generation
@@ -84,6 +85,9 @@ export default function EditPromptScreen() {
 
             // Update cache with fresh data
             queryClient.setQueryData(storyKeys.detail(storyId), story);
+
+            // Invalidate offline cache so it re-downloads the new illustration
+            await StoryCacheManager.invalidateStory(storyId);
 
             // Haptic feedback for success
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);

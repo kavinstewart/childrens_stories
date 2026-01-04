@@ -7,6 +7,8 @@ import { StoryCacheManager } from '@/lib/story-cache';
 import { cacheStorage } from '@/lib/cache-storage';
 import { cacheFiles } from '@/lib/cache-files';
 import { api, Story } from '@/lib/api';
+import { queryClient } from '@/lib/query-client';
+import { storyKeys } from '@/features/stories/hooks';
 
 // Mock dependencies
 jest.mock('@/lib/cache-storage', () => ({
@@ -37,9 +39,23 @@ jest.mock('@/lib/api', () => ({
   },
 }));
 
+jest.mock('@/lib/query-client', () => ({
+  queryClient: {
+    setQueryData: jest.fn(),
+  },
+}));
+
+jest.mock('@/features/stories/hooks', () => ({
+  storyKeys: {
+    detail: jest.fn((id: string) => ['stories', 'detail', id]),
+  },
+}));
+
 const mockCacheStorage = cacheStorage as jest.Mocked<typeof cacheStorage>;
 const mockCacheFiles = cacheFiles as jest.Mocked<typeof cacheFiles>;
 const mockApi = api as jest.Mocked<typeof api>;
+const mockQueryClient = queryClient as jest.Mocked<typeof queryClient>;
+const mockStoryKeys = storyKeys as jest.Mocked<typeof storyKeys>;
 
 const createMockStory = (overrides: Partial<Story> = {}): Story => ({
   id: 'test-story-123',
@@ -401,6 +417,142 @@ describe('StoryCacheManager', () => {
       expect(mockCacheFiles.deleteStoryDirectory).toHaveBeenCalledWith('story-2');
       expect(mockCacheStorage.removeStoryEntry).toHaveBeenCalledWith('story-1');
       expect(mockCacheStorage.removeStoryEntry).toHaveBeenCalledWith('story-2');
+    });
+  });
+
+  describe('verifyCacheIntegrity', () => {
+    it('does nothing for empty cache', async () => {
+      mockCacheStorage.getIndex.mockResolvedValue({});
+
+      await StoryCacheManager.verifyCacheIntegrity();
+
+      expect(mockCacheFiles.verifyStoryFiles).not.toHaveBeenCalled();
+      expect(mockCacheFiles.deleteStoryDirectory).not.toHaveBeenCalled();
+    });
+
+    it('keeps valid cache entries', async () => {
+      mockCacheStorage.getIndex.mockResolvedValue({
+        'story-1': { cachedAt: 1000, lastRead: 1000, sizeBytes: 500000, spreadCount: 12, title: 'A' },
+        'story-2': { cachedAt: 2000, lastRead: 2000, sizeBytes: 300000, spreadCount: 10, title: 'B' },
+      });
+      mockCacheFiles.verifyStoryFiles.mockResolvedValue(true);
+
+      await StoryCacheManager.verifyCacheIntegrity();
+
+      expect(mockCacheFiles.verifyStoryFiles).toHaveBeenCalledWith('story-1', 12);
+      expect(mockCacheFiles.verifyStoryFiles).toHaveBeenCalledWith('story-2', 10);
+      expect(mockCacheFiles.deleteStoryDirectory).not.toHaveBeenCalled();
+      expect(mockCacheStorage.removeStoryEntry).not.toHaveBeenCalled();
+    });
+
+    it('removes orphaned cache entries with missing files', async () => {
+      mockCacheStorage.getIndex.mockResolvedValue({
+        'story-1': { cachedAt: 1000, lastRead: 1000, sizeBytes: 500000, spreadCount: 12, title: 'A' },
+        'story-2': { cachedAt: 2000, lastRead: 2000, sizeBytes: 300000, spreadCount: 10, title: 'B' },
+        'story-3': { cachedAt: 3000, lastRead: 3000, sizeBytes: 200000, spreadCount: 8, title: 'C' },
+      });
+      mockCacheFiles.verifyStoryFiles
+        .mockResolvedValueOnce(true)   // story-1 valid
+        .mockResolvedValueOnce(false)  // story-2 orphaned
+        .mockResolvedValueOnce(false); // story-3 orphaned
+      mockCacheFiles.deleteStoryDirectory.mockResolvedValue(undefined);
+      mockCacheStorage.removeStoryEntry.mockResolvedValue(undefined);
+
+      await StoryCacheManager.verifyCacheIntegrity();
+
+      // story-1 should not be deleted
+      expect(mockCacheFiles.deleteStoryDirectory).not.toHaveBeenCalledWith('story-1');
+      expect(mockCacheStorage.removeStoryEntry).not.toHaveBeenCalledWith('story-1');
+
+      // story-2 and story-3 should be deleted
+      expect(mockCacheFiles.deleteStoryDirectory).toHaveBeenCalledWith('story-2');
+      expect(mockCacheStorage.removeStoryEntry).toHaveBeenCalledWith('story-2');
+      expect(mockCacheFiles.deleteStoryDirectory).toHaveBeenCalledWith('story-3');
+      expect(mockCacheStorage.removeStoryEntry).toHaveBeenCalledWith('story-3');
+    });
+
+    it('removes all entries when all are orphaned', async () => {
+      mockCacheStorage.getIndex.mockResolvedValue({
+        'story-1': { cachedAt: 1000, lastRead: 1000, sizeBytes: 500000, spreadCount: 12, title: 'A' },
+      });
+      mockCacheFiles.verifyStoryFiles.mockResolvedValue(false);
+      mockCacheFiles.deleteStoryDirectory.mockResolvedValue(undefined);
+      mockCacheStorage.removeStoryEntry.mockResolvedValue(undefined);
+
+      await StoryCacheManager.verifyCacheIntegrity();
+
+      expect(mockCacheFiles.deleteStoryDirectory).toHaveBeenCalledWith('story-1');
+      expect(mockCacheStorage.removeStoryEntry).toHaveBeenCalledWith('story-1');
+    });
+  });
+
+  describe('hydrateQueryClient', () => {
+    it('does nothing for empty cache', async () => {
+      mockCacheStorage.getIndex.mockResolvedValue({});
+
+      await StoryCacheManager.hydrateQueryClient();
+
+      expect(mockCacheFiles.loadStoryMetadata).not.toHaveBeenCalled();
+      expect(mockQueryClient.setQueryData).not.toHaveBeenCalled();
+    });
+
+    it('hydrates query client with all cached stories', async () => {
+      const story1 = createMockStory({ id: 'story-1', title: 'Story 1' });
+      const story2 = createMockStory({ id: 'story-2', title: 'Story 2' });
+
+      mockCacheStorage.getIndex.mockResolvedValue({
+        'story-1': { cachedAt: 1000, lastRead: 1000, sizeBytes: 500000, spreadCount: 12, title: 'Story 1' },
+        'story-2': { cachedAt: 2000, lastRead: 2000, sizeBytes: 300000, spreadCount: 10, title: 'Story 2' },
+      });
+      mockCacheFiles.loadStoryMetadata
+        .mockResolvedValueOnce(story1)
+        .mockResolvedValueOnce(story2);
+
+      await StoryCacheManager.hydrateQueryClient();
+
+      expect(mockCacheFiles.loadStoryMetadata).toHaveBeenCalledWith('story-1');
+      expect(mockCacheFiles.loadStoryMetadata).toHaveBeenCalledWith('story-2');
+      expect(mockQueryClient.setQueryData).toHaveBeenCalledWith(
+        ['stories', 'detail', 'story-1'],
+        story1
+      );
+      expect(mockQueryClient.setQueryData).toHaveBeenCalledWith(
+        ['stories', 'detail', 'story-2'],
+        story2
+      );
+    });
+
+    it('skips stories that fail to load metadata', async () => {
+      const story1 = createMockStory({ id: 'story-1', title: 'Story 1' });
+
+      mockCacheStorage.getIndex.mockResolvedValue({
+        'story-1': { cachedAt: 1000, lastRead: 1000, sizeBytes: 500000, spreadCount: 12, title: 'Story 1' },
+        'story-2': { cachedAt: 2000, lastRead: 2000, sizeBytes: 300000, spreadCount: 10, title: 'Story 2' },
+      });
+      mockCacheFiles.loadStoryMetadata
+        .mockResolvedValueOnce(story1)
+        .mockResolvedValueOnce(null); // story-2 fails to load
+
+      await StoryCacheManager.hydrateQueryClient();
+
+      expect(mockQueryClient.setQueryData).toHaveBeenCalledTimes(1);
+      expect(mockQueryClient.setQueryData).toHaveBeenCalledWith(
+        ['stories', 'detail', 'story-1'],
+        story1
+      );
+    });
+
+    it('uses storyKeys.detail for query key', async () => {
+      const story = createMockStory({ id: 'test-123' });
+
+      mockCacheStorage.getIndex.mockResolvedValue({
+        'test-123': { cachedAt: 1000, lastRead: 1000, sizeBytes: 500000, spreadCount: 12, title: 'Test' },
+      });
+      mockCacheFiles.loadStoryMetadata.mockResolvedValue(story);
+
+      await StoryCacheManager.hydrateQueryClient();
+
+      expect(mockStoryKeys.detail).toHaveBeenCalledWith('test-123');
     });
   });
 });

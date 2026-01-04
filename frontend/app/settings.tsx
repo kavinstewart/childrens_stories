@@ -1,0 +1,218 @@
+import { useState, useEffect, useCallback } from 'react';
+import { View, Text, Pressable, Alert, ActivityIndicator } from 'react-native';
+import { useRouter } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { StoryCacheManager } from '@/lib/story-cache';
+import { fontFamily } from '@/lib/fonts';
+
+// Format bytes to human readable
+const formatSize = (bytes: number): string => {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+};
+
+export default function Settings() {
+  const router = useRouter();
+  const [cacheSize, setCacheSize] = useState<number | null>(null);
+  const [storyCount, setStoryCount] = useState<number | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isClearing, setIsClearing] = useState(false);
+
+  const loadCacheInfo = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const [size, ids] = await Promise.all([
+        StoryCacheManager.getCacheSize(),
+        StoryCacheManager.getCachedStoryIds(),
+      ]);
+      setCacheSize(size);
+      setStoryCount(ids.length);
+    } catch (error) {
+      console.error('Failed to load cache info:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadCacheInfo();
+  }, [loadCacheInfo]);
+
+  const handleClearCache = () => {
+    Alert.alert(
+      'Clear Cache',
+      'Are you sure you want to clear all cached stories? This will remove all offline data.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear',
+          style: 'destructive',
+          onPress: async () => {
+            setIsClearing(true);
+            try {
+              await StoryCacheManager.clearAllCache();
+              await loadCacheInfo();
+            } catch (error) {
+              console.error('Failed to clear cache:', error);
+              Alert.alert('Error', 'Failed to clear cache. Please try again.');
+            } finally {
+              setIsClearing(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  return (
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#1a1a2e' }}>
+      {/* Header */}
+      <View style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 24,
+        paddingVertical: 16,
+      }}>
+        {/* Back Button */}
+        <Pressable
+          onPress={() => router.back()}
+          style={{
+            backgroundColor: '#FAF7F2',
+            paddingVertical: 12,
+            paddingHorizontal: 18,
+            borderRadius: 18,
+            borderWidth: 2,
+            borderColor: '#EDE8E0',
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.15,
+            shadowRadius: 6,
+            elevation: 4,
+          }}
+        >
+          <Text style={{ fontSize: 24 }}>{'<-'}</Text>
+        </Pressable>
+
+        {/* Title */}
+        <Text style={{
+          fontSize: 28,
+          color: 'white',
+          fontFamily: fontFamily.nunitoBold,
+          marginLeft: 20,
+        }}>
+          Settings
+        </Text>
+      </View>
+
+      {/* Content */}
+      <View style={{ flex: 1, paddingHorizontal: 24, paddingTop: 32 }}>
+        {/* Cache Section */}
+        <View style={{
+          backgroundColor: 'rgba(255, 255, 255, 0.1)',
+          borderRadius: 20,
+          padding: 24,
+        }}>
+          <Text style={{
+            fontSize: 20,
+            color: 'white',
+            fontFamily: fontFamily.nunitoBold,
+            marginBottom: 20,
+          }}>
+            Offline Cache
+          </Text>
+
+          {isLoading ? (
+            <View style={{ alignItems: 'center', paddingVertical: 20 }}>
+              <ActivityIndicator size="large" color="#FBBF24" />
+            </View>
+          ) : (
+            <>
+              {/* Cache Stats */}
+              <View style={{ marginBottom: 24 }}>
+                <View style={{
+                  flexDirection: 'row',
+                  justifyContent: 'space-between',
+                  marginBottom: 12,
+                }}>
+                  <Text style={{
+                    fontSize: 16,
+                    color: 'rgba(255, 255, 255, 0.7)',
+                    fontFamily: fontFamily.nunito,
+                  }}>
+                    Cached Stories
+                  </Text>
+                  <Text style={{
+                    fontSize: 16,
+                    color: 'white',
+                    fontFamily: fontFamily.nunitoSemiBold,
+                  }}>
+                    {storyCount ?? 0}
+                  </Text>
+                </View>
+
+                <View style={{
+                  flexDirection: 'row',
+                  justifyContent: 'space-between',
+                }}>
+                  <Text style={{
+                    fontSize: 16,
+                    color: 'rgba(255, 255, 255, 0.7)',
+                    fontFamily: fontFamily.nunito,
+                  }}>
+                    Total Size
+                  </Text>
+                  <Text style={{
+                    fontSize: 16,
+                    color: 'white',
+                    fontFamily: fontFamily.nunitoSemiBold,
+                  }}>
+                    {formatSize(cacheSize ?? 0)}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Clear Cache Button */}
+              <Pressable
+                onPress={handleClearCache}
+                disabled={isClearing || storyCount === 0}
+                style={({ pressed }) => ({
+                  backgroundColor: storyCount === 0 ? '#666' : '#DC2626',
+                  paddingVertical: 16,
+                  paddingHorizontal: 24,
+                  borderRadius: 16,
+                  alignItems: 'center',
+                  opacity: pressed ? 0.8 : 1,
+                })}
+              >
+                {isClearing ? (
+                  <ActivityIndicator size="small" color="white" />
+                ) : (
+                  <Text style={{
+                    fontSize: 16,
+                    color: 'white',
+                    fontFamily: fontFamily.nunitoBold,
+                  }}>
+                    Clear Cache
+                  </Text>
+                )}
+              </Pressable>
+
+              {storyCount === 0 && (
+                <Text style={{
+                  fontSize: 14,
+                  color: 'rgba(255, 255, 255, 0.5)',
+                  fontFamily: fontFamily.nunito,
+                  textAlign: 'center',
+                  marginTop: 12,
+                }}>
+                  No cached stories to clear
+                </Text>
+              )}
+            </>
+          )}
+        </View>
+      </View>
+    </SafeAreaView>
+  );
+}

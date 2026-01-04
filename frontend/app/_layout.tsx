@@ -5,20 +5,38 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useFonts } from 'expo-font';
 import { View, ActivityIndicator } from 'react-native';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { fonts } from '@/lib/fonts';
 import { queryClient } from '@/lib/query-client';
 import { useAuthStore } from '@/features/auth/store';
+import { StoryCacheManager } from '@/lib/story-cache';
 
 function AuthGate({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const segments = useSegments();
   const { isAuthenticated, isHydrated, hydrate } = useAuthStore();
+  const [cacheReady, setCacheReady] = useState(false);
 
   // Hydrate auth state on mount
   useEffect(() => {
     hydrate();
   }, [hydrate]);
+
+  // Initialize cache on mount
+  useEffect(() => {
+    const initCache = async () => {
+      try {
+        await StoryCacheManager.verifyCacheIntegrity();
+        await StoryCacheManager.hydrateQueryClient();
+      } catch (error) {
+        console.error('Failed to initialize cache:', error);
+      } finally {
+        setCacheReady(true);
+      }
+    };
+
+    initCache();
+  }, []);
 
   // Handle auth routing
   useEffect(() => {
@@ -35,8 +53,8 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     }
   }, [isAuthenticated, isHydrated, segments, router]);
 
-  // Show loading while hydrating
-  if (!isHydrated) {
+  // Show loading while hydrating auth or cache
+  if (!isHydrated || !cacheReady) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#E0E7FF' }}>
         <ActivityIndicator size="large" color="#8B5CF6" />

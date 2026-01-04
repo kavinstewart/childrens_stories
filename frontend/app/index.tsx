@@ -54,19 +54,34 @@ export default function StoryLibrary() {
               </Text>
             </View>
 
-            {/* New Story Button */}
-            <Pressable
-              onPress={() => router.push('/new')}
-              className="bg-purple-600 py-4 px-6 rounded-2xl"
-              style={({ pressed }) => ({
-                opacity: pressed ? 0.8 : 1,
-                transform: [{ scale: pressed ? 0.95 : 1 }],
-              })}
-            >
-              <Text className="text-lg font-bold text-white">
-                + New Story
-              </Text>
-            </Pressable>
+            {/* Header Buttons */}
+            <View className="flex-row items-center gap-3">
+              {/* Settings Button */}
+              <Pressable
+                onPress={() => router.push('/settings')}
+                className="bg-gray-200 py-4 px-4 rounded-2xl"
+                style={({ pressed }) => ({
+                  opacity: pressed ? 0.8 : 1,
+                  transform: [{ scale: pressed ? 0.95 : 1 }],
+                })}
+              >
+                <Text className="text-2xl">{'⚙️'}</Text>
+              </Pressable>
+
+              {/* New Story Button */}
+              <Pressable
+                onPress={() => router.push('/new')}
+                className="bg-purple-600 py-4 px-6 rounded-2xl"
+                style={({ pressed }) => ({
+                  opacity: pressed ? 0.8 : 1,
+                  transform: [{ scale: pressed ? 0.95 : 1 }],
+                })}
+              >
+                <Text className="text-lg font-bold text-white">
+                  + New Story
+                </Text>
+              </Pressable>
+            </View>
           </View>
 
           {/* Loading State */}

@@ -1,11 +1,12 @@
 import { View, Text, Pressable, Image, ActivityIndicator, Dimensions } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useStory, useRecommendations } from '@/features/stories/hooks';
 import { api } from '@/lib/api';
 import { fontFamily } from '@/lib/fonts';
 import { StoryCard } from '@/components/StoryCard';
+import { StoryCacheManager } from '@/lib/story-cache';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -18,11 +19,38 @@ export default function StoryReader() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { data: story, isLoading, error } = useStory(id);
   const [currentSpread, setCurrentSpread] = useState(0);
+  const [isCaching, setIsCaching] = useState(false);
+  const [isCached, setIsCached] = useState(false);
 
   const spreads = story?.spreads || [];
   const totalSpreads = spreads.length;
   const [showEndScreen, setShowEndScreen] = useState(false);
   const isLastSpread = currentSpread === totalSpreads - 1;
+
+  // Check if story is already cached on mount
+  useEffect(() => {
+    if (!id) return;
+
+    StoryCacheManager.isStoryCached(id).then(cached => {
+      setIsCached(cached);
+    });
+  }, [id]);
+
+  // Trigger background caching when story loads (if eligible)
+  useEffect(() => {
+    if (story?.is_illustrated && story.status === 'completed' && !isCached && !isCaching) {
+      setIsCaching(true);
+      StoryCacheManager.cacheStory(story)
+        .then(success => {
+          if (success) {
+            setIsCached(true);
+          }
+        })
+        .finally(() => {
+          setIsCaching(false);
+        });
+    }
+  }, [story, isCached, isCaching]);
 
   // Fetch recommendations (only used on last page, but hook must be called unconditionally)
   const { data: recommendations } = useRecommendations(id, CARD_COUNT);
@@ -506,6 +534,31 @@ export default function StoryReader() {
           >
             <Text style={{ fontSize: 28 }}>👉</Text>
           </Pressable>
+        </View>
+      )}
+
+      {/* Offline caching indicator */}
+      {isCaching && (
+        <View style={{
+          position: 'absolute',
+          bottom: 16,
+          alignSelf: 'center',
+          flexDirection: 'row',
+          alignItems: 'center',
+          backgroundColor: 'rgba(0, 0, 0, 0.6)',
+          paddingVertical: 8,
+          paddingHorizontal: 16,
+          borderRadius: 20,
+          gap: 8,
+        }}>
+          <ActivityIndicator size="small" color="white" />
+          <Text style={{
+            color: 'white',
+            fontSize: 13,
+            fontFamily: fontFamily.nunito,
+          }}>
+            Saving for offline...
+          </Text>
         </View>
       )}
 

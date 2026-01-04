@@ -11,6 +11,8 @@
 import { Story, api } from './api';
 import { cacheStorage, CacheEntry } from './cache-storage';
 import { cacheFiles } from './cache-files';
+import { queryClient } from './query-client';
+import { storyKeys } from '@/features/stories/hooks';
 
 const DOWNLOAD_CONCURRENCY = 4;
 const MAX_CACHE_SIZE = 500 * 1024 * 1024; // 500MB
@@ -180,6 +182,53 @@ export const StoryCacheManager = {
     const storyIds = await StoryCacheManager.getCachedStoryIds();
     for (const storyId of storyIds) {
       await StoryCacheManager.evictStory(storyId);
+    }
+  },
+
+  /**
+   * Verify cache integrity by checking that all indexed stories have valid files.
+   * Removes orphaned entries where files are missing.
+   */
+  verifyCacheIntegrity: async (): Promise<void> => {
+    const index = await cacheStorage.getIndex();
+    const orphanedIds: string[] = [];
+
+    for (const [storyId, entry] of Object.entries(index)) {
+      const valid = await cacheFiles.verifyStoryFiles(storyId, entry.spreadCount);
+      if (!valid) {
+        orphanedIds.push(storyId);
+      }
+    }
+
+    // Remove orphaned entries
+    for (const storyId of orphanedIds) {
+      console.log(`Removing orphaned cache entry: ${storyId}`);
+      await cacheFiles.deleteStoryDirectory(storyId);
+      await cacheStorage.removeStoryEntry(storyId);
+    }
+
+    if (orphanedIds.length > 0) {
+      console.log(`Cache integrity check: removed ${orphanedIds.length} orphaned entries`);
+    }
+  },
+
+  /**
+   * Hydrate the React Query client with cached story data.
+   * Loads all cached stories and populates the query cache.
+   */
+  hydrateQueryClient: async (): Promise<void> => {
+    const index = await cacheStorage.getIndex();
+    const storyIds = Object.keys(index);
+
+    if (storyIds.length === 0) return;
+
+    console.log(`Hydrating ${storyIds.length} cached stories`);
+
+    for (const storyId of storyIds) {
+      const story = await cacheFiles.loadStoryMetadata(storyId);
+      if (story) {
+        queryClient.setQueryData(storyKeys.detail(storyId), story);
+      }
     }
   },
 };
