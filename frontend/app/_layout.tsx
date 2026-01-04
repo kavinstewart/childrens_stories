@@ -1,15 +1,14 @@
 import '../global.css';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider } from '@tanstack/react-query';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useFonts } from 'expo-font';
 import { View, ActivityIndicator } from 'react-native';
 import { useEffect } from 'react';
 import { fonts } from '@/lib/fonts';
+import { queryClient } from '@/lib/query-client';
 import { useAuthStore } from '@/features/auth/store';
-
-const queryClient = new QueryClient();
 
 function AuthGate({ children }: { children: React.ReactNode }) {
   const router = useRouter();
