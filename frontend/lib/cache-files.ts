@@ -1,23 +1,56 @@
 // File system operations layer for offline story caching
-// Uses expo-file-system to manage downloaded stories and images
+// Uses expo-file-system (new API, SDK 54+) to manage downloaded stories and images
 
-import * as FileSystem from 'expo-file-system/legacy';
+import { File, Directory, Paths } from 'expo-file-system';
+import { fetch } from 'expo/fetch';
 import { Story } from './api';
 import { authStorage } from './auth-storage';
 
-const CACHE_DIR = `${FileSystem.documentDirectory}stories/`;
+// Helper to get the stories cache directory
+const getStoriesDir = (): Directory => new Directory(Paths.document, 'stories');
+
+// Sanitize storyId to prevent path traversal attacks
+const sanitizeStoryId = (storyId: string): string => {
+  // Decode any URL-encoded characters first, then sanitize
+  let decoded = storyId;
+  try {
+    decoded = decodeURIComponent(storyId);
+  } catch {
+    // If decoding fails, use original
+  }
+  // Remove path separators, parent directory references, and null bytes
+  // Apply multiple passes to catch nested encodings like ....// -> ..
+  let sanitized = decoded;
+  let prev = '';
+  while (sanitized !== prev) {
+    prev = sanitized;
+    sanitized = sanitized
+      .replace(/\.\./g, '')
+      .replace(/[/\\]/g, '')
+      .replace(/\0/g, '');
+  }
+  return sanitized || 'invalid';
+};
+
+// Helper to get a story's directory
+const getStoryDirectory = (storyId: string): Directory =>
+  new Directory(getStoriesDir(), sanitizeStoryId(storyId));
+
+// Helper to get the spread filename
+const getSpreadFilename = (spreadNumber: number): string =>
+  `spread_${spreadNumber.toString().padStart(2, '0')}.png`;
 
 export const cacheFiles = {
-  getStoryDir: (storyId: string): string => `${CACHE_DIR}${storyId}/`,
+  getStoryDir: (storyId: string): string => getStoryDirectory(storyId).uri,
 
   getSpreadPath: (storyId: string, spreadNumber: number): string => {
-    const dir = cacheFiles.getStoryDir(storyId);
-    return `${dir}spread_${spreadNumber.toString().padStart(2, '0')}.png`;
+    const dir = getStoryDirectory(storyId);
+    return new File(dir, getSpreadFilename(spreadNumber)).uri;
   },
 
   ensureDirectoryExists: async (storyId: string): Promise<void> => {
-    const dir = cacheFiles.getStoryDir(storyId);
-    await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
+    const dir = getStoryDirectory(storyId);
+    dir.create();
   },
 
   downloadSpreadImage: async (
@@ -25,28 +58,35 @@ export const cacheFiles = {
     spreadNumber: number,
     sourceUrl: string
   ): Promise<{ success: boolean; size: number }> => {
-    const destPath = cacheFiles.getSpreadPath(storyId, spreadNumber);
-    const dir = cacheFiles.getStoryDir(storyId);
+    const dir = getStoryDirectory(storyId);
+    const file = new File(dir, getSpreadFilename(spreadNumber));
     try {
       // Check directory exists before download
-      const dirInfo = await FileSystem.getInfoAsync(dir);
-      if (!dirInfo.exists) {
+      if (!dir.exists) {
         return { success: false, size: 0 };
       }
+
+      // Fetch with auth headers (new API uses fetch + write for header support)
       const token = await authStorage.getToken();
-      const result = await FileSystem.downloadAsync(sourceUrl, destPath, {
+      const response = await fetch(sourceUrl, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
-      if (result.status !== 200) {
+
+      if (!response.ok) {
         return { success: false, size: 0 };
       }
-      const info = await FileSystem.getInfoAsync(destPath);
+
+      // Write the response bytes to file
+      const bytes = await response.bytes();
+      file.write(bytes);
+
       // Validate minimum size (< 1KB is likely an error response)
-      const fileSize = info.exists && 'size' in info ? info.size : 0;
-      if (info.exists && fileSize < 1000) {
-        await FileSystem.deleteAsync(destPath, { idempotent: true });
+      const fileSize = bytes.length;
+      if (fileSize < 1000) {
+        try { file.delete(); } catch { /* ignore */ }
         return { success: false, size: 0 };
       }
+
       return { success: true, size: fileSize };
     } catch {
       return { success: false, size: 0 };
@@ -54,18 +94,17 @@ export const cacheFiles = {
   },
 
   saveStoryMetadata: async (storyId: string, story: Story): Promise<void> => {
-    const dir = cacheFiles.getStoryDir(storyId);
+    const dir = getStoryDirectory(storyId);
+    const file = new File(dir, 'metadata.json');
     // Save original story with server URLs - file:// paths are computed at render time
-    await FileSystem.writeAsStringAsync(
-      `${dir}metadata.json`,
-      JSON.stringify(story)
-    );
+    file.write(JSON.stringify(story));
   },
 
   loadStoryMetadata: async (storyId: string): Promise<Story | null> => {
-    const path = `${cacheFiles.getStoryDir(storyId)}metadata.json`;
+    const dir = getStoryDirectory(storyId);
+    const file = new File(dir, 'metadata.json');
     try {
-      const content = await FileSystem.readAsStringAsync(path);
+      const content = await file.text();
       const story: Story = JSON.parse(content);
       // Return original story with server URLs - file:// paths computed at render time
       return story;
@@ -75,34 +114,35 @@ export const cacheFiles = {
   },
 
   deleteStoryDirectory: async (storyId: string): Promise<void> => {
-    const dir = cacheFiles.getStoryDir(storyId);
-    await FileSystem.deleteAsync(dir, { idempotent: true });
+    const dir = getStoryDirectory(storyId);
+    try {
+      dir.delete();
+    } catch {
+      // Idempotent: ignore if directory doesn't exist
+    }
   },
 
   verifyStoryFiles: async (storyId: string): Promise<boolean> => {
-    const dir = cacheFiles.getStoryDir(storyId);
-    const dirInfo = await FileSystem.getInfoAsync(dir);
-    if (!dirInfo.exists) {
+    const dir = getStoryDirectory(storyId);
+    if (!dir.exists) {
       return false;
     }
 
-    const metaPath = `${dir}metadata.json`;
-    const metaInfo = await FileSystem.getInfoAsync(metaPath);
-    if (!metaInfo.exists) {
+    const metaFile = new File(dir, 'metadata.json');
+    if (!metaFile.exists) {
       return false;
     }
 
     // Load metadata to find which spreads should have images
     try {
-      const content = await FileSystem.readAsStringAsync(metaPath);
+      const content = await metaFile.text();
       const story: Story = JSON.parse(content);
 
       // Check that each spread WITH an illustration has a corresponding file
       for (const spread of story.spreads || []) {
         if (spread.illustration_url) {
-          const spreadPath = cacheFiles.getSpreadPath(storyId, spread.spread_number);
-          const spreadInfo = await FileSystem.getInfoAsync(spreadPath);
-          if (!spreadInfo.exists) {
+          const spreadFile = new File(dir, getSpreadFilename(spread.spread_number));
+          if (!spreadFile.exists) {
             return false;
           }
         }
