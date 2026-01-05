@@ -193,6 +193,48 @@ describe('cacheStorage', () => {
     });
   });
 
+  describe('concurrent operations', () => {
+    it('preserves all entries during concurrent setStoryEntry calls', async () => {
+      // Simulate the race condition the mutex prevents:
+      // Without mutex, concurrent set operations could lose data
+      const entries = Array.from({ length: 10 }, (_, i) => ({
+        id: `story-${i}`,
+        entry: createTestEntry({ title: `Story ${i}` }),
+      }));
+
+      // Start all set operations concurrently
+      await Promise.all(
+        entries.map(({ id, entry }) => cacheStorage.setStoryEntry(id, entry))
+      );
+
+      // All entries should be preserved (mutex serializes operations)
+      const index = await cacheStorage.getIndex();
+      expect(Object.keys(index)).toHaveLength(10);
+      for (const { id, entry } of entries) {
+        expect(index[id]).toEqual(entry);
+      }
+    });
+
+    it('handles concurrent mixed operations correctly', async () => {
+      // Set up initial state
+      await cacheStorage.setStoryEntry('story-1', createTestEntry({ title: 'Story 1' }));
+      await cacheStorage.setStoryEntry('story-2', createTestEntry({ title: 'Story 2' }));
+
+      // Concurrent: add story-3, update story-1, remove story-2
+      await Promise.all([
+        cacheStorage.setStoryEntry('story-3', createTestEntry({ title: 'Story 3' })),
+        cacheStorage.updateLastRead('story-1'),
+        cacheStorage.removeStoryEntry('story-2'),
+      ]);
+
+      const index = await cacheStorage.getIndex();
+      expect(Object.keys(index)).toHaveLength(2);
+      expect(index['story-1']).toBeDefined();
+      expect(index['story-2']).toBeUndefined();
+      expect(index['story-3']).toBeDefined();
+    });
+  });
+
   describe('integration scenarios', () => {
     it('handles typical cache lifecycle', async () => {
       // Add first story
