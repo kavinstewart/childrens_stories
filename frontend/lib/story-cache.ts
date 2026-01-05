@@ -17,6 +17,20 @@ const cachingInProgress = new Map<string, Promise<boolean>>();
 const MAX_CACHE_SIZE = 500 * 1024 * 1024; // 500MB
 const ESTIMATED_SPREAD_SIZE = 700 * 1024; // 700KB average per spread
 
+/**
+ * Lightweight story summary for list views.
+ * Contains only the fields needed for StoryCard rendering,
+ * avoiding the need to load full metadata files.
+ */
+export interface CachedStorySummary {
+  id: string;
+  title: string;
+  goal: string;
+  is_illustrated: boolean;
+  isCached: true;
+  coverSpreadNumber: number;
+}
+
 export const StoryCacheManager = {
   /**
    * Cache a story for offline access.
@@ -83,12 +97,17 @@ export const StoryCacheManager = {
         totalSize += metadataSize;
 
         // Update index - use count of spreads WITH illustrations (what we actually downloaded)
+        // Find the first spread with an illustration for the cover
+        const coverSpread = story.spreads?.find(s => s.illustration_url);
         const entry: CacheEntry = {
           cachedAt: Date.now(),
           lastRead: Date.now(),
           sizeBytes: totalSize,
           spreadCount: spreads.length, // spreads with illustrations, not total
           title: story.title || 'Untitled',
+          goal: story.goal || '',
+          isIllustrated: story.is_illustrated ?? false,
+          coverSpreadNumber: coverSpread?.spread_number ?? 1,
         };
         await cacheStorage.setStoryEntry(storyId, entry);
 
@@ -198,6 +217,33 @@ export const StoryCacheManager = {
       const dateA = a.created_at ? new Date(a.created_at).getTime() : 0;
       const dateB = b.created_at ? new Date(b.created_at).getTime() : 0;
       return dateB - dateA;
+    });
+  },
+
+  /**
+   * Get lightweight summaries of all cached stories from the index.
+   * Does NOT load metadata files - uses only index data.
+   * Ideal for list views where only basic info is needed for StoryCard rendering.
+   */
+  getCachedStorySummaries: async (): Promise<CachedStorySummary[]> => {
+    const index = await cacheStorage.getIndex();
+    const entries = Object.entries(index);
+
+    // Map index entries to summaries with the shape StoryCard needs
+    const summaries: CachedStorySummary[] = entries.map(([storyId, entry]) => ({
+      id: storyId,
+      title: entry.title,
+      goal: entry.goal,
+      is_illustrated: entry.isIllustrated,
+      isCached: true,
+      coverSpreadNumber: entry.coverSpreadNumber,
+    }));
+
+    // Sort by cachedAt descending (newest first)
+    return summaries.sort((a, b) => {
+      const entryA = index[a.id];
+      const entryB = index[b.id];
+      return entryB.cachedAt - entryA.cachedAt;
     });
   },
 

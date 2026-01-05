@@ -40,6 +40,12 @@ export interface CacheEntry {
   sizeBytes: number;
   spreadCount: number;
   title: string;
+  /** Story goal/theme for icon selection */
+  goal: string;
+  /** Whether the story has illustrations */
+  isIllustrated: boolean;
+  /** Which spread to use as cover image (usually 1) */
+  coverSpreadNumber: number;
 }
 
 export type CacheIndex = Record<string, CacheEntry>;

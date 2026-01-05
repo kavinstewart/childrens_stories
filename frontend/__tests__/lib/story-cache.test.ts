@@ -100,6 +100,9 @@ describe('StoryCacheManager', () => {
         expect.objectContaining({
           spreadCount: 3,
           title: 'Test Story Title',
+          goal: 'A test story',
+          isIllustrated: true,
+          coverSpreadNumber: 1,
         })
       );
     });
@@ -504,6 +507,113 @@ describe('StoryCacheManager', () => {
       // If sequential: maxConcurrent would be 1, elapsed ~100ms (5 * 20ms)
       expect(maxConcurrent).toBe(5); // All loads should happen concurrently
       expect(elapsed).toBeLessThan(80); // Should complete much faster than sequential (100ms+)
+    });
+  });
+
+  describe('getCachedStorySummaries', () => {
+    it('returns empty array for empty cache', async () => {
+      mockCacheStorage.getIndex.mockResolvedValue({});
+
+      const summaries = await StoryCacheManager.getCachedStorySummaries();
+
+      expect(summaries).toEqual([]);
+    });
+
+    it('returns summaries from index without loading metadata files', async () => {
+      mockCacheStorage.getIndex.mockResolvedValue({
+        'story-1': {
+          cachedAt: 2000,
+          lastRead: 2000,
+          sizeBytes: 500000,
+          spreadCount: 12,
+          title: 'Story One',
+          goal: 'A brave adventure',
+          isIllustrated: true,
+          coverSpreadNumber: 1,
+        },
+        'story-2': {
+          cachedAt: 1000,
+          lastRead: 1000,
+          sizeBytes: 300000,
+          spreadCount: 10,
+          title: 'Story Two',
+          goal: 'A kind tale',
+          isIllustrated: false,
+          coverSpreadNumber: 1,
+        },
+      });
+
+      const summaries = await StoryCacheManager.getCachedStorySummaries();
+
+      // Should NOT load metadata files - this is the key optimization
+      expect(mockCacheFiles.loadStoryMetadata).not.toHaveBeenCalled();
+
+      expect(summaries).toHaveLength(2);
+      // Verify summary structure
+      expect(summaries[0]).toMatchObject({
+        id: expect.any(String),
+        title: expect.any(String),
+        goal: expect.any(String),
+        is_illustrated: expect.any(Boolean),
+        isCached: true,
+        coverSpreadNumber: 1,
+      });
+    });
+
+    it('sorts summaries by cachedAt descending (newest first)', async () => {
+      mockCacheStorage.getIndex.mockResolvedValue({
+        'story-old': {
+          cachedAt: 1000,
+          lastRead: 1000,
+          sizeBytes: 500000,
+          spreadCount: 12,
+          title: 'Old Story',
+          goal: 'Old goal',
+          isIllustrated: true,
+          coverSpreadNumber: 1,
+        },
+        'story-new': {
+          cachedAt: 3000,
+          lastRead: 3000,
+          sizeBytes: 300000,
+          spreadCount: 10,
+          title: 'New Story',
+          goal: 'New goal',
+          isIllustrated: true,
+          coverSpreadNumber: 1,
+        },
+      });
+
+      const summaries = await StoryCacheManager.getCachedStorySummaries();
+
+      expect(summaries[0].title).toBe('New Story');
+      expect(summaries[1].title).toBe('Old Story');
+    });
+
+    it('includes all fields needed for StoryCard rendering', async () => {
+      mockCacheStorage.getIndex.mockResolvedValue({
+        'story-1': {
+          cachedAt: 1000,
+          lastRead: 1000,
+          sizeBytes: 500000,
+          spreadCount: 12,
+          title: 'Test Story',
+          goal: 'A space adventure',
+          isIllustrated: true,
+          coverSpreadNumber: 2,
+        },
+      });
+
+      const summaries = await StoryCacheManager.getCachedStorySummaries();
+
+      expect(summaries[0]).toEqual({
+        id: 'story-1',
+        title: 'Test Story',
+        goal: 'A space adventure',
+        is_illustrated: true,
+        isCached: true,
+        coverSpreadNumber: 2,
+      });
     });
   });
 
