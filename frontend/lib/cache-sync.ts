@@ -52,6 +52,7 @@ interface SyncState {
   activeDownloads: Map<string, Promise<boolean>>;
   lastSyncTime: number;
   failedStories: Map<string, FailedStory>;
+  abortController: AbortController | null;
 }
 
 const state: SyncState = {
@@ -60,6 +61,7 @@ const state: SyncState = {
   activeDownloads: new Map(),
   lastSyncTime: 0,
   failedStories: new Map(),
+  abortController: null,
 };
 
 /**
@@ -155,6 +157,9 @@ export const CacheSync = {
     // This avoids repeated AsyncStorage reads in the loop
     const cachedSettings = await getSyncSettings();
 
+    // Create AbortController for this sync session
+    state.abortController = new AbortController();
+
     state.isRunning = true;
     state.lastSyncTime = Date.now();
 
@@ -164,6 +169,7 @@ export const CacheSync = {
       state.isRunning = false;
       state.queue = [];
       state.activeDownloads.clear();
+      state.abortController = null;
     }
   },
 
@@ -194,6 +200,11 @@ export const CacheSync = {
 
     // Process queue with concurrency limit
     while (state.queue.length > 0 || state.activeDownloads.size > 0) {
+      // Check if sync was cancelled
+      if (state.abortController?.signal.aborted) {
+        break;
+      }
+
       // Re-check network before each story (using cached settings to avoid AsyncStorage reads)
       if (!await shouldSyncWithSettings(cachedSettings)) {
         break;
@@ -281,6 +292,17 @@ export const CacheSync = {
     state.activeDownloads.clear();
     state.lastSyncTime = 0;
     state.failedStories.clear();
+    state.abortController = null;
+  },
+
+  /**
+   * Cancel any in-progress sync.
+   * Safe to call even if no sync is running.
+   */
+  cancelSync(): void {
+    if (state.abortController) {
+      state.abortController.abort();
+    }
   },
 
   /**

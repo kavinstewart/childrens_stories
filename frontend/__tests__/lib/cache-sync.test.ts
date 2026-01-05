@@ -354,6 +354,43 @@ describe('CacheSync', () => {
     });
   });
 
+  describe('cancelSync', () => {
+    it('stops any in-progress sync', async () => {
+      const stories = Array.from({ length: 5 }, (_, i) =>
+        createTestStory({ id: `story-${i}` })
+      );
+
+      let downloadStarted = 0;
+      mockStoryCacheManager.cacheStory.mockImplementation(async () => {
+        downloadStarted++;
+        // Long delay so we can cancel mid-sync
+        await new Promise(r => setTimeout(r, 1000));
+        return true;
+      });
+
+      // Start sync in background
+      const syncPromise = CacheSync.syncIfNeeded(stories);
+
+      // Wait for at least one download to start
+      await new Promise(r => setTimeout(r, 50));
+
+      // Cancel sync
+      CacheSync.cancelSync();
+
+      // Wait for sync to finish
+      await syncPromise;
+
+      // Should have started at least 1 but not all 5
+      expect(downloadStarted).toBeGreaterThanOrEqual(1);
+      expect(downloadStarted).toBeLessThan(5);
+    }, 15000);
+
+    it('does nothing if no sync is running', () => {
+      // Should not throw
+      expect(() => CacheSync.cancelSync()).not.toThrow();
+    });
+  });
+
   describe('startAutoSync', () => {
     it('subscribes to network changes', () => {
       const unsubscribe = CacheSync.startAutoSync();
