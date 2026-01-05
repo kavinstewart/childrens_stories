@@ -3,11 +3,11 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useState, useEffect } from 'react';
 import { useStory, useRecommendations } from '@/features/stories/hooks';
-import { api, Story, StorySpread } from '@/lib/api';
+import { Story } from '@/lib/api';
 import { fontFamily } from '@/lib/fonts';
 import { StoryCard } from '@/components/StoryCard';
 import { StoryCacheManager } from '@/lib/story-cache';
-import { cacheFiles } from '@/lib/cache-files';
+import { useStoryCache } from '@/lib/use-story-cache';
 import { useAuthStore } from '@/features/auth/store';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -16,94 +16,20 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const CARD_GAP = 16;
 const CARD_COUNT = 4;
 
-// Single atomic cache state to prevent inconsistent reads
-interface CacheState {
-  isCached: boolean;
-  story: Story | null;
-  checkComplete: boolean;
-}
-
 export default function StoryReader() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { data: networkStory, isLoading, error } = useStory(id);
   const token = useAuthStore((state) => state.token);
   const [currentSpread, setCurrentSpread] = useState(0);
-  const [isCaching, setIsCaching] = useState(false);
-  const [cacheState, setCacheState] = useState<CacheState>({
-    isCached: false,
-    story: null,
-    checkComplete: false,
-  });
 
-  // Use cached story if offline, otherwise prefer network story
-  const story = cacheState.story || networkStory;
-
-  // Helper to get the correct image URL based on cache status
-  const getImageUrl = (storyId: string, spread: StorySpread): string | null => {
-    if (!spread.illustration_url) return null;
-    if (cacheState.isCached) {
-      // Use local file path for cached stories
-      return cacheFiles.getSpreadPath(storyId, spread.spread_number);
-    }
-    // Use server URL with cache busting
-    return api.getSpreadImageUrl(storyId, spread.spread_number, spread.illustration_updated_at);
-  };
+  // Cache management - handles loading cached story and background caching
+  const { story, isCached, isCaching, getImageUrl } = useStoryCache(id, networkStory);
 
   const spreads = story?.spreads || [];
   const totalSpreads = spreads.length;
   const [showEndScreen, setShowEndScreen] = useState(false);
   const isLastSpread = currentSpread === totalSpreads - 1;
-
-  // Check if story is already cached on mount and load it
-  useEffect(() => {
-    if (!id) return;
-
-    // Reset cache state atomically for new story
-    setCacheState({ isCached: false, story: null, checkComplete: false });
-
-    StoryCacheManager.isStoryCached(id).then(async (cached) => {
-      console.log(`[Cache] isStoryCached(${id}): ${cached}`);
-      if (cached) {
-        const loaded = await StoryCacheManager.loadCachedStory(id);
-        if (loaded) {
-          console.log(`[Cache] Loaded cached story (isCached=true, URLs computed at render)`);
-          // Set all cache state atomically
-          setCacheState({ isCached: true, story: loaded, checkComplete: true });
-          return;
-        }
-      }
-      // Not cached or load failed
-      setCacheState({ isCached: false, story: null, checkComplete: true });
-    });
-  }, [id]);
-
-  // Trigger background caching when story loads (if eligible)
-  // Only runs after cache check completes to avoid race condition
-  // Note: StoryCacheManager.cacheStory handles deduplication of concurrent requests
-  useEffect(() => {
-    if (!cacheState.checkComplete) return; // Wait for cache check to finish
-    if (!networkStory?.is_illustrated) return;
-    if (networkStory.status !== 'completed') return;
-    if (cacheState.isCached) return;
-
-    setIsCaching(true);
-    console.log(`[Reader] Triggering cache for story ${networkStory.id}`);
-    StoryCacheManager.cacheStory(networkStory)
-      .then(async (success) => {
-        console.log(`[Reader] Cache result for story ${networkStory.id}: ${success ? 'succeeded' : 'failed'}`);
-        if (success) {
-          // Load and set atomically
-          const loaded = await StoryCacheManager.loadCachedStory(networkStory.id);
-          if (loaded) {
-            setCacheState(prev => ({ ...prev, isCached: true, story: loaded }));
-          }
-        }
-      })
-      .finally(() => {
-        setIsCaching(false);
-      });
-  }, [networkStory, cacheState.isCached, cacheState.checkComplete]);
 
   // Fetch recommendations (only used on last page, but hook must be called unconditionally)
   const { data: networkRecommendations } = useRecommendations(id, CARD_COUNT);
