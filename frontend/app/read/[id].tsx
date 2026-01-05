@@ -103,7 +103,8 @@ export default function StoryReader() {
   const goToLibrary = () => router.replace('/');
   const goToStory = (storyId: string) => router.replace(`/read/${storyId}`);
 
-  if (isLoading) {
+  // Show loading while fetching from network OR checking cache
+  if (isLoading || !cacheCheckComplete) {
     return (
       <View style={{ flex: 1, backgroundColor: '#1a1a2e', alignItems: 'center', justifyContent: 'center' }}>
         <ActivityIndicator size="large" color="#FBBF24" />
@@ -114,7 +115,8 @@ export default function StoryReader() {
     );
   }
 
-  if (error || !story) {
+  // Only show error if we have no story (neither from network nor cache)
+  if (!story) {
     return (
       <View style={{ flex: 1, backgroundColor: '#1a1a2e', alignItems: 'center', justifyContent: 'center' }}>
         <Text style={{ fontSize: 64, marginBottom: 16 }}>😕</Text>
