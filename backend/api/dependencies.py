@@ -7,7 +7,9 @@ from dotenv import find_dotenv, load_dotenv
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-# Load .env from project root (find_dotenv searches parent directories)
+# Load environment variables from .env file.
+# Entry point (main.py) also calls load_dotenv() before importing this module.
+# This call is a safety net for direct imports. load_dotenv() is idempotent.
 load_dotenv(find_dotenv())
 
 from .auth.tokens import verify_token  # noqa: E402

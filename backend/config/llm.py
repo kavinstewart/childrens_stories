@@ -25,7 +25,10 @@ from tenacity import (
     before_sleep_log,
 )
 
-# Load environment variables from .env file (find_dotenv searches parent directories)
+# Load environment variables from .env file.
+# Entry points (main.py, worker.py) also call load_dotenv() before importing this module.
+# This call is a safety net for direct imports (e.g., in tests or scripts).
+# load_dotenv() is idempotent so multiple calls are harmless.
 load_dotenv(find_dotenv())
 
 # Logging for retry attempts
