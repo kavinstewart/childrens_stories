@@ -1,37 +1,40 @@
 /**
- * Cache index storage utilities using AsyncStorage.
+ * Cache index storage using SQLite.
  * Manages metadata about cached stories for offline access.
  *
- * Uses a simple promise-based mutex to prevent race conditions
- * in read-modify-write operations on the cache index.
+ * SQLite provides transactional consistency - no manual mutex needed.
  */
 
+import * as SQLite from 'expo-sqlite';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const CACHE_INDEX_KEY = 'story_cache_index';
+const DATABASE_NAME = 'story_cache.db';
+const ASYNC_STORAGE_KEY = 'story_cache_index';
 
-// Simple promise-based mutex for serializing index mutations
-let indexMutex: Promise<void> = Promise.resolve();
+let db: SQLite.SQLiteDatabase | null = null;
 
 /**
- * Execute a function with exclusive access to the cache index.
- * Ensures read-modify-write operations don't interleave.
+ * Get the database instance, creating it if needed.
  */
-async function withIndexLock<T>(fn: () => Promise<T>): Promise<T> {
-  // Capture current lock and create new one
-  const previousLock = indexMutex;
-  let releaseLock: () => void;
-  indexMutex = new Promise(resolve => { releaseLock = resolve; });
-
-  // Wait for previous operation to complete
-  await previousLock;
-
-  // Execute our operation
-  try {
-    return await fn();
-  } finally {
-    releaseLock!();
+function getDb(): SQLite.SQLiteDatabase {
+  if (!db) {
+    db = SQLite.openDatabaseSync(DATABASE_NAME);
+    // Create table if not exists
+    db.execSync(`
+      CREATE TABLE IF NOT EXISTS cached_stories (
+        id TEXT PRIMARY KEY,
+        cached_at INTEGER NOT NULL,
+        last_read INTEGER NOT NULL,
+        size_bytes INTEGER NOT NULL,
+        spread_count INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        goal TEXT NOT NULL,
+        is_illustrated INTEGER NOT NULL,
+        cover_spread_number INTEGER NOT NULL
+      )
+    `);
   }
+  return db;
 }
 
 export interface CacheEntry {
@@ -50,50 +53,142 @@ export interface CacheEntry {
 
 export type CacheIndex = Record<string, CacheEntry>;
 
+/**
+ * Migrate data from AsyncStorage to SQLite (one-time, idempotent).
+ * Call this at app startup before any cache operations.
+ */
+export async function migrateFromAsyncStorage(): Promise<void> {
+  try {
+    const raw = await AsyncStorage.getItem(ASYNC_STORAGE_KEY);
+    if (!raw) return; // Nothing to migrate
+
+    const oldIndex: CacheIndex = JSON.parse(raw);
+    const database = getDb();
+
+    // Insert all entries into SQLite
+    for (const [storyId, entry] of Object.entries(oldIndex)) {
+      database.runSync(
+        `INSERT OR REPLACE INTO cached_stories
+         (id, cached_at, last_read, size_bytes, spread_count, title, goal, is_illustrated, cover_spread_number)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        storyId,
+        entry.cachedAt,
+        entry.lastRead,
+        entry.sizeBytes,
+        entry.spreadCount,
+        entry.title,
+        entry.goal || '',
+        entry.isIllustrated ? 1 : 0,
+        entry.coverSpreadNumber || 1
+      );
+    }
+
+    // Delete AsyncStorage key after successful migration
+    await AsyncStorage.removeItem(ASYNC_STORAGE_KEY);
+  } catch (error) {
+    // Log but don't throw - migration failure shouldn't block the app
+    console.error('Migration from AsyncStorage failed:', error);
+  }
+}
+
+/**
+ * Convert a database row to a CacheEntry.
+ */
+function rowToEntry(row: {
+  cached_at: number;
+  last_read: number;
+  size_bytes: number;
+  spread_count: number;
+  title: string;
+  goal: string;
+  is_illustrated: number;
+  cover_spread_number: number;
+}): CacheEntry {
+  return {
+    cachedAt: row.cached_at,
+    lastRead: row.last_read,
+    sizeBytes: row.size_bytes,
+    spreadCount: row.spread_count,
+    title: row.title,
+    goal: row.goal,
+    isIllustrated: row.is_illustrated === 1,
+    coverSpreadNumber: row.cover_spread_number,
+  };
+}
+
 export const cacheStorage = {
   /**
-   * Retrieve the entire cache index
+   * Retrieve the entire cache index.
    */
   getIndex: async (): Promise<CacheIndex> => {
-    const raw = await AsyncStorage.getItem(CACHE_INDEX_KEY);
-    return raw ? JSON.parse(raw) : {};
+    const database = getDb();
+    const rows = database.getAllSync<{
+      id: string;
+      cached_at: number;
+      last_read: number;
+      size_bytes: number;
+      spread_count: number;
+      title: string;
+      goal: string;
+      is_illustrated: number;
+      cover_spread_number: number;
+    }>('SELECT * FROM cached_stories');
+
+    const index: CacheIndex = {};
+    for (const row of rows) {
+      index[row.id] = rowToEntry(row);
+    }
+    return index;
   },
 
   /**
    * Set or update a story entry in the cache index.
-   * Protected by mutex to prevent race conditions.
    */
   setStoryEntry: async (storyId: string, entry: CacheEntry): Promise<void> => {
-    await withIndexLock(async () => {
-      const index = await cacheStorage.getIndex();
-      index[storyId] = entry;
-      await AsyncStorage.setItem(CACHE_INDEX_KEY, JSON.stringify(index));
-    });
+    const database = getDb();
+    database.runSync(
+      `INSERT OR REPLACE INTO cached_stories
+       (id, cached_at, last_read, size_bytes, spread_count, title, goal, is_illustrated, cover_spread_number)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      storyId,
+      entry.cachedAt,
+      entry.lastRead,
+      entry.sizeBytes,
+      entry.spreadCount,
+      entry.title,
+      entry.goal,
+      entry.isIllustrated ? 1 : 0,
+      entry.coverSpreadNumber
+    );
   },
 
   /**
    * Update the lastRead timestamp for a story.
-   * Protected by mutex to prevent race conditions.
    */
   updateLastRead: async (storyId: string): Promise<void> => {
-    await withIndexLock(async () => {
-      const index = await cacheStorage.getIndex();
-      if (index[storyId]) {
-        index[storyId].lastRead = Date.now();
-        await AsyncStorage.setItem(CACHE_INDEX_KEY, JSON.stringify(index));
-      }
-    });
+    const database = getDb();
+    database.runSync(
+      'UPDATE cached_stories SET last_read = ? WHERE id = ?',
+      Date.now(),
+      storyId
+    );
   },
 
   /**
    * Remove a story entry from the cache index.
-   * Protected by mutex to prevent race conditions.
    */
   removeStoryEntry: async (storyId: string): Promise<void> => {
-    await withIndexLock(async () => {
-      const index = await cacheStorage.getIndex();
-      delete index[storyId];
-      await AsyncStorage.setItem(CACHE_INDEX_KEY, JSON.stringify(index));
-    });
+    const database = getDb();
+    database.runSync('DELETE FROM cached_stories WHERE id = ?', storyId);
   },
 };
+
+/**
+ * Reset the database connection (for testing).
+ */
+export function _resetDbForTesting(): void {
+  if (db) {
+    db.closeSync();
+    db = null;
+  }
+}

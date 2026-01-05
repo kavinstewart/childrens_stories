@@ -10,6 +10,7 @@ import { fonts } from '@/lib/fonts';
 import { queryClient } from '@/lib/query-client';
 import { useAuthStore } from '@/features/auth/store';
 import { StoryCacheManager } from '@/lib/story-cache';
+import { migrateFromAsyncStorage } from '@/lib/cache-storage';
 import { remoteLogger } from '@/lib/remote-logger';
 
 function AuthGate({ children }: { children: React.ReactNode }) {
@@ -27,6 +28,8 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const initCache = async () => {
       try {
+        // Migrate any existing AsyncStorage data to SQLite (one-time, idempotent)
+        await migrateFromAsyncStorage();
         await StoryCacheManager.verifyCacheIntegrity();
         // Note: We intentionally don't call hydrateQueryClient() here.
         // React Query should only contain server URLs. Cached file:// URLs
