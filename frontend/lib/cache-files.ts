@@ -17,7 +17,15 @@ export const cacheFiles = {
 
   ensureDirectoryExists: async (storyId: string): Promise<void> => {
     const dir = cacheFiles.getStoryDir(storyId);
-    await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
+    console.log(`[Cache] ensureDirectoryExists: creating ${dir}`);
+    try {
+      await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
+      const info = await FileSystem.getInfoAsync(dir);
+      console.log(`[Cache] ensureDirectoryExists: created ${dir}, exists=${info.exists}, isDirectory=${info.isDirectory}`);
+    } catch (error) {
+      console.error(`[Cache] ensureDirectoryExists: failed to create ${dir}:`, error);
+      throw error;
+    }
   },
 
   downloadSpreadImage: async (
@@ -26,7 +34,15 @@ export const cacheFiles = {
     sourceUrl: string
   ): Promise<{ success: boolean; size: number }> => {
     const destPath = cacheFiles.getSpreadPath(storyId, spreadNumber);
+    const dir = cacheFiles.getStoryDir(storyId);
     try {
+      // Check directory exists before download
+      const dirInfo = await FileSystem.getInfoAsync(dir);
+      console.log(`[Cache] Downloading spread ${spreadNumber}: dir=${dir}, dirExists=${dirInfo.exists}, destPath=${destPath}`);
+      if (!dirInfo.exists) {
+        console.error(`[Cache] Directory does not exist for spread ${spreadNumber}: ${dir}`);
+        return { success: false, size: 0 };
+      }
       console.log(`[Cache] Downloading spread ${spreadNumber} from: ${sourceUrl}`);
       const token = await authStorage.getToken();
       const result = await FileSystem.downloadAsync(sourceUrl, destPath, {
@@ -54,10 +70,10 @@ export const cacheFiles = {
 
   saveStoryMetadata: async (storyId: string, story: Story): Promise<void> => {
     const dir = cacheFiles.getStoryDir(storyId);
-    const transformed = cacheFiles.transformStoryUrls(storyId, story);
+    // Save original story with server URLs - file:// paths are computed at render time
     await FileSystem.writeAsStringAsync(
       `${dir}metadata.json`,
-      JSON.stringify(transformed)
+      JSON.stringify(story)
     );
   },
 
@@ -69,16 +85,6 @@ export const cacheFiles = {
     } catch {
       return null;
     }
-  },
-
-  transformStoryUrls: (storyId: string, story: Story): Story => {
-    return {
-      ...story,
-      spreads: story.spreads?.map(spread => ({
-        ...spread,
-        illustration_url: cacheFiles.getSpreadPath(storyId, spread.spread_number),
-      })),
-    };
   },
 
   deleteStoryDirectory: async (storyId: string): Promise<void> => {

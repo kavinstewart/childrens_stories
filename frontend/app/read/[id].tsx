@@ -3,10 +3,11 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useState, useEffect } from 'react';
 import { useStory, useRecommendations } from '@/features/stories/hooks';
-import { api, Story } from '@/lib/api';
+import { api, Story, StorySpread } from '@/lib/api';
 import { fontFamily } from '@/lib/fonts';
 import { StoryCard } from '@/components/StoryCard';
 import { StoryCacheManager } from '@/lib/story-cache';
+import { cacheFiles } from '@/lib/cache-files';
 import { useAuthStore } from '@/features/auth/store';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -26,8 +27,20 @@ export default function StoryReader() {
   const [cacheCheckComplete, setCacheCheckComplete] = useState(false);
   const [cachedStory, setCachedStory] = useState<Story | null>(null);
 
-  // Use cached story (with file:// URLs) if available, otherwise network story
+  // Use cached story if offline, otherwise prefer network story
+  // Both now have server URLs - file:// paths are computed at render time
   const story = cachedStory || networkStory;
+
+  // Helper to get the correct image URL based on cache status
+  const getImageUrl = (storyId: string, spread: StorySpread): string | null => {
+    if (!spread.illustration_url) return null;
+    if (isCached) {
+      // Use local file path for cached stories
+      return cacheFiles.getSpreadPath(storyId, spread.spread_number);
+    }
+    // Use server URL with cache busting
+    return api.getSpreadImageUrl(storyId, spread.spread_number, spread.illustration_updated_at);
+  };
 
   const spreads = story?.spreads || [];
   const totalSpreads = spreads.length;
@@ -166,13 +179,12 @@ export default function StoryReader() {
   const lastSpreadData = spreads[totalSpreads - 1];
 
   // Get image URL - use last spread's image on end screen
-  // Cached stories have file:// URLs, network stories have relative paths
+  // URL is computed based on isCached flag, not stored in story data
   const displaySpread = showEndScreen ? lastSpreadData : currentSpreadData;
-  const rawImageUrl = displaySpread?.illustration_url;
-  const isLocalFile = rawImageUrl?.startsWith('file://');
-  const imageUrl = story.is_illustrated && rawImageUrl
-    ? (isLocalFile ? rawImageUrl : api.getSpreadImageUrl(story.id, displaySpread.spread_number, displaySpread.illustration_updated_at))
+  const imageUrl = story.is_illustrated && displaySpread
+    ? getImageUrl(story.id, displaySpread)
     : null;
+  const isLocalFile = imageUrl?.startsWith('file://');
 
   const isFirstSpread = currentSpread === 0 && !showEndScreen;
   const progressPercent = showEndScreen ? 100 : (totalSpreads > 0 ? ((currentSpread + 1) / totalSpreads) * 100 : 0);

@@ -7,8 +7,6 @@ import { StoryCacheManager } from '@/lib/story-cache';
 import { cacheStorage } from '@/lib/cache-storage';
 import { cacheFiles } from '@/lib/cache-files';
 import { api, Story } from '@/lib/api';
-import { queryClient } from '@/lib/query-client';
-import { storyKeys } from '@/features/stories/hooks';
 
 // Mock dependencies
 jest.mock('@/lib/cache-storage', () => ({
@@ -39,23 +37,8 @@ jest.mock('@/lib/api', () => ({
   },
 }));
 
-jest.mock('@/lib/query-client', () => ({
-  queryClient: {
-    setQueryData: jest.fn(),
-  },
-}));
-
-jest.mock('@/features/stories/hooks', () => ({
-  storyKeys: {
-    detail: jest.fn((id: string) => ['stories', 'detail', id]),
-  },
-}));
-
 const mockCacheStorage = cacheStorage as jest.Mocked<typeof cacheStorage>;
 const mockCacheFiles = cacheFiles as jest.Mocked<typeof cacheFiles>;
-const mockApi = api as jest.Mocked<typeof api>;
-const mockQueryClient = queryClient as jest.Mocked<typeof queryClient>;
-const mockStoryKeys = storyKeys as jest.Mocked<typeof storyKeys>;
 
 const createMockStory = (overrides: Partial<Story> = {}): Story => ({
   id: 'test-story-123',
@@ -66,9 +49,9 @@ const createMockStory = (overrides: Partial<Story> = {}): Story => ({
   is_illustrated: true,
   title: 'Test Story Title',
   spreads: [
-    { spread_number: 1, text: 'Page 1', word_count: 10, was_revised: false },
-    { spread_number: 2, text: 'Page 2', word_count: 12, was_revised: false },
-    { spread_number: 3, text: 'Page 3', word_count: 8, was_revised: false },
+    { spread_number: 1, text: 'Page 1', word_count: 10, was_revised: false, illustration_url: '/stories/test-story-123/spreads/1/image' },
+    { spread_number: 2, text: 'Page 2', word_count: 12, was_revised: false, illustration_url: '/stories/test-story-123/spreads/2/image' },
+    { spread_number: 3, text: 'Page 3', word_count: 8, was_revised: false, illustration_url: '/stories/test-story-123/spreads/3/image' },
   ],
   ...overrides,
 });
@@ -141,12 +124,12 @@ describe('StoryCacheManager', () => {
       // Create a story with 6 spreads to test batching (DOWNLOAD_CONCURRENCY = 4)
       const story = createMockStory({
         spreads: [
-          { spread_number: 1, text: 'P1', word_count: 10, was_revised: false },
-          { spread_number: 2, text: 'P2', word_count: 10, was_revised: false },
-          { spread_number: 3, text: 'P3', word_count: 10, was_revised: false },
-          { spread_number: 4, text: 'P4', word_count: 10, was_revised: false },
-          { spread_number: 5, text: 'P5', word_count: 10, was_revised: false },
-          { spread_number: 6, text: 'P6', word_count: 10, was_revised: false },
+          { spread_number: 1, text: 'P1', word_count: 10, was_revised: false, illustration_url: '/s/1' },
+          { spread_number: 2, text: 'P2', word_count: 10, was_revised: false, illustration_url: '/s/2' },
+          { spread_number: 3, text: 'P3', word_count: 10, was_revised: false, illustration_url: '/s/3' },
+          { spread_number: 4, text: 'P4', word_count: 10, was_revised: false, illustration_url: '/s/4' },
+          { spread_number: 5, text: 'P5', word_count: 10, was_revised: false, illustration_url: '/s/5' },
+          { spread_number: 6, text: 'P6', word_count: 10, was_revised: false, illustration_url: '/s/6' },
         ],
       });
 
@@ -202,6 +185,93 @@ describe('StoryCacheManager', () => {
         'test-story-123',
         expect.objectContaining({ title: 'Untitled' })
       );
+    });
+
+    it('skips downloading images for spreads without illustration_url', async () => {
+      // Story with 3 spreads: 2 have illustrations, 1 does not (spread 3)
+      const story = createMockStory({
+        spreads: [
+          { spread_number: 1, text: 'Page 1', word_count: 10, was_revised: false, illustration_url: '/stories/test/spreads/1/image' },
+          { spread_number: 2, text: 'Page 2', word_count: 12, was_revised: false, illustration_url: '/stories/test/spreads/2/image' },
+          { spread_number: 3, text: 'Page 3', word_count: 8, was_revised: false }, // No illustration_url
+        ],
+      });
+      mockCacheStorage.getIndex.mockResolvedValue({}); // Empty cache
+      mockCacheFiles.ensureDirectoryExists.mockResolvedValue(undefined);
+      mockCacheFiles.downloadSpreadImage.mockResolvedValue({ success: true, size: 50000 });
+      mockCacheFiles.saveStoryMetadata.mockResolvedValue(undefined);
+      mockCacheStorage.setStoryEntry.mockResolvedValue(undefined);
+
+      await StoryCacheManager.cacheStory(story);
+
+      // Should only download 2 images (spreads 1 and 2), not 3
+      expect(mockCacheFiles.downloadSpreadImage).toHaveBeenCalledTimes(2);
+      expect(mockCacheFiles.downloadSpreadImage).toHaveBeenCalledWith(
+        'test-story-123',
+        1,
+        expect.any(String)
+      );
+      expect(mockCacheFiles.downloadSpreadImage).toHaveBeenCalledWith(
+        'test-story-123',
+        2,
+        expect.any(String)
+      );
+      // Spread 3 should NOT have been downloaded
+      expect(mockCacheFiles.downloadSpreadImage).not.toHaveBeenCalledWith(
+        'test-story-123',
+        3,
+        expect.any(String)
+      );
+    });
+
+    it('deduplicates concurrent cacheStory calls for the same story', async () => {
+      const story = createMockStory();
+      mockCacheStorage.getIndex.mockResolvedValue({}); // Empty cache
+      mockCacheFiles.ensureDirectoryExists.mockResolvedValue(undefined);
+      // Simulate slow downloads
+      mockCacheFiles.downloadSpreadImage.mockImplementation(async () => {
+        await new Promise(r => setTimeout(r, 50));
+        return { success: true, size: 50000 };
+      });
+      mockCacheFiles.saveStoryMetadata.mockResolvedValue(undefined);
+      mockCacheStorage.setStoryEntry.mockResolvedValue(undefined);
+
+      // Start 3 concurrent cache attempts for the same story
+      const promise1 = StoryCacheManager.cacheStory(story);
+      const promise2 = StoryCacheManager.cacheStory(story);
+      const promise3 = StoryCacheManager.cacheStory(story);
+
+      const [result1, result2, result3] = await Promise.all([promise1, promise2, promise3]);
+
+      // All should succeed
+      expect(result1).toBe(true);
+      expect(result2).toBe(true);
+      expect(result3).toBe(true);
+
+      // But ensureDirectoryExists should only be called ONCE (deduplication)
+      expect(mockCacheFiles.ensureDirectoryExists).toHaveBeenCalledTimes(1);
+      // Downloads should only happen once (3 spreads)
+      expect(mockCacheFiles.downloadSpreadImage).toHaveBeenCalledTimes(3);
+    });
+
+    it('allows caching same story again after first attempt completes', async () => {
+      const story = createMockStory();
+      mockCacheStorage.getIndex.mockResolvedValue({});
+      mockCacheFiles.ensureDirectoryExists.mockResolvedValue(undefined);
+      mockCacheFiles.downloadSpreadImage.mockResolvedValue({ success: true, size: 50000 });
+      mockCacheFiles.saveStoryMetadata.mockResolvedValue(undefined);
+      mockCacheStorage.setStoryEntry.mockResolvedValue(undefined);
+
+      // First cache attempt
+      const result1 = await StoryCacheManager.cacheStory(story);
+      expect(result1).toBe(true);
+
+      // Second cache attempt (sequential, not concurrent)
+      const result2 = await StoryCacheManager.cacheStory(story);
+      expect(result2).toBe(true);
+
+      // Both should have executed (sequential calls are not deduplicated)
+      expect(mockCacheFiles.ensureDirectoryExists).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -486,73 +556,4 @@ describe('StoryCacheManager', () => {
     });
   });
 
-  describe('hydrateQueryClient', () => {
-    it('does nothing for empty cache', async () => {
-      mockCacheStorage.getIndex.mockResolvedValue({});
-
-      await StoryCacheManager.hydrateQueryClient();
-
-      expect(mockCacheFiles.loadStoryMetadata).not.toHaveBeenCalled();
-      expect(mockQueryClient.setQueryData).not.toHaveBeenCalled();
-    });
-
-    it('hydrates query client with all cached stories', async () => {
-      const story1 = createMockStory({ id: 'story-1', title: 'Story 1' });
-      const story2 = createMockStory({ id: 'story-2', title: 'Story 2' });
-
-      mockCacheStorage.getIndex.mockResolvedValue({
-        'story-1': { cachedAt: 1000, lastRead: 1000, sizeBytes: 500000, spreadCount: 12, title: 'Story 1' },
-        'story-2': { cachedAt: 2000, lastRead: 2000, sizeBytes: 300000, spreadCount: 10, title: 'Story 2' },
-      });
-      mockCacheFiles.loadStoryMetadata
-        .mockResolvedValueOnce(story1)
-        .mockResolvedValueOnce(story2);
-
-      await StoryCacheManager.hydrateQueryClient();
-
-      expect(mockCacheFiles.loadStoryMetadata).toHaveBeenCalledWith('story-1');
-      expect(mockCacheFiles.loadStoryMetadata).toHaveBeenCalledWith('story-2');
-      expect(mockQueryClient.setQueryData).toHaveBeenCalledWith(
-        ['stories', 'detail', 'story-1'],
-        story1
-      );
-      expect(mockQueryClient.setQueryData).toHaveBeenCalledWith(
-        ['stories', 'detail', 'story-2'],
-        story2
-      );
-    });
-
-    it('skips stories that fail to load metadata', async () => {
-      const story1 = createMockStory({ id: 'story-1', title: 'Story 1' });
-
-      mockCacheStorage.getIndex.mockResolvedValue({
-        'story-1': { cachedAt: 1000, lastRead: 1000, sizeBytes: 500000, spreadCount: 12, title: 'Story 1' },
-        'story-2': { cachedAt: 2000, lastRead: 2000, sizeBytes: 300000, spreadCount: 10, title: 'Story 2' },
-      });
-      mockCacheFiles.loadStoryMetadata
-        .mockResolvedValueOnce(story1)
-        .mockResolvedValueOnce(null); // story-2 fails to load
-
-      await StoryCacheManager.hydrateQueryClient();
-
-      expect(mockQueryClient.setQueryData).toHaveBeenCalledTimes(1);
-      expect(mockQueryClient.setQueryData).toHaveBeenCalledWith(
-        ['stories', 'detail', 'story-1'],
-        story1
-      );
-    });
-
-    it('uses storyKeys.detail for query key', async () => {
-      const story = createMockStory({ id: 'test-123' });
-
-      mockCacheStorage.getIndex.mockResolvedValue({
-        'test-123': { cachedAt: 1000, lastRead: 1000, sizeBytes: 500000, spreadCount: 12, title: 'Test' },
-      });
-      mockCacheFiles.loadStoryMetadata.mockResolvedValue(story);
-
-      await StoryCacheManager.hydrateQueryClient();
-
-      expect(mockStoryKeys.detail).toHaveBeenCalledWith('test-123');
-    });
-  });
 });

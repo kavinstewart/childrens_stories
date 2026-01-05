@@ -1,20 +1,19 @@
 /**
  * StoryCacheManager - Orchestrates offline story caching
  *
- * Cached stories have their illustration_url fields transformed from API URLs
- * (e.g., '/stories/abc/spreads/1/image') to local file:// URLs
- * (e.g., 'file:///path/to/stories/abc/spread_01.png').
- * This allows the Image component to render from local disk without any
- * changes to the rendering code—it just sees a different URL scheme.
+ * Downloads spread images to local storage. Cached story metadata retains
+ * original server URLs - file:// paths are computed at render time using
+ * cacheFiles.getSpreadPath() when isCached is true.
  */
 
 import { Story, api } from './api';
 import { cacheStorage, CacheEntry } from './cache-storage';
 import { cacheFiles } from './cache-files';
-import { queryClient } from './query-client';
-import { storyKeys } from '@/features/stories/hooks';
 
 const DOWNLOAD_CONCURRENCY = 4;
+
+// Track in-progress caching operations to deduplicate concurrent requests
+const cachingInProgress = new Map<string, Promise<boolean>>();
 const MAX_CACHE_SIZE = 500 * 1024 * 1024; // 500MB
 const ESTIMATED_SPREAD_SIZE = 700 * 1024; // 700KB average per spread
 
@@ -23,6 +22,7 @@ export const StoryCacheManager = {
    * Cache a story for offline access.
    * Downloads all spread images and saves metadata.
    * Atomic: if any download fails, cleans up partial data.
+   * Deduplicates concurrent requests for the same story.
    */
   cacheStory: async (story: Story): Promise<boolean> => {
     if (!story.is_illustrated || !story.spreads?.length) {
@@ -31,65 +31,96 @@ export const StoryCacheManager = {
 
     const storyId = story.id;
 
-    try {
-      // Ensure we have enough space (estimate based on spread count)
-      const estimatedSize = (story.spreads?.length || 12) * ESTIMATED_SPREAD_SIZE;
-      await StoryCacheManager.ensureCacheSpace(estimatedSize);
+    // Deduplicate concurrent requests - return existing promise if caching is in progress
+    if (cachingInProgress.has(storyId)) {
+      console.log(`[Cache] Deduplicating cache request for story ${storyId}`);
+      return cachingInProgress.get(storyId)!;
+    }
 
-      // Create directory
-      await cacheFiles.ensureDirectoryExists(storyId);
+    // Create deferred promise and set in map BEFORE any async work
+    // This prevents race conditions where multiple calls pass the check above
+    let resolvePromise!: (value: boolean) => void;
+    const cachePromise = new Promise<boolean>(resolve => {
+      resolvePromise = resolve;
+    });
+    cachingInProgress.set(storyId, cachePromise);
 
-      // Download all images with concurrency limit
-      const spreads = [...story.spreads];
-      let totalSize = 0;
+    console.log(`[Cache] Starting cache for story ${storyId}`);
 
-      for (let i = 0; i < spreads.length; i += DOWNLOAD_CONCURRENCY) {
-        const batch = spreads.slice(i, i + DOWNLOAD_CONCURRENCY);
-        const results = await Promise.all(
-          batch.map(spread => {
-            const url = api.getSpreadImageUrl(
-              storyId,
-              spread.spread_number,
-              spread.illustration_updated_at
-            );
-            return cacheFiles.downloadSpreadImage(storyId, spread.spread_number, url);
-          })
-        );
+    // Now start the async caching work
+    (async () => {
+      try {
+        // Ensure we have enough space (estimate based on spread count)
+        const estimatedSize = (story.spreads?.length || 12) * ESTIMATED_SPREAD_SIZE;
+        await StoryCacheManager.ensureCacheSpace(estimatedSize);
 
-        const failedIndices = results
-          .map((r, idx) => (!r.success ? batch[idx].spread_number : null))
-          .filter((n): n is number => n !== null);
-        if (failedIndices.length > 0) {
-          throw new Error(`Downloads failed for spreads: ${failedIndices.join(', ')}`);
+        // Create directory
+        console.log(`[Cache] Creating directory for story ${storyId}`);
+        await cacheFiles.ensureDirectoryExists(storyId);
+        console.log(`[Cache] Directory created for story ${storyId}, starting downloads`);
+
+        // Download all images with concurrency limit
+        // Only download spreads that have an illustration_url (some may be text-only)
+        const spreads = story.spreads.filter(s => s.illustration_url);
+        console.log(`[Cache] Downloading ${spreads.length} spreads (filtered from ${story.spreads.length} total)`);
+        let totalSize = 0;
+
+        for (let i = 0; i < spreads.length; i += DOWNLOAD_CONCURRENCY) {
+          const batch = spreads.slice(i, i + DOWNLOAD_CONCURRENCY);
+          console.log(`[Cache] Starting batch ${Math.floor(i / DOWNLOAD_CONCURRENCY) + 1}: spreads ${batch.map(s => s.spread_number).join(', ')}`);
+          const results = await Promise.all(
+            batch.map(spread => {
+              const url = api.getSpreadImageUrl(
+                storyId,
+                spread.spread_number,
+                spread.illustration_updated_at
+              );
+              return cacheFiles.downloadSpreadImage(storyId, spread.spread_number, url);
+            })
+          );
+
+          const failedIndices = results
+            .map((r, idx) => (!r.success ? batch[idx].spread_number : null))
+            .filter((n): n is number => n !== null);
+          if (failedIndices.length > 0) {
+            throw new Error(`Downloads failed for spreads: ${failedIndices.join(', ')}`);
+          }
+
+          totalSize += results.reduce((sum, r) => sum + r.size, 0);
         }
 
-        totalSize += results.reduce((sum, r) => sum + r.size, 0);
+        // Save metadata with transformed URLs
+        await cacheFiles.saveStoryMetadata(storyId, story);
+
+        // Get metadata size
+        const metadataSize = JSON.stringify(story).length;
+        totalSize += metadataSize;
+
+        // Update index
+        const entry: CacheEntry = {
+          cachedAt: Date.now(),
+          lastRead: Date.now(),
+          sizeBytes: totalSize,
+          spreadCount: story.spreads.length,
+          title: story.title || 'Untitled',
+        };
+        await cacheStorage.setStoryEntry(storyId, entry);
+
+        console.log(`[Cache] Caching succeeded for story ${storyId}`);
+        resolvePromise(true);
+      } catch (error) {
+        console.error(`Failed to cache story ${storyId}:`, error);
+        // Cleanup partial download
+        await cacheFiles.deleteStoryDirectory(storyId);
+        console.log(`[Cache] Caching failed for story ${storyId}`);
+        resolvePromise(false);
+      } finally {
+        // Remove from in-progress map when done
+        cachingInProgress.delete(storyId);
       }
+    })();
 
-      // Save metadata with transformed URLs
-      await cacheFiles.saveStoryMetadata(storyId, story);
-
-      // Get metadata size
-      const metadataSize = JSON.stringify(story).length;
-      totalSize += metadataSize;
-
-      // Update index
-      const entry: CacheEntry = {
-        cachedAt: Date.now(),
-        lastRead: Date.now(),
-        sizeBytes: totalSize,
-        spreadCount: story.spreads.length,
-        title: story.title || 'Untitled',
-      };
-      await cacheStorage.setStoryEntry(storyId, entry);
-
-      return true;
-    } catch (error) {
-      console.error(`Failed to cache story ${storyId}:`, error);
-      // Cleanup partial download
-      await cacheFiles.deleteStoryDirectory(storyId);
-      return false;
-    }
+    return cachePromise;
   },
 
   /**
@@ -238,23 +269,4 @@ export const StoryCacheManager = {
     }
   },
 
-  /**
-   * Hydrate the React Query client with cached story data.
-   * Loads all cached stories and populates the query cache.
-   */
-  hydrateQueryClient: async (): Promise<void> => {
-    const index = await cacheStorage.getIndex();
-    const storyIds = Object.keys(index);
-
-    if (storyIds.length === 0) return;
-
-    console.log(`Hydrating ${storyIds.length} cached stories`);
-
-    for (const storyId of storyIds) {
-      const story = await cacheFiles.loadStoryMetadata(storyId);
-      if (story) {
-        queryClient.setQueryData(storyKeys.detail(storyId), story);
-      }
-    }
-  },
 };

@@ -28,7 +28,9 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     const initCache = async () => {
       try {
         await StoryCacheManager.verifyCacheIntegrity();
-        await StoryCacheManager.hydrateQueryClient();
+        // Note: We intentionally don't call hydrateQueryClient() here.
+        // React Query should only contain server URLs. Cached file:// URLs
+        // are computed at render time using isCached + getSpreadPath().
       } catch (error) {
         console.error('Failed to initialize cache:', error);
       } finally {
