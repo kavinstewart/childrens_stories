@@ -16,6 +16,13 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const CARD_GAP = 16;
 const CARD_COUNT = 4;
 
+// Single atomic cache state to prevent inconsistent reads
+interface CacheState {
+  isCached: boolean;
+  story: Story | null;
+  checkComplete: boolean;
+}
+
 export default function StoryReader() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -23,19 +30,20 @@ export default function StoryReader() {
   const token = useAuthStore((state) => state.token);
   const [currentSpread, setCurrentSpread] = useState(0);
   const [isCaching, setIsCaching] = useState(false);
-  const [isCached, setIsCached] = useState(false);
-  const [cacheCheckComplete, setCacheCheckComplete] = useState(false);
-  const [cachedStory, setCachedStory] = useState<Story | null>(null);
+  const [cacheState, setCacheState] = useState<CacheState>({
+    isCached: false,
+    story: null,
+    checkComplete: false,
+  });
   const cacheTriggeredRef = useRef(false); // Prevent double-triggering from React re-renders
 
   // Use cached story if offline, otherwise prefer network story
-  // Both now have server URLs - file:// paths are computed at render time
-  const story = cachedStory || networkStory;
+  const story = cacheState.story || networkStory;
 
   // Helper to get the correct image URL based on cache status
   const getImageUrl = (storyId: string, spread: StorySpread): string | null => {
     if (!spread.illustration_url) return null;
-    if (isCached) {
+    if (cacheState.isCached) {
       // Use local file path for cached stories
       return cacheFiles.getSpreadPath(storyId, spread.spread_number);
     }
@@ -54,26 +62,30 @@ export default function StoryReader() {
 
     // Reset cache trigger ref for new story
     cacheTriggeredRef.current = false;
-    setCacheCheckComplete(false);
+    // Reset cache state atomically
+    setCacheState({ isCached: false, story: null, checkComplete: false });
+
     StoryCacheManager.isStoryCached(id).then(async (cached) => {
       console.log(`[Cache] isStoryCached(${id}): ${cached}`);
-      setIsCached(cached);
       if (cached) {
         const loaded = await StoryCacheManager.loadCachedStory(id);
         if (loaded) {
           console.log(`[Cache] Loaded cached story (isCached=true, URLs computed at render)`);
-          setCachedStory(loaded);
+          // Set all cache state atomically
+          setCacheState({ isCached: true, story: loaded, checkComplete: true });
+          return;
         }
       }
-      setCacheCheckComplete(true);
+      // Not cached or load failed
+      setCacheState({ isCached: false, story: null, checkComplete: true });
     });
   }, [id]);
 
   // Trigger background caching when story loads (if eligible)
   // Only runs after cache check completes to avoid race condition
   useEffect(() => {
-    if (!cacheCheckComplete) return; // Wait for cache check to finish
-    if (networkStory?.is_illustrated && networkStory.status === 'completed' && !isCached && !cacheTriggeredRef.current) {
+    if (!cacheState.checkComplete) return; // Wait for cache check to finish
+    if (networkStory?.is_illustrated && networkStory.status === 'completed' && !cacheState.isCached && !cacheTriggeredRef.current) {
       // Use ref to prevent double-triggering (React may run effects multiple times)
       cacheTriggeredRef.current = true;
       setIsCaching(true);
@@ -82,11 +94,10 @@ export default function StoryReader() {
         .then(async (success) => {
           console.log(`[Reader] Cache result for story ${networkStory.id}: ${success ? 'succeeded' : 'failed'}`);
           if (success) {
-            setIsCached(true);
-            // Load the cached story with file:// URLs
+            // Load and set atomically
             const loaded = await StoryCacheManager.loadCachedStory(networkStory.id);
             if (loaded) {
-              setCachedStory(loaded);
+              setCacheState(prev => ({ ...prev, isCached: true, story: loaded }));
             }
           }
         })
@@ -94,7 +105,7 @@ export default function StoryReader() {
           setIsCaching(false);
         });
     }
-  }, [networkStory, isCached, cacheCheckComplete]);
+  }, [networkStory, cacheState.isCached, cacheState.checkComplete]);
 
   // Fetch recommendations (only used on last page, but hook must be called unconditionally)
   const { data: networkRecommendations } = useRecommendations(id, CARD_COUNT);
