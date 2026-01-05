@@ -135,6 +135,9 @@ class ApiError extends Error {
   }
 }
 
+// Default timeout for API requests (10 seconds)
+const API_TIMEOUT_MS = 10_000;
+
 async function fetchApi<T>(
   endpoint: string,
   options?: RequestInit
@@ -148,26 +151,35 @@ async function fetchApi<T>(
     authHeaders['Authorization'] = `Bearer ${token}`;
   }
 
-  const response = await fetch(url, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...authHeaders,
-      ...options?.headers,
-    },
-  });
+  // Create abort controller for timeout
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new ApiError(response.status, errorText || `HTTP ${response.status}`);
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeaders,
+        ...options?.headers,
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new ApiError(response.status, errorText || `HTTP ${response.status}`);
+    }
+
+    // Handle 204 No Content
+    if (response.status === 204) {
+      return undefined as T;
+    }
+
+    return response.json();
+  } finally {
+    clearTimeout(timeoutId);
   }
-
-  // Handle 204 No Content
-  if (response.status === 204) {
-    return undefined as T;
-  }
-
-  return response.json();
 }
 
 // Helper to create cache key from params

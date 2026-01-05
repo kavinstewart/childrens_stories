@@ -3,6 +3,7 @@ import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useFonts } from 'expo-font';
 import { View, ActivityIndicator } from 'react-native';
 import { useEffect, useState } from 'react';
@@ -13,6 +14,13 @@ import { StoryCacheManager } from '@/lib/story-cache';
 import { migrateFromAsyncStorage } from '@/lib/cache-storage';
 import { remoteLogger } from '@/lib/remote-logger';
 import { CacheSync } from '@/lib/cache-sync';
+
+// Global error handler to catch unhandled JS errors
+const originalHandler = ErrorUtils.getGlobalHandler();
+ErrorUtils.setGlobalHandler((error, isFatal) => {
+  console.error('[GLOBAL ERROR]', isFatal ? 'FATAL:' : '', error?.message || error, error?.stack);
+  originalHandler?.(error, isFatal);
+});
 
 function AuthGate({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -32,9 +40,6 @@ function AuthGate({ children }: { children: React.ReactNode }) {
         // Migrate any existing AsyncStorage data to SQLite (one-time, idempotent)
         await migrateFromAsyncStorage();
         await StoryCacheManager.verifyCacheIntegrity();
-        // Note: We intentionally don't call hydrateQueryClient() here.
-        // React Query should only contain server URLs. Cached file:// URLs
-        // are computed at render time using isCached + getSpreadPath().
       } catch (error) {
         console.error('Failed to initialize cache:', error);
       } finally {
@@ -99,26 +104,28 @@ export default function RootLayout() {
   }
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <SafeAreaProvider>
-        <StatusBar style="dark" />
-        <AuthGate>
-          <Stack
-            screenOptions={{
-              headerShown: false,
-              animation: 'fade',
-            }}
-          >
-            <Stack.Screen
-              name="edit-prompt"
-              options={{
-                presentation: 'fullScreenModal',
-                animation: 'slide_from_bottom',
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <QueryClientProvider client={queryClient}>
+        <SafeAreaProvider>
+          <StatusBar style="dark" />
+          <AuthGate>
+            <Stack
+              screenOptions={{
+                headerShown: false,
+                animation: 'fade',
               }}
-            />
-          </Stack>
-        </AuthGate>
-      </SafeAreaProvider>
-    </QueryClientProvider>
+            >
+              <Stack.Screen
+                name="edit-prompt"
+                options={{
+                  presentation: 'fullScreenModal',
+                  animation: 'slide_from_bottom',
+                }}
+              />
+            </Stack>
+          </AuthGate>
+        </SafeAreaProvider>
+      </QueryClientProvider>
+    </GestureHandlerRootView>
   );
 }

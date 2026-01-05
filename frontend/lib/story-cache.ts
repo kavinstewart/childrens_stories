@@ -9,7 +9,7 @@
 import { Story, api } from './api';
 import { cacheStorage, CacheEntry } from './cache-storage';
 import { cacheFiles } from './cache-files';
-import { CacheSync } from './cache-sync';
+// NOTE: Do NOT import CacheSync here - it creates a require cycle that can freeze the JS thread
 
 // Debug logging for story cache - set to false in production
 const DEBUG = true;
@@ -319,9 +319,11 @@ export const StoryCacheManager = {
   /**
    * Boost the priority of a story in the sync queue.
    * Call this when a user views a story to ensure it downloads first.
+   * NOTE: Callers should use CacheSync.boostPriority() directly to avoid require cycle.
+   * @deprecated Use CacheSync.boostPriority() directly
    */
-  boostStoryPriority: (storyId: string): void => {
-    CacheSync.boostPriority(storyId);
+  boostStoryPriority: (_storyId: string): void => {
+    // No-op: removed to break require cycle. Use CacheSync.boostPriority() directly.
   },
 
 };

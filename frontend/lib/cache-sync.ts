@@ -14,6 +14,7 @@
  * - Idempotent (safe to call multiple times)
  */
 
+import { InteractionManager } from 'react-native';
 import { Story, api } from './api';
 import { StoryCacheManager } from './story-cache';
 import { shouldSync, shouldSyncWithSettings, getSyncSettings, subscribeToNetworkChanges, SyncSettings } from './network-aware';
@@ -357,23 +358,50 @@ export const CacheSync = {
   /**
    * Start automatic sync with network listener.
    * Call this once on app mount. Returns unsubscribe function.
+   *
+   * Uses InteractionManager to defer initialization until after animations/touches
+   * are processed, preventing netinfo from blocking the JS thread during startup.
    */
   startAutoSync(): () => void {
-    log('startAutoSync called - subscribing to network changes');
+    log('startAutoSync called - deferring until interactions complete');
 
-    // Subscribe to network changes
-    const unsubscribe = subscribeToNetworkChanges(async (networkState) => {
-      log('Network change detected:', networkState.type, 'connected:', networkState.isConnected);
-      // Trigger sync when WiFi connects
-      if (networkState.isConnected && networkState.type === 'wifi') {
-        await this.triggerSync();
+    let unsubscribeNetwork: (() => void) | null = null;
+    let cancelled = false;
+
+    // Defer all netinfo work until after interactions complete
+    // This ensures touch handlers are registered before netinfo starts firing events
+    const interactionHandle = InteractionManager.runAfterInteractions(() => {
+      if (cancelled) {
+        log('startAutoSync cancelled before initialization');
+        return;
       }
+
+      log('Interactions complete - subscribing to network changes');
+
+      // Subscribe to network changes with debouncing (1 second)
+      unsubscribeNetwork = subscribeToNetworkChanges(async (networkState) => {
+        log('Network change detected:', networkState.type, 'connected:', networkState.isConnected);
+        // Trigger sync when WiFi connects
+        if (networkState.isConnected && networkState.type === 'wifi') {
+          await this.triggerSync();
+        }
+      });
+
+      // Delay initial sync by 2 seconds to let app fully settle
+      setTimeout(() => {
+        if (!cancelled) {
+          log('Triggering initial sync');
+          this.triggerSync();
+        }
+      }, 2000);
     });
 
-    // Trigger initial sync
-    log('Triggering initial sync');
-    this.triggerSync();
-
-    return unsubscribe;
+    return () => {
+      cancelled = true;
+      interactionHandle.cancel();
+      if (unsubscribeNetwork) {
+        unsubscribeNetwork();
+      }
+    };
   },
 };

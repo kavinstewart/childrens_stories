@@ -1,4 +1,5 @@
-import { View, Text, Pressable, ScrollView, ActivityIndicator, useWindowDimensions, RefreshControl } from 'react-native';
+import { View, Text, Pressable, ScrollView, ActivityIndicator, useWindowDimensions, RefreshControl, TouchableOpacity } from 'react-native';
+import { Pressable as GHPressable } from 'react-native-gesture-handler';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -8,6 +9,10 @@ import { Story } from '@/lib/api';
 import { StoryCard } from '@/components/StoryCard';
 import { StoryCacheManager } from '@/lib/story-cache';
 
+// Debug logging
+const DEBUG = true;
+const log = (...args: unknown[]) => DEBUG && console.log('[StoryLibrary]', ...args);
+
 // Grid configuration
 const GRID_PADDING = 24; // matches contentContainerStyle padding
 const GRID_GAP = 16;     // gap between cards
@@ -15,6 +20,12 @@ const COLUMNS = 4;       // number of columns
 
 export default function StoryLibrary() {
   const router = useRouter();
+
+  // Log mount
+  useEffect(() => {
+    log('Component mounted');
+    return () => log('Component unmounted');
+  }, []);
   const { data: networkStories, isLoading, isFetching, error, refetch } = useStories();
   const { width: screenWidth } = useWindowDimensions();
   const [cachedStories, setCachedStories] = useState<Story[]>([]);
@@ -22,12 +33,28 @@ export default function StoryLibrary() {
 
   // Always load cached stories on mount (for offline support, stories marked isCached=true)
   useEffect(() => {
+    log('Loading cached stories...');
     StoryCacheManager.loadAllCachedStories()
       .then((stories) => {
+        log('Cached stories loaded:', stories.length);
         setCachedStories(stories);
+      })
+      .catch((err) => {
+        log('ERROR loading cached stories:', err);
       })
       .finally(() => setIsLoadingCache(false));
   }, []);
+
+  // Log data state changes
+  useEffect(() => {
+    log('Data state:', {
+      networkStories: networkStories?.length ?? 'undefined',
+      cachedStories: cachedStories.length,
+      isLoading,
+      isLoadingCache,
+      error: error ? String(error) : null,
+    });
+  }, [networkStories, cachedStories, isLoading, isLoadingCache, error]);
 
   // Determine if we're in offline mode
   const isOffline = !!error && !isLoading;
@@ -64,11 +91,26 @@ export default function StoryLibrary() {
       colors={['#E0E7FF', '#FAE8FF', '#FCE7F3']}
       style={{ flex: 1 }}
     >
+      {/* DEBUG: Button completely outside ScrollView */}
+      <GHPressable
+        onPress={() => {
+          log('OUTSIDE SCROLLVIEW pressed!');
+          // Also try an alert to be really sure
+          alert('Button pressed!');
+        }}
+        style={{ backgroundColor: 'orange', padding: 20, margin: 10, borderRadius: 12 }}
+      >
+        <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 18, textAlign: 'center' }}>
+          OUTSIDE SCROLLVIEW - TAP ME
+        </Text>
+      </GHPressable>
+
       <SafeAreaView className="flex-1" edges={['top', 'left', 'right']}>
         <ScrollView
           className="flex-1"
           contentContainerStyle={{ padding: 24 }}
           showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="always"
           refreshControl={
             <RefreshControl
               refreshing={isFetching && !isLoading}
@@ -93,7 +135,12 @@ export default function StoryLibrary() {
             <View className="flex-row items-center gap-3">
               {/* Settings Button */}
               <Pressable
-                onPress={() => router.push('/settings')}
+                onPressIn={() => log('Settings onPressIn')}
+                onPressOut={() => log('Settings onPressOut')}
+                onPress={() => {
+                  log('Settings button pressed');
+                  router.push('/settings');
+                }}
                 className="bg-gray-200 py-4 px-4 rounded-2xl"
                 style={({ pressed }) => ({
                   opacity: pressed ? 0.8 : 1,
@@ -105,7 +152,10 @@ export default function StoryLibrary() {
 
               {/* New Story Button */}
               <Pressable
-                onPress={() => router.push('/new')}
+                onPress={() => {
+                  log('New Story button pressed');
+                  router.push('/new');
+                }}
                 className="bg-purple-600 py-4 px-6 rounded-2xl"
                 style={({ pressed }) => ({
                   opacity: pressed ? 0.8 : 1,
@@ -116,6 +166,31 @@ export default function StoryLibrary() {
                   + New Story
                 </Text>
               </Pressable>
+
+              {/* DEBUG: TouchableOpacity test */}
+              <TouchableOpacity
+                onPress={() => log('TouchableOpacity pressed!')}
+                style={{ backgroundColor: 'red', padding: 16, borderRadius: 12 }}
+              >
+                <Text style={{ color: 'white', fontWeight: 'bold' }}>TAP TEST</Text>
+              </TouchableOpacity>
+
+              {/* DEBUG: Raw View touch test */}
+              <View
+                onTouchStart={() => log('RAW onTouchStart!')}
+                onTouchEnd={() => log('RAW onTouchEnd!')}
+                style={{ backgroundColor: 'blue', padding: 16, borderRadius: 12 }}
+              >
+                <Text style={{ color: 'white', fontWeight: 'bold' }}>RAW TOUCH</Text>
+              </View>
+
+              {/* DEBUG: Gesture Handler Pressable test */}
+              <GHPressable
+                onPress={() => log('GH Pressable pressed!')}
+                style={{ backgroundColor: 'green', padding: 16, borderRadius: 12 }}
+              >
+                <Text style={{ color: 'white', fontWeight: 'bold' }}>GH PRESS</Text>
+              </GHPressable>
             </View>
           </View>
 
@@ -132,8 +207,8 @@ export default function StoryLibrary() {
             </View>
           )}
 
-          {/* Loading State */}
-          {(isLoading || (isLoadingCache && !networkStories)) && (
+          {/* Loading State - only show if we have no stories to display yet */}
+          {(isLoadingCache || (isLoading && cachedStories.length === 0)) && !stories && (
             <View className="items-center justify-center py-20">
               <ActivityIndicator size="large" color="#7C3AED" />
               <Text className="text-gray-600 mt-4">
@@ -185,6 +260,7 @@ export default function StoryLibrary() {
           {/* Story Cards Grid */}
           {stories && stories.length > 0 && (
             <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+              {log('Rendering', stories.length, 'stories')}
               {stories.map((story, index) => {
                 // Margin logic: right margin for all except last in row
                 const columnIndex = index % COLUMNS;
@@ -205,6 +281,7 @@ export default function StoryLibrary() {
                       colorIndex={index}
                       showStatusBadge={true}
                       onPress={() => {
+                        log('StoryCard pressed:', story.id, story.status);
                         if (story.status === 'completed') {
                           router.push(`/read/${story.id}`);
                         } else if (story.status === 'pending' || story.status === 'running') {

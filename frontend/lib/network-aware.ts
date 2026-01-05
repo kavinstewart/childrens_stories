@@ -110,11 +110,43 @@ export async function shouldSyncWithSettings(settings: SyncSettings): Promise<bo
 }
 
 /**
- * Subscribe to network state changes.
+ * Subscribe to network state changes with debouncing.
  * Returns an unsubscribe function.
+ *
+ * Uses debouncing to prevent rapid-fire events from blocking the JS thread,
+ * which is a known issue with netinfo on React Native's new architecture.
  */
 export function subscribeToNetworkChanges(
-  callback: (state: NetInfoState) => void
+  callback: (state: NetInfoState) => void,
+  debounceMs: number = 1000
 ): () => void {
-  return NetInfo.addEventListener(callback);
+  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  let lastState: NetInfoState | null = null;
+
+  const debouncedCallback = (state: NetInfoState) => {
+    // Skip if state hasn't meaningfully changed
+    if (lastState &&
+        lastState.isConnected === state.isConnected &&
+        lastState.type === state.type) {
+      return;
+    }
+    lastState = state;
+
+    // Debounce to prevent rapid-fire events
+    if (debounceTimer) {
+      clearTimeout(debounceTimer);
+    }
+    debounceTimer = setTimeout(() => {
+      callback(state);
+    }, debounceMs);
+  };
+
+  const unsubscribe = NetInfo.addEventListener(debouncedCallback);
+
+  return () => {
+    if (debounceTimer) {
+      clearTimeout(debounceTimer);
+    }
+    unsubscribe();
+  };
 }
