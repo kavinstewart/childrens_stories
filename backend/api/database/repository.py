@@ -350,34 +350,23 @@ class StoryRepository:
         status: Optional[str] = "completed",
     ) -> tuple[list[StoryResponse], int]:
         """List stories with pagination and optional status filter."""
+        # Build query conditionally based on status filter
+        where_clause = "WHERE status = $1" if status else ""
+        params: list = [status] if status else []
+
         # Get total count
-        if status:
-            total = await self.conn.fetchval(
-                "SELECT COUNT(*) FROM stories WHERE status = $1",
-                status,
-            )
-            stories = await self.conn.fetch(
-                """
-                SELECT * FROM stories
-                WHERE status = $1
-                ORDER BY created_at DESC
-                LIMIT $2 OFFSET $3
-                """,
-                status,
-                limit,
-                offset,
-            )
-        else:
-            total = await self.conn.fetchval("SELECT COUNT(*) FROM stories")
-            stories = await self.conn.fetch(
-                """
-                SELECT * FROM stories
-                ORDER BY created_at DESC
-                LIMIT $1 OFFSET $2
-                """,
-                limit,
-                offset,
-            )
+        count_query = f"SELECT COUNT(*) FROM stories {where_clause}"
+        total = await self.conn.fetchval(count_query, *params)
+
+        # Get paginated results
+        param_offset = len(params)
+        list_query = f"""
+            SELECT * FROM stories
+            {where_clause}
+            ORDER BY created_at DESC
+            LIMIT ${param_offset + 1} OFFSET ${param_offset + 2}
+        """
+        stories = await self.conn.fetch(list_query, *params, limit, offset)
 
         return [self._record_to_response(s) for s in stories], total or 0
 
