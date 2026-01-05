@@ -58,12 +58,13 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   }, [isAuthenticated]);
 
   // Start automatic cache sync when authenticated and cache is ready
-  useEffect(() => {
-    if (!isAuthenticated || !cacheReady) return;
-
-    const unsubscribe = CacheSync.startAutoSync();
-    return unsubscribe;
-  }, [isAuthenticated, cacheReady]);
+  // DISABLED: netinfo subscription blocks touch events on new architecture
+  // useEffect(() => {
+  //   if (!isAuthenticated || !cacheReady) return;
+  //
+  //   const unsubscribe = CacheSync.startAutoSync();
+  //   return unsubscribe;
+  // }, [isAuthenticated, cacheReady]);
 
   // Handle auth routing
   useEffect(() => {

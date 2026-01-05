@@ -8,7 +8,7 @@
 import { api } from './api';
 
 // Build identifier - update this when making changes to help debug which version is running
-const BUILD_ID = '2026-01-05-netinfo-fix';
+const BUILD_ID = '2026-01-05-cachesync-disabled';
 
 const BATCH_INTERVAL_MS = 5000; // Send every 5 seconds
 const MAX_BATCH_SIZE = 50; // Or when we hit 50 entries
