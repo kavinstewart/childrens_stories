@@ -7,8 +7,15 @@ import { StoryCacheManager } from '@/lib/story-cache';
 import { cacheStorage } from '@/lib/cache-storage';
 import { cacheFiles } from '@/lib/cache-files';
 import { api, Story } from '@/lib/api';
+import { CacheSync } from '@/lib/cache-sync';
 
 // Mock dependencies
+jest.mock('@/lib/cache-sync', () => ({
+  CacheSync: {
+    boostPriority: jest.fn(),
+  },
+}));
+
 jest.mock('@/lib/cache-storage', () => ({
   cacheStorage: {
     getIndex: jest.fn(),
@@ -39,6 +46,7 @@ jest.mock('@/lib/api', () => ({
 
 const mockCacheStorage = cacheStorage as jest.Mocked<typeof cacheStorage>;
 const mockCacheFiles = cacheFiles as jest.Mocked<typeof cacheFiles>;
+const mockCacheSync = CacheSync as jest.Mocked<typeof CacheSync>;
 
 const createMockStory = (overrides: Partial<Story> = {}): Story => ({
   id: 'test-story-123',
@@ -824,6 +832,18 @@ describe('StoryCacheManager', () => {
 
       expect(mockCacheFiles.deleteStoryDirectory).toHaveBeenCalledWith('story-1');
       expect(mockCacheStorage.removeStoryEntry).toHaveBeenCalledWith('story-1');
+    });
+  });
+
+  describe('boostStoryPriority', () => {
+    it('calls CacheSync.boostPriority with the story ID', () => {
+      StoryCacheManager.boostStoryPriority('test-story-123');
+
+      expect(mockCacheSync.boostPriority).toHaveBeenCalledWith('test-story-123');
+    });
+
+    it('does not throw when CacheSync.boostPriority is called', () => {
+      expect(() => StoryCacheManager.boostStoryPriority('any-id')).not.toThrow();
     });
   });
 

@@ -9,6 +9,7 @@
 import { Story, api } from './api';
 import { cacheStorage, CacheEntry } from './cache-storage';
 import { cacheFiles } from './cache-files';
+import { CacheSync } from './cache-sync';
 
 const DOWNLOAD_CONCURRENCY = 4;
 
@@ -303,6 +304,14 @@ export const StoryCacheManager = {
       await cacheFiles.deleteStoryDirectory(storyId);
       await cacheStorage.removeStoryEntry(storyId);
     }
+  },
+
+  /**
+   * Boost the priority of a story in the sync queue.
+   * Call this when a user views a story to ensure it downloads first.
+   */
+  boostStoryPriority: (storyId: string): void => {
+    CacheSync.boostPriority(storyId);
   },
 
 };
