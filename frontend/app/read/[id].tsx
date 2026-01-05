@@ -1,7 +1,7 @@
 import { View, Text, Pressable, Image, ActivityIndicator, Dimensions } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useStory, useRecommendations } from '@/features/stories/hooks';
 import { api, Story, StorySpread } from '@/lib/api';
 import { fontFamily } from '@/lib/fonts';
@@ -26,6 +26,7 @@ export default function StoryReader() {
   const [isCached, setIsCached] = useState(false);
   const [cacheCheckComplete, setCacheCheckComplete] = useState(false);
   const [cachedStory, setCachedStory] = useState<Story | null>(null);
+  const cacheTriggeredRef = useRef(false); // Prevent double-triggering from React re-renders
 
   // Use cached story if offline, otherwise prefer network story
   // Both now have server URLs - file:// paths are computed at render time
@@ -51,6 +52,8 @@ export default function StoryReader() {
   useEffect(() => {
     if (!id) return;
 
+    // Reset cache trigger ref for new story
+    cacheTriggeredRef.current = false;
     setCacheCheckComplete(false);
     StoryCacheManager.isStoryCached(id).then(async (cached) => {
       console.log(`[Cache] isStoryCached(${id}): ${cached}`);
@@ -71,12 +74,14 @@ export default function StoryReader() {
   // Use networkStory to cache the original URLs, not the cached file:// URLs
   useEffect(() => {
     if (!cacheCheckComplete) return; // Wait for cache check to finish
-    if (networkStory?.is_illustrated && networkStory.status === 'completed' && !isCached && !isCaching) {
+    if (networkStory?.is_illustrated && networkStory.status === 'completed' && !isCached && !cacheTriggeredRef.current) {
+      // Use ref to prevent double-triggering (React may run effects multiple times)
+      cacheTriggeredRef.current = true;
       setIsCaching(true);
-      console.log(`[Cache] Starting cache for story ${networkStory.id}`);
+      console.log(`[Reader] Triggering cache for story ${networkStory.id}`);
       StoryCacheManager.cacheStory(networkStory)
         .then(async (success) => {
-          console.log(`[Cache] Caching ${success ? 'succeeded' : 'failed'} for story ${networkStory.id}`);
+          console.log(`[Reader] Cache result for story ${networkStory.id}: ${success ? 'succeeded' : 'failed'}`);
           if (success) {
             setIsCached(true);
             // Load the cached story with file:// URLs
@@ -90,7 +95,7 @@ export default function StoryReader() {
           setIsCaching(false);
         });
     }
-  }, [networkStory, isCached, isCaching, cacheCheckComplete]);
+  }, [networkStory, isCached, cacheCheckComplete]);
 
   // Fetch recommendations (only used on last page, but hook must be called unconditionally)
   const { data: networkRecommendations } = useRecommendations(id, CARD_COUNT);
