@@ -1,11 +1,10 @@
 /**
  * useStoryCache - Custom hook for managing story cache state
  *
- * Encapsulates:
- * - Cache check on mount
- * - Loading cached story
- * - Triggering background cache for eligible stories
- * - State consistency management
+ * Uses a discriminated union state machine to prevent invalid state combinations.
+ * Possible states: 'checking' | 'uncached' | 'caching' | 'cached'
+ *
+ * The return interface is computed from the state machine for backward compatibility.
  */
 
 import { useState, useEffect, useCallback } from 'react';
@@ -28,14 +27,29 @@ interface UseStoryCacheResult {
   getImageUrl: (storyId: string, spread: StorySpread) => string | null;
 }
 
+/**
+ * State machine for cache states.
+ * Each state explicitly defines what data is available.
+ */
+type CacheState =
+  | { status: 'checking' }
+  | { status: 'uncached' }
+  | { status: 'caching' }
+  | { status: 'cached'; story: Story }
+  | { status: 'cache_failed' };
+
 export function useStoryCache(
   storyId: string | undefined,
   networkStory: Story | undefined
 ): UseStoryCacheResult {
-  const [isCached, setIsCached] = useState(false);
-  const [cachedStory, setCachedStory] = useState<Story | null>(null);
-  const [cacheCheckComplete, setCacheCheckComplete] = useState(false);
-  const [isCaching, setIsCaching] = useState(false);
+  const [state, setState] = useState<CacheState>({ status: 'checking' });
+
+  // Compute return values from state machine
+  const isCached = state.status === 'cached';
+  const cachedStory = state.status === 'cached' ? state.story : null;
+  const cacheCheckComplete = state.status !== 'checking';
+  const isCaching = state.status === 'caching';
+  // Note: cache_failed is treated as uncached for consumers (shows network story)
 
   // Use cached story if available, otherwise prefer network story
   const story = cachedStory || networkStory;
@@ -58,23 +72,19 @@ export function useStoryCache(
   useEffect(() => {
     if (!storyId) return;
 
-    // Reset cache state for new story
-    setIsCached(false);
-    setCachedStory(null);
-    setCacheCheckComplete(false);
+    // Reset to checking state for new story
+    setState({ status: 'checking' });
 
     StoryCacheManager.isStoryCached(storyId).then(async (cached) => {
       if (cached) {
         const loaded = await StoryCacheManager.loadCachedStory(storyId);
         if (loaded) {
-          setIsCached(true);
-          setCachedStory(loaded);
-          setCacheCheckComplete(true);
+          setState({ status: 'cached', story: loaded });
           return;
         }
       }
       // Not cached or load failed
-      setCacheCheckComplete(true);
+      setState({ status: 'uncached' });
     });
   }, [storyId]);
 
@@ -82,26 +92,27 @@ export function useStoryCache(
   // Only runs after cache check completes to avoid race condition
   // Note: StoryCacheManager.cacheStory handles deduplication of concurrent requests
   useEffect(() => {
-    if (!cacheCheckComplete) return; // Wait for cache check to finish
+    if (state.status !== 'uncached') return; // Only cache from uncached state
     if (!networkStory?.is_illustrated) return;
     if (networkStory.status !== 'completed') return;
-    if (isCached) return;
 
-    setIsCaching(true);
+    setState({ status: 'caching' });
     StoryCacheManager.cacheStory(networkStory)
       .then(async (success) => {
         if (success) {
           const loaded = await StoryCacheManager.loadCachedStory(networkStory.id);
           if (loaded) {
-            setIsCached(true);
-            setCachedStory(loaded);
+            setState({ status: 'cached', story: loaded });
+            return;
           }
         }
+        // Caching failed - use cache_failed state to prevent retry loop
+        setState({ status: 'cache_failed' });
       })
-      .finally(() => {
-        setIsCaching(false);
+      .catch(() => {
+        setState({ status: 'cache_failed' });
       });
-  }, [networkStory, isCached, cacheCheckComplete]);
+  }, [networkStory, state.status]);
 
   return {
     story,
