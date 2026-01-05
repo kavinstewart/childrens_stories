@@ -84,6 +84,23 @@ describe('network-aware', () => {
       expect(settings.autoDownloadEnabled).toBe(true);
       expect(settings.allowCellular).toBe(false);
     });
+
+    it('throws when AsyncStorage fails to persist', async () => {
+      // This tests proves callers need error handling for setSyncSettings
+      // Save original implementation
+      const originalSetItem = AsyncStorage.setItem;
+
+      // Mock to throw once
+      AsyncStorage.setItem = jest.fn().mockRejectedValueOnce(new Error('Storage full'));
+
+      await expect(setSyncSettings({
+        autoDownloadEnabled: true,
+        allowCellular: true,
+      })).rejects.toThrow('Storage full');
+
+      // Restore original - important for test isolation
+      AsyncStorage.setItem = originalSetItem;
+    });
   });
 
   describe('shouldSync', () => {

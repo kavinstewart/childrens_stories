@@ -40,15 +40,29 @@ export default function Settings() {
   }, []);
 
   const handleAutoDownloadToggle = async (value: boolean) => {
+    const previousSettings = syncSettings;
     const newSettings = { ...syncSettings, autoDownloadEnabled: value };
     setSyncSettingsState(newSettings);
-    await setSyncSettings(newSettings);
+    try {
+      await setSyncSettings(newSettings);
+    } catch (error) {
+      console.error('Failed to save auto-download setting:', error);
+      setSyncSettingsState(previousSettings);
+      Alert.alert('Error', 'Failed to save setting. Please try again.');
+    }
   };
 
   const handleCellularToggle = async (value: boolean) => {
+    const previousSettings = syncSettings;
     const newSettings = { ...syncSettings, allowCellular: value };
     setSyncSettingsState(newSettings);
-    await setSyncSettings(newSettings);
+    try {
+      await setSyncSettings(newSettings);
+    } catch (error) {
+      console.error('Failed to save cellular setting:', error);
+      setSyncSettingsState(previousSettings);
+      Alert.alert('Error', 'Failed to save setting. Please try again.');
+    }
   };
 
   useEffect(() => {
