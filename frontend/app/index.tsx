@@ -18,7 +18,6 @@ export default function StoryLibrary() {
   const { data: networkStories, isLoading, isFetching, error, refetch } = useStories();
   const { width: screenWidth } = useWindowDimensions();
   const [cachedStories, setCachedStories] = useState<Story[]>([]);
-  const [cachedStoryMap, setCachedStoryMap] = useState<Map<string, Story>>(new Map());
   const [isLoadingCache, setIsLoadingCache] = useState(true); // Start true - always load cache on mount
 
   // Always load cached stories on mount (for offline support, stories marked isCached=true)
@@ -27,12 +26,6 @@ export default function StoryLibrary() {
       .then((stories) => {
         console.log(`[Library] Loaded ${stories.length} cached stories`);
         setCachedStories(stories);
-        // Build map for quick lookup
-        const map = new Map<string, Story>();
-        for (const story of stories) {
-          map.set(story.id, story);
-        }
-        setCachedStoryMap(map);
       })
       .finally(() => setIsLoadingCache(false));
   }, []);
@@ -50,7 +43,7 @@ export default function StoryLibrary() {
 
     // Overlay cached stories onto network stories (cached have isCached=true for render-time file:// computation)
     return networkStories.map(networkStory => {
-      const cachedVersion = cachedStoryMap.get(networkStory.id);
+      const cachedVersion = cachedStories.find(s => s.id === networkStory.id);
       if (cachedVersion) {
         // Use cached version - it has isCached=true for offline image display
         return cachedVersion;
