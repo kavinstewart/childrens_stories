@@ -4,6 +4,20 @@ import { authStorage } from './auth-storage';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://dev.exoselfsystems.com';
 
+// Story list response cache (1 minute TTL)
+const STORIES_CACHE_TTL_MS = 60_000;
+interface StoriesCache {
+  data: StoryListResponse;
+  timestamp: number;
+  cacheKey: string;
+}
+let storiesCache: StoriesCache | null = null;
+
+// For testing: reset cache
+export function _resetStoriesCache(): void {
+  storiesCache = null;
+}
+
 export type JobStatus = 'pending' | 'running' | 'completed' | 'failed';
 export type GenerationType = 'simple' | 'standard' | 'illustrated';
 
@@ -156,21 +170,59 @@ async function fetchApi<T>(
   return response.json();
 }
 
+// Helper to create cache key from params
+function getStoriesCacheKey(params?: {
+  limit?: number;
+  offset?: number;
+  status?: JobStatus;
+}): string {
+  const parts = [];
+  if (params?.limit !== undefined) parts.push(`limit=${params.limit}`);
+  if (params?.offset !== undefined) parts.push(`offset=${params.offset}`);
+  if (params?.status !== undefined) parts.push(`status=${params.status}`);
+  return parts.join('&') || 'default';
+}
+
 // API functions
 export const api = {
-  // List all stories with pagination
+  // List all stories with pagination (cached for 1 minute)
   listStories: async (params?: {
     limit?: number;
     offset?: number;
     status?: JobStatus;
   }): Promise<StoryListResponse> => {
+    const cacheKey = getStoriesCacheKey(params);
+
+    // Check cache
+    if (
+      storiesCache &&
+      storiesCache.cacheKey === cacheKey &&
+      Date.now() - storiesCache.timestamp < STORIES_CACHE_TTL_MS
+    ) {
+      return storiesCache.data;
+    }
+
     const searchParams = new URLSearchParams();
-    if (params?.limit) searchParams.set('limit', String(params.limit));
-    if (params?.offset) searchParams.set('offset', String(params.offset));
-    if (params?.status) searchParams.set('status', params.status);
+    if (params?.limit !== undefined) searchParams.set('limit', String(params.limit));
+    if (params?.offset !== undefined) searchParams.set('offset', String(params.offset));
+    if (params?.status !== undefined) searchParams.set('status', params.status);
 
     const query = searchParams.toString();
-    return fetchApi(`/stories/${query ? `?${query}` : ''}`);
+    const data = await fetchApi<StoryListResponse>(`/stories/${query ? `?${query}` : ''}`);
+
+    // Update cache
+    storiesCache = {
+      data,
+      timestamp: Date.now(),
+      cacheKey,
+    };
+
+    return data;
+  },
+
+  // Invalidate the stories list cache (call after creating/deleting stories)
+  invalidateStoriesCache: (): void => {
+    storiesCache = null;
   },
 
   // Get a single story by ID

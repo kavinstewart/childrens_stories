@@ -1,7 +1,11 @@
 /**
- * Unit tests for image URL cache busting in api.ts
+ * Unit tests for api.ts
  */
-import { api } from '../../lib/api';
+import { api, _resetStoriesCache } from '../../lib/api';
+
+// Mock fetch for listStories tests
+const mockFetch = jest.fn();
+global.fetch = mockFetch;
 
 describe('getSpreadImageUrl', () => {
   const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://dev.exoselfsystems.com';
@@ -91,5 +95,87 @@ describe('getSpreadImageUrl', () => {
       const url = api.getSpreadImageUrl(uuid, 5, '2024-01-15T10:30:00Z');
       expect(url).toContain(`/stories/${uuid}/spreads/5/image`);
     });
+  });
+});
+
+describe('listStories caching', () => {
+  const mockStoriesResponse = {
+    stories: [
+      { id: 'story-1', title: 'Story 1', status: 'completed' },
+      { id: 'story-2', title: 'Story 2', status: 'completed' },
+    ],
+    total: 2,
+    limit: 10,
+    offset: 0,
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    _resetStoriesCache();
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve(mockStoriesResponse),
+    });
+  });
+
+  it('returns cached response within TTL', async () => {
+    // First call
+    const result1 = await api.listStories();
+    expect(result1.stories).toHaveLength(2);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+
+    // Second call should use cache
+    const result2 = await api.listStories();
+    expect(result2.stories).toHaveLength(2);
+    expect(mockFetch).toHaveBeenCalledTimes(1); // Still 1, no new fetch
+  });
+
+  it('fetches fresh data after cache expires', async () => {
+    // First call
+    await api.listStories();
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+
+    // Reset cache to simulate expiration
+    _resetStoriesCache();
+
+    // Second call should fetch fresh
+    await api.listStories();
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not cache different query params', async () => {
+    // Call with limit=5
+    await api.listStories({ limit: 5 });
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+
+    // Call with limit=10 should fetch again
+    await api.listStories({ limit: 10 });
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('caches same params separately', async () => {
+    // Call with limit=5 twice
+    await api.listStories({ limit: 5 });
+    await api.listStories({ limit: 5 });
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+
+    // Call with limit=10 twice
+    await api.listStories({ limit: 10 });
+    await api.listStories({ limit: 10 });
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('invalidates cache on invalidateStoriesCache call', async () => {
+    // First call
+    await api.listStories();
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+
+    // Invalidate
+    api.invalidateStoriesCache();
+
+    // Should fetch fresh
+    await api.listStories();
+    expect(mockFetch).toHaveBeenCalledTimes(2);
   });
 });
