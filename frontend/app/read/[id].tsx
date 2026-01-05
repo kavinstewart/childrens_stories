@@ -232,9 +232,6 @@ export default function StoryReader() {
             height: SCREEN_HEIGHT,
           }}
           resizeMode="cover"
-          onLoadStart={() => console.log(`[Image] Reader START loading spread ${currentSpread + 1}: ${imageUrl}`)}
-          onError={(e) => console.error(`[Image] Reader FAILED spread ${currentSpread + 1}: ${imageUrl}`, e.nativeEvent.error)}
-          onLoad={() => console.log(`[Image] Reader LOADED spread ${currentSpread + 1}: ${imageUrl}`)}
         />
       ) : (
         <View style={{

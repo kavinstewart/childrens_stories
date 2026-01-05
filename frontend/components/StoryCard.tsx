@@ -116,8 +116,6 @@ export function StoryCard({
               }}
               style={{ width: '100%', height: '100%' }}
               resizeMode="cover"
-              onError={(e) => console.error(`[Image] StoryCard failed to load: ${coverUrl}`, e.nativeEvent.error)}
-              onLoad={() => console.log(`[Image] StoryCard loaded: ${coverUrl}`)}
             />
           ) : (
             <LinearGradient
