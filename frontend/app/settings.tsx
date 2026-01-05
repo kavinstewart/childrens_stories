@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
-import { View, Text, Pressable, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, Pressable, Alert, ActivityIndicator, Switch } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StoryCacheManager } from '@/lib/story-cache';
 import { fontFamily } from '@/lib/fonts';
+import { getSyncSettings, setSyncSettings, SyncSettings, DEFAULT_SYNC_SETTINGS } from '@/lib/network-aware';
 
 // Format bytes to human readable
 const formatSize = (bytes: number): string => {
@@ -18,22 +19,37 @@ export default function Settings() {
   const [storyCount, setStoryCount] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isClearing, setIsClearing] = useState(false);
+  const [syncSettings, setSyncSettingsState] = useState<SyncSettings>(DEFAULT_SYNC_SETTINGS);
 
   const loadCacheInfo = useCallback(async () => {
     setIsLoading(true);
     try {
-      const [size, ids] = await Promise.all([
+      const [size, ids, settings] = await Promise.all([
         StoryCacheManager.getCacheSize(),
         StoryCacheManager.getCachedStoryIds(),
+        getSyncSettings(),
       ]);
       setCacheSize(size);
       setStoryCount(ids.length);
+      setSyncSettingsState(settings);
     } catch (error) {
       console.error('Failed to load cache info:', error);
     } finally {
       setIsLoading(false);
     }
   }, []);
+
+  const handleAutoDownloadToggle = async (value: boolean) => {
+    const newSettings = { ...syncSettings, autoDownloadEnabled: value };
+    setSyncSettingsState(newSettings);
+    await setSyncSettings(newSettings);
+  };
+
+  const handleCellularToggle = async (value: boolean) => {
+    const newSettings = { ...syncSettings, allowCellular: value };
+    setSyncSettingsState(newSettings);
+    await setSyncSettings(newSettings);
+  };
 
   useEffect(() => {
     loadCacheInfo();
@@ -128,6 +144,81 @@ export default function Settings() {
             </View>
           ) : (
             <>
+              {/* Sync Settings */}
+              <View style={{ marginBottom: 24 }}>
+                {/* Auto-download toggle */}
+                <View style={{
+                  flexDirection: 'row',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  marginBottom: 16,
+                }}>
+                  <View style={{ flex: 1, marginRight: 16 }}>
+                    <Text style={{
+                      fontSize: 16,
+                      color: 'white',
+                      fontFamily: fontFamily.nunitoSemiBold,
+                    }}>
+                      Auto-download stories
+                    </Text>
+                    <Text style={{
+                      fontSize: 13,
+                      color: 'rgba(255, 255, 255, 0.5)',
+                      fontFamily: fontFamily.nunito,
+                      marginTop: 2,
+                    }}>
+                      Automatically save stories for offline reading
+                    </Text>
+                  </View>
+                  <Switch
+                    value={syncSettings.autoDownloadEnabled}
+                    onValueChange={handleAutoDownloadToggle}
+                    trackColor={{ false: '#444', true: '#22C55E' }}
+                    thumbColor="white"
+                  />
+                </View>
+
+                {/* Cellular toggle */}
+                <View style={{
+                  flexDirection: 'row',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  opacity: syncSettings.autoDownloadEnabled ? 1 : 0.5,
+                }}>
+                  <View style={{ flex: 1, marginRight: 16 }}>
+                    <Text style={{
+                      fontSize: 16,
+                      color: 'white',
+                      fontFamily: fontFamily.nunitoSemiBold,
+                    }}>
+                      Use cellular data
+                    </Text>
+                    <Text style={{
+                      fontSize: 13,
+                      color: 'rgba(255, 255, 255, 0.5)',
+                      fontFamily: fontFamily.nunito,
+                      marginTop: 2,
+                    }}>
+                      Download only on WiFi when off
+                    </Text>
+                  </View>
+                  <Switch
+                    value={syncSettings.allowCellular}
+                    onValueChange={handleCellularToggle}
+                    disabled={!syncSettings.autoDownloadEnabled}
+                    trackColor={{ false: '#444', true: '#22C55E' }}
+                    thumbColor="white"
+                  />
+                </View>
+              </View>
+
+              {/* Divider */}
+              <View style={{
+                height: 1,
+                backgroundColor: 'rgba(255, 255, 255, 0.2)',
+                marginBottom: 24,
+              }} />
+
               {/* Cache Stats */}
               <View style={{ marginBottom: 24 }}>
                 <View style={{
