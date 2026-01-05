@@ -152,6 +152,29 @@ export const StoryCacheManager = {
   },
 
   /**
+   * Load all cached stories from disk.
+   * Returns array of stories with file:// URLs for illustrations.
+   */
+  loadAllCachedStories: async (): Promise<Story[]> => {
+    const storyIds = await StoryCacheManager.getCachedStoryIds();
+    const stories: Story[] = [];
+
+    for (const storyId of storyIds) {
+      const story = await StoryCacheManager.loadCachedStory(storyId);
+      if (story) {
+        stories.push(story);
+      }
+    }
+
+    // Sort by created_at descending (newest first) to match API behavior
+    return stories.sort((a, b) => {
+      const dateA = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const dateB = b.created_at ? new Date(b.created_at).getTime() : 0;
+      return dateB - dateA;
+    });
+  },
+
+  /**
    * Ensure there's enough space for a new story.
    * Evicts oldest-read stories (LRU) if needed.
    */

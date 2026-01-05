@@ -80,7 +80,36 @@ export default function StoryReader() {
   }, [networkStory, isCached, isCaching, cacheCheckComplete]);
 
   // Fetch recommendations (only used on last page, but hook must be called unconditionally)
-  const { data: recommendations } = useRecommendations(id, CARD_COUNT);
+  const { data: networkRecommendations } = useRecommendations(id, CARD_COUNT);
+  const [cachedRecommendations, setCachedRecommendations] = useState<Story[]>([]);
+
+  // Filter recommendations to only show cached stories (for offline support)
+  // Load cached versions with file:// URLs
+  useEffect(() => {
+    if (!networkRecommendations || networkRecommendations.length === 0) {
+      setCachedRecommendations([]);
+      return;
+    }
+
+    const filterToCached = async () => {
+      const cached: Story[] = [];
+      for (const rec of networkRecommendations) {
+        const isCached = await StoryCacheManager.isStoryCached(rec.id);
+        if (isCached) {
+          const cachedStory = await StoryCacheManager.loadCachedStory(rec.id);
+          if (cachedStory) {
+            cached.push(cachedStory);
+          }
+        }
+      }
+      setCachedRecommendations(cached);
+    };
+
+    filterToCached();
+  }, [networkRecommendations]);
+
+  // Use cached recommendations (with file:// URLs) for display
+  const recommendations = cachedRecommendations;
 
   const goBack = () => {
     if (showEndScreen) {
@@ -402,7 +431,7 @@ export default function StoryReader() {
                 {recommendations.slice(0, CARD_COUNT).map((rec, index) => (
                   <StoryCard
                     key={rec.id}
-                    recommendation={rec}
+                    story={rec}
                     width={cardWidth}
                     height={cardHeight}
                     colorIndex={index}

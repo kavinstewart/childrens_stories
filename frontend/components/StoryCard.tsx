@@ -64,8 +64,14 @@ export function StoryCard({
   const isIllustrated = story?.is_illustrated ?? recommendation?.is_illustrated ?? false;
   const status = story?.status;
 
-  // Get cover image URL
-  const coverUrl = isIllustrated ? api.getSpreadImageUrl(id, 1) : null;
+  // Get cover image URL - use cached file:// URL if available, otherwise API URL
+  // Cached stories have spreads with file:// URLs in illustration_url
+  const firstSpread = story?.spreads?.[0];
+  const cachedImageUrl = firstSpread?.illustration_url;
+  const isLocalFile = cachedImageUrl?.startsWith('file://');
+  const coverUrl = isIllustrated
+    ? (isLocalFile ? cachedImageUrl : api.getSpreadImageUrl(id, 1))
+    : null;
 
   // Calculate section heights (70% illustration, 30% info - matches library)
   const illustrationHeight = height * 0.70;
@@ -106,7 +112,7 @@ export function StoryCard({
             <Image
               source={{
                 uri: coverUrl,
-                headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+                headers: (!isLocalFile && token) ? { Authorization: `Bearer ${token}` } : undefined,
               }}
               style={{ width: '100%', height: '100%' }}
               resizeMode="cover"

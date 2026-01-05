@@ -2,9 +2,11 @@ import { View, Text, Pressable, ScrollView, ActivityIndicator, useWindowDimensio
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useState, useEffect } from 'react';
 import { useStories } from '@/features/stories/hooks';
 import { Story } from '@/lib/api';
 import { StoryCard } from '@/components/StoryCard';
+import { StoryCacheManager } from '@/lib/story-cache';
 
 // Grid configuration
 const GRID_PADDING = 24; // matches contentContainerStyle padding
@@ -13,8 +15,30 @@ const COLUMNS = 4;       // number of columns
 
 export default function StoryLibrary() {
   const router = useRouter();
-  const { data: stories, isLoading, isFetching, error, refetch } = useStories();
+  const { data: networkStories, isLoading, isFetching, error, refetch } = useStories();
   const { width: screenWidth } = useWindowDimensions();
+  const [cachedStories, setCachedStories] = useState<Story[]>([]);
+  const [isLoadingCache, setIsLoadingCache] = useState(false);
+
+  // When network fails, load cached stories as fallback
+  useEffect(() => {
+    if (error && !isLoading) {
+      setIsLoadingCache(true);
+      StoryCacheManager.loadAllCachedStories()
+        .then((stories) => {
+          console.log(`[Offline] Loaded ${stories.length} cached stories`);
+          setCachedStories(stories);
+        })
+        .finally(() => setIsLoadingCache(false));
+    } else if (networkStories) {
+      // Clear cached fallback when network is available
+      setCachedStories([]);
+    }
+  }, [error, isLoading, networkStories]);
+
+  // Use network stories if available, otherwise cached stories
+  const isOffline = !!error && cachedStories.length > 0;
+  const stories = networkStories || (error ? cachedStories : undefined);
 
   // Calculate card dimensions (matching HTML mockup)
   // Available width = screen - left padding - right padding
@@ -84,23 +108,38 @@ export default function StoryLibrary() {
             </View>
           </View>
 
-          {/* Loading State */}
-          {isLoading && (
-            <View className="items-center justify-center py-20">
-              <ActivityIndicator size="large" color="#7C3AED" />
-              <Text className="text-gray-600 mt-4">Loading stories...</Text>
+          {/* Offline Mode Banner */}
+          {isOffline && (
+            <View className="bg-amber-100 rounded-2xl px-4 py-3 mb-4 flex-row items-center">
+              <Text className="text-lg mr-2">📴</Text>
+              <Text className="text-amber-800 font-semibold flex-1">
+                Offline Mode - Showing {stories?.length} cached {stories?.length === 1 ? 'story' : 'stories'}
+              </Text>
+              <Pressable onPress={() => refetch()} className="bg-amber-200 px-3 py-1 rounded-lg">
+                <Text className="text-amber-800 font-semibold">Retry</Text>
+              </Pressable>
             </View>
           )}
 
-          {/* Error State */}
-          {error && (
+          {/* Loading State */}
+          {(isLoading || isLoadingCache) && (
+            <View className="items-center justify-center py-20">
+              <ActivityIndicator size="large" color="#7C3AED" />
+              <Text className="text-gray-600 mt-4">
+                {isLoadingCache ? 'Loading cached stories...' : 'Loading stories...'}
+              </Text>
+            </View>
+          )}
+
+          {/* Error State - only show if no cached stories available */}
+          {error && !isOffline && !isLoadingCache && (
             <View className="items-center justify-center py-20 bg-red-50 rounded-3xl">
               <Text className="text-4xl mb-4">😕</Text>
               <Text className="text-red-800 font-bold text-xl mb-2">
                 Couldn't load stories
               </Text>
               <Text className="text-red-600 mb-4">
-                Is the backend running on port 8000?
+                No cached stories available for offline reading
               </Text>
               <Pressable
                 onPress={() => refetch()}
