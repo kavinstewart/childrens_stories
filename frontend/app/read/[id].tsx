@@ -159,8 +159,9 @@ export default function StoryReader() {
   const goToLibrary = () => router.replace('/');
   const goToStory = (storyId: string) => router.replace(`/read/${storyId}`);
 
-  // Show loading while fetching from network OR checking cache
-  if (isLoading || !cacheCheckComplete) {
+  // Show loading while checking cache, or while fetching from network (if no cached version)
+  // If we have a cached story, show it immediately without waiting for network
+  if (!cacheCheckComplete || (isLoading && !cachedStory)) {
     return (
       <View style={{ flex: 1, backgroundColor: '#1a1a2e', alignItems: 'center', justifyContent: 'center' }}>
         <ActivityIndicator size="large" color="#FBBF24" />
