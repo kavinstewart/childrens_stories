@@ -103,28 +103,32 @@ export default function StoryReader() {
 
   // Filter recommendations to only show cached stories (for offline support)
   // Load cached versions with file:// URLs
+  // When offline (no network recommendations), show all cached stories as fallback
   useEffect(() => {
-    if (!networkRecommendations || networkRecommendations.length === 0) {
-      setCachedRecommendations([]);
-      return;
-    }
-
-    const filterToCached = async () => {
-      const cached: Story[] = [];
-      for (const rec of networkRecommendations) {
-        const isCached = await StoryCacheManager.isStoryCached(rec.id);
-        if (isCached) {
-          const cachedStory = await StoryCacheManager.loadCachedStory(rec.id);
-          if (cachedStory) {
-            cached.push(cachedStory);
+    const loadRecommendations = async () => {
+      if (networkRecommendations && networkRecommendations.length > 0) {
+        // Online: filter network recommendations to only cached ones
+        const cached: Story[] = [];
+        for (const rec of networkRecommendations) {
+          const isCached = await StoryCacheManager.isStoryCached(rec.id);
+          if (isCached) {
+            const cachedStory = await StoryCacheManager.loadCachedStory(rec.id);
+            if (cachedStory) {
+              cached.push(cachedStory);
+            }
           }
         }
+        setCachedRecommendations(cached);
+      } else {
+        // Offline: show all cached stories (except current) as recommendations, max 4
+        const allCached = await StoryCacheManager.loadAllCachedStories();
+        const filtered = allCached.filter(s => s.id !== id).slice(0, CARD_COUNT);
+        setCachedRecommendations(filtered);
       }
-      setCachedRecommendations(cached);
     };
 
-    filterToCached();
-  }, [networkRecommendations]);
+    loadRecommendations();
+  }, [networkRecommendations, id]);
 
   // Use cached recommendations (with file:// URLs) for display
   const recommendations = cachedRecommendations;
