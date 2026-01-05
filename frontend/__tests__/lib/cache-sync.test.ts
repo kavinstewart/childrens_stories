@@ -70,6 +70,7 @@ describe('CacheSync', () => {
       expect(SYNC_CONFIG.MAX_STORIES_PER_SYNC).toBe(20);
       expect(SYNC_CONFIG.SYNC_THROTTLE_MS).toBeGreaterThan(0);
       expect(SYNC_CONFIG.INTER_STORY_DELAY_MS).toBeGreaterThan(0);
+      expect(SYNC_CONFIG.FAILED_ENTRY_TTL_MS).toBe(24 * 60 * 60 * 1000); // 24 hours
     });
   });
 
@@ -186,6 +187,58 @@ describe('CacheSync', () => {
       const status = CacheSync.getStatus();
       expect(status.queueLength).toBe(0);
       expect(status.activeDownloads).toBe(0);
+    });
+  });
+
+  describe('failedStories TTL cleanup', () => {
+    it('cleans up old failure entries after TTL expires', async () => {
+      // Mock Date.now to simulate time passing
+      const originalDateNow = Date.now;
+      let currentTime = 1000000000000; // Fixed start time
+      Date.now = jest.fn(() => currentTime);
+
+      try {
+        // Trigger a failed download
+        mockStoryCacheManager.cacheStory.mockResolvedValueOnce(false);
+        const story = createTestStory({ id: 'failing-story' });
+
+        await CacheSync.syncIfNeeded([story]);
+        expect(mockStoryCacheManager.cacheStory).toHaveBeenCalledTimes(1);
+
+        // Move time forward past the backoff but within TTL
+        currentTime += 70000; // 70 seconds (past max backoff of 60s)
+
+        // Reset mocks but not CacheSync state
+        mockStoryCacheManager.cacheStory.mockClear();
+        mockStoryCacheManager.getCachedStoryIds.mockResolvedValue([]);
+
+        // Move time past throttle window
+        currentTime += SYNC_CONFIG.SYNC_THROTTLE_MS + 1000;
+
+        // Story should be retried (backoff expired)
+        mockStoryCacheManager.cacheStory.mockResolvedValueOnce(false);
+        await CacheSync.syncIfNeeded([story]);
+        expect(mockStoryCacheManager.cacheStory).toHaveBeenCalledTimes(1);
+
+        // Move time forward past the TTL (24 hours)
+        currentTime += SYNC_CONFIG.FAILED_ENTRY_TTL_MS + 1000;
+
+        // Reset mocks again
+        mockStoryCacheManager.cacheStory.mockClear();
+        mockStoryCacheManager.getCachedStoryIds.mockResolvedValue([]);
+
+        // Move time past throttle window again
+        currentTime += SYNC_CONFIG.SYNC_THROTTLE_MS + 1000;
+
+        // Story should be retried with reset retry count (TTL cleanup removed old entry)
+        mockStoryCacheManager.cacheStory.mockResolvedValueOnce(true);
+        await CacheSync.syncIfNeeded([story]);
+
+        // Should have been called - the old failure entry was cleaned up
+        expect(mockStoryCacheManager.cacheStory).toHaveBeenCalledTimes(1);
+      } finally {
+        Date.now = originalDateNow;
+      }
     });
   });
 

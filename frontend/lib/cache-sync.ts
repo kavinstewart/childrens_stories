@@ -31,6 +31,8 @@ export const SYNC_CONFIG = {
   BACKOFF_BASE_MS: 2000,
   /** Maximum backoff time */
   BACKOFF_MAX_MS: 60000,
+  /** TTL for failed story entries - entries older than this are cleaned up (24 hours) */
+  FAILED_ENTRY_TTL_MS: 24 * 60 * 60 * 1000,
 };
 
 interface QueuedStory {
@@ -41,6 +43,7 @@ interface QueuedStory {
 interface FailedStory {
   retryCount: number;
   nextRetryTime: number;
+  firstFailedAt: number;
 }
 
 interface SyncState {
@@ -97,7 +100,21 @@ function recordFailure(storyId: string): void {
   state.failedStories.set(storyId, {
     retryCount,
     nextRetryTime: Date.now() + backoffMs,
+    firstFailedAt: existing?.firstFailedAt ?? Date.now(),
   });
+}
+
+/**
+ * Clean up old failed story entries that have exceeded the TTL.
+ * This prevents unbounded memory growth from permanently failing stories.
+ */
+function cleanupExpiredFailures(): void {
+  const now = Date.now();
+  for (const [storyId, entry] of state.failedStories.entries()) {
+    if (now - entry.firstFailedAt > SYNC_CONFIG.FAILED_ENTRY_TTL_MS) {
+      state.failedStories.delete(storyId);
+    }
+  }
 }
 
 /**
@@ -130,6 +147,9 @@ export const CacheSync = {
     if (!await shouldSync()) {
       return;
     }
+
+    // Clean up old failure entries to prevent unbounded memory growth
+    cleanupExpiredFailures();
 
     state.isRunning = true;
     state.lastSyncTime = Date.now();
