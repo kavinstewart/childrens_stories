@@ -81,7 +81,19 @@ export const cacheFiles = {
     const path = `${cacheFiles.getStoryDir(storyId)}metadata.json`;
     try {
       const content = await FileSystem.readAsStringAsync(path);
-      return JSON.parse(content);
+      const story: Story = JSON.parse(content);
+
+      // Transform spread illustration_url to file:// paths for offline display
+      if (story.spreads) {
+        story.spreads = story.spreads.map(spread => ({
+          ...spread,
+          illustration_url: spread.illustration_url
+            ? cacheFiles.getSpreadPath(storyId, spread.spread_number)
+            : spread.illustration_url,
+        }));
+      }
+
+      return story;
     } catch {
       return null;
     }

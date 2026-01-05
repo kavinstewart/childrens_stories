@@ -18,27 +18,46 @@ export default function StoryLibrary() {
   const { data: networkStories, isLoading, isFetching, error, refetch } = useStories();
   const { width: screenWidth } = useWindowDimensions();
   const [cachedStories, setCachedStories] = useState<Story[]>([]);
-  const [isLoadingCache, setIsLoadingCache] = useState(false);
+  const [cachedStoryMap, setCachedStoryMap] = useState<Map<string, Story>>(new Map());
+  const [isLoadingCache, setIsLoadingCache] = useState(true); // Start true - always load cache on mount
 
-  // When network fails, load cached stories as fallback
+  // Always load cached stories on mount (for offline support and file:// URLs)
   useEffect(() => {
-    if (error && !isLoading) {
-      setIsLoadingCache(true);
-      StoryCacheManager.loadAllCachedStories()
-        .then((stories) => {
-          console.log(`[Offline] Loaded ${stories.length} cached stories`);
-          setCachedStories(stories);
-        })
-        .finally(() => setIsLoadingCache(false));
-    } else if (networkStories) {
-      // Clear cached fallback when network is available
-      setCachedStories([]);
-    }
-  }, [error, isLoading, networkStories]);
+    StoryCacheManager.loadAllCachedStories()
+      .then((stories) => {
+        console.log(`[Library] Loaded ${stories.length} cached stories`);
+        setCachedStories(stories);
+        // Build map for quick lookup
+        const map = new Map<string, Story>();
+        for (const story of stories) {
+          map.set(story.id, story);
+        }
+        setCachedStoryMap(map);
+      })
+      .finally(() => setIsLoadingCache(false));
+  }, []);
 
-  // Use network stories if available, otherwise cached stories
-  const isOffline = !!error && cachedStories.length > 0;
-  const stories = networkStories || (error ? cachedStories : undefined);
+  // Determine if we're in offline mode
+  const isOffline = !!error && !isLoading;
+
+  // Merge stories: use network list but overlay cached versions (which have file:// URLs)
+  // When offline, use only cached stories
+  const stories = (() => {
+    if (isOffline) {
+      return cachedStories.length > 0 ? cachedStories : undefined;
+    }
+    if (!networkStories) return undefined;
+
+    // Overlay cached stories onto network stories (cached have file:// URLs for images)
+    return networkStories.map(networkStory => {
+      const cachedVersion = cachedStoryMap.get(networkStory.id);
+      if (cachedVersion) {
+        // Use cached version - it has file:// URLs for offline image display
+        return cachedVersion;
+      }
+      return networkStory;
+    });
+  })();
 
   // Calculate card dimensions (matching HTML mockup)
   // Available width = screen - left padding - right padding
@@ -122,11 +141,11 @@ export default function StoryLibrary() {
           )}
 
           {/* Loading State */}
-          {(isLoading || isLoadingCache) && (
+          {(isLoading || (isLoadingCache && !networkStories)) && (
             <View className="items-center justify-center py-20">
               <ActivityIndicator size="large" color="#7C3AED" />
               <Text className="text-gray-600 mt-4">
-                {isLoadingCache ? 'Loading cached stories...' : 'Loading stories...'}
+                Loading stories...
               </Text>
             </View>
           )}
