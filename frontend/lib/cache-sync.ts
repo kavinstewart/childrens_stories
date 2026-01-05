@@ -16,7 +16,7 @@
 
 import { Story, api } from './api';
 import { StoryCacheManager } from './story-cache';
-import { shouldSync, subscribeToNetworkChanges } from './network-aware';
+import { shouldSync, shouldSyncWithSettings, getSyncSettings, subscribeToNetworkChanges, SyncSettings } from './network-aware';
 
 export const SYNC_CONFIG = {
   /** Maximum concurrent story downloads (global limit) */
@@ -151,11 +151,15 @@ export const CacheSync = {
     // Clean up old failure entries to prevent unbounded memory growth
     cleanupExpiredFailures();
 
+    // Cache settings for the duration of this sync batch
+    // This avoids repeated AsyncStorage reads in the loop
+    const cachedSettings = await getSyncSettings();
+
     state.isRunning = true;
     state.lastSyncTime = Date.now();
 
     try {
-      await this.runSync(stories);
+      await this.runSync(stories, cachedSettings);
     } finally {
       state.isRunning = false;
       state.queue = [];
@@ -165,8 +169,10 @@ export const CacheSync = {
 
   /**
    * Run the actual sync process
+   * @param stories - Stories to potentially cache
+   * @param cachedSettings - Pre-fetched settings to avoid repeated AsyncStorage reads
    */
-  async runSync(stories: Story[]): Promise<void> {
+  async runSync(stories: Story[], cachedSettings: SyncSettings): Promise<void> {
     // Get already cached story IDs
     const cachedIds = new Set(await StoryCacheManager.getCachedStoryIds());
 
@@ -188,8 +194,8 @@ export const CacheSync = {
 
     // Process queue with concurrency limit
     while (state.queue.length > 0 || state.activeDownloads.size > 0) {
-      // Re-check network before each story
-      if (!await shouldSync()) {
+      // Re-check network before each story (using cached settings to avoid AsyncStorage reads)
+      if (!await shouldSyncWithSettings(cachedSettings)) {
         break;
       }
 

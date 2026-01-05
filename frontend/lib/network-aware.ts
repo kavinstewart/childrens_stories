@@ -73,7 +73,16 @@ export async function setSyncSettings(settings: SyncSettings): Promise<void> {
  */
 export async function shouldSync(): Promise<boolean> {
   const settings = await getSyncSettings();
+  return shouldSyncWithSettings(settings);
+}
 
+/**
+ * Determine if sync should proceed using pre-fetched settings.
+ * Use this in loops to avoid repeated AsyncStorage reads.
+ *
+ * @param settings - Pre-fetched sync settings
+ */
+export async function shouldSyncWithSettings(settings: SyncSettings): Promise<boolean> {
   // Check if auto-download is enabled
   if (!settings.autoDownloadEnabled) {
     return false;

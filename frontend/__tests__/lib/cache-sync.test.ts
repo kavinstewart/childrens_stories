@@ -14,6 +14,7 @@ jest.mock('../../lib/story-cache', () => ({
 
 jest.mock('../../lib/network-aware', () => ({
   shouldSync: jest.fn().mockResolvedValue(true),
+  shouldSyncWithSettings: jest.fn().mockResolvedValue(true),
   getSyncSettings: jest.fn().mockResolvedValue({
     autoDownloadEnabled: true,
     allowCellular: false,
@@ -59,6 +60,7 @@ describe('CacheSync', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockNetworkAware.shouldSync.mockResolvedValue(true);
+    mockNetworkAware.shouldSyncWithSettings.mockResolvedValue(true);
     mockStoryCacheManager.getCachedStoryIds.mockResolvedValue([]);
     mockStoryCacheManager.cacheStory.mockResolvedValue(true);
     CacheSync.reset();

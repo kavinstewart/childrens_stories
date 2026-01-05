@@ -5,6 +5,7 @@ import NetInfo, { NetInfoState, NetInfoStateType } from '@react-native-community
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   shouldSync,
+  shouldSyncWithSettings,
   getNetworkState,
   subscribeToNetworkChanges,
   getSyncSettings,
@@ -227,6 +228,47 @@ describe('network-aware', () => {
 
     it('has cellular disabled by default', () => {
       expect(DEFAULT_SYNC_SETTINGS.allowCellular).toBe(false);
+    });
+  });
+
+  describe('shouldSyncWithSettings', () => {
+    it('uses provided settings instead of fetching from AsyncStorage', async () => {
+      // Set up stored settings as disabled
+      await setSyncSettings({ autoDownloadEnabled: false, allowCellular: false });
+
+      // But pass enabled settings directly
+      const cachedSettings: SyncSettings = { autoDownloadEnabled: true, allowCellular: false };
+      mockNetInfo.fetch.mockResolvedValue(
+        createNetworkState('wifi' as NetInfoStateType, true)
+      );
+
+      // shouldSync would return false (reads disabled settings from storage)
+      const resultWithoutCache = await shouldSync();
+      expect(resultWithoutCache).toBe(false);
+
+      // shouldSyncWithSettings uses the provided settings (enabled)
+      const resultWithCache = await shouldSyncWithSettings(cachedSettings);
+      expect(resultWithCache).toBe(true);
+    });
+
+    it('respects allowCellular from cached settings', async () => {
+      mockNetInfo.fetch.mockResolvedValue(
+        createNetworkState('cellular' as NetInfoStateType, true)
+      );
+
+      // Cached settings with cellular allowed
+      const withCellular = await shouldSyncWithSettings({
+        autoDownloadEnabled: true,
+        allowCellular: true,
+      });
+      expect(withCellular).toBe(true);
+
+      // Cached settings without cellular
+      const withoutCellular = await shouldSyncWithSettings({
+        autoDownloadEnabled: true,
+        allowCellular: false,
+      });
+      expect(withoutCellular).toBe(false);
     });
   });
 });
