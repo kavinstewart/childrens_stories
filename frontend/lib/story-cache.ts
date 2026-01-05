@@ -132,7 +132,7 @@ export const StoryCacheManager = {
     if (!entry) return false;
 
     // Verify files actually exist
-    return cacheFiles.verifyStoryFiles(storyId, entry.spreadCount);
+    return cacheFiles.verifyStoryFiles(storyId);
   },
 
   /**
@@ -251,7 +251,7 @@ export const StoryCacheManager = {
     const orphanedIds: string[] = [];
 
     for (const [storyId, entry] of Object.entries(index)) {
-      const valid = await cacheFiles.verifyStoryFiles(storyId, entry.spreadCount);
+      const valid = await cacheFiles.verifyStoryFiles(storyId);
       if (!valid) {
         orphanedIds.push(storyId);
       }

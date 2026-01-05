@@ -104,7 +104,7 @@ export const cacheFiles = {
     await FileSystem.deleteAsync(dir, { idempotent: true });
   },
 
-  verifyStoryFiles: async (storyId: string, _expectedSpreadCount: number): Promise<boolean> => {
+  verifyStoryFiles: async (storyId: string): Promise<boolean> => {
     const dir = cacheFiles.getStoryDir(storyId);
     const dirInfo = await FileSystem.getInfoAsync(dir);
     if (!dirInfo.exists) {
@@ -142,21 +142,5 @@ export const cacheFiles = {
 
     console.log(`[Cache] Verification passed for story ${storyId}`);
     return true;
-  },
-
-  getDirectorySize: async (storyId: string): Promise<number> => {
-    const dir = cacheFiles.getStoryDir(storyId);
-    const dirInfo = await FileSystem.getInfoAsync(dir);
-    if (!dirInfo.exists) return 0;
-
-    const files = await FileSystem.readDirectoryAsync(dir);
-    let total = 0;
-    for (const file of files) {
-      const info = await FileSystem.getInfoAsync(`${dir}${file}`);
-      if (info.exists && !info.isDirectory && 'size' in info) {
-        total += info.size || 0;
-      }
-    }
-    return total;
   },
 };

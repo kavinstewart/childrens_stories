@@ -54,11 +54,4 @@ export const cacheStorage = {
     delete index[storyId];
     await AsyncStorage.setItem(CACHE_INDEX_KEY, JSON.stringify(index));
   },
-
-  /**
-   * Clear the entire cache index
-   */
-  clearIndex: async (): Promise<void> => {
-    await AsyncStorage.removeItem(CACHE_INDEX_KEY);
-  },
 };

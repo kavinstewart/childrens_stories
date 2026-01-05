@@ -193,38 +193,6 @@ describe('cacheStorage', () => {
     });
   });
 
-  describe('clearIndex', () => {
-    it('removes the entire cache index', async () => {
-      const testIndex: CacheIndex = {
-        'story-1': createTestEntry({ title: 'One' }),
-        'story-2': createTestEntry({ title: 'Two' }),
-      };
-      await AsyncStorage.setItem('story_cache_index', JSON.stringify(testIndex));
-
-      await cacheStorage.clearIndex();
-
-      const stored = await AsyncStorage.getItem('story_cache_index');
-      expect(stored).toBeNull();
-    });
-
-    it('handles clearing when index does not exist', async () => {
-      await cacheStorage.clearIndex();
-
-      const stored = await AsyncStorage.getItem('story_cache_index');
-      expect(stored).toBeNull();
-    });
-
-    it('getIndex returns empty object after clear', async () => {
-      const entry = createTestEntry();
-      await AsyncStorage.setItem('story_cache_index', JSON.stringify({ 'story-1': entry }));
-
-      await cacheStorage.clearIndex();
-
-      const index = await cacheStorage.getIndex();
-      expect(index).toEqual({});
-    });
-  });
-
   describe('integration scenarios', () => {
     it('handles typical cache lifecycle', async () => {
       // Add first story
@@ -251,8 +219,8 @@ describe('cacheStorage', () => {
       expect(index['story-1']).toBeDefined();
       expect(index['story-2']).toBeUndefined();
 
-      // Clear all
-      await cacheStorage.clearIndex();
+      // Remove last story
+      await cacheStorage.removeStoryEntry('story-1');
       index = await cacheStorage.getIndex();
       expect(index).toEqual({});
     });

@@ -300,7 +300,7 @@ describe('StoryCacheManager', () => {
       const result = await StoryCacheManager.isStoryCached('test-123');
 
       expect(result).toBe(false);
-      expect(mockCacheFiles.verifyStoryFiles).toHaveBeenCalledWith('test-123', 12);
+      expect(mockCacheFiles.verifyStoryFiles).toHaveBeenCalledWith('test-123');
     });
 
     it('returns true when index entry exists and files verified', async () => {
@@ -509,8 +509,8 @@ describe('StoryCacheManager', () => {
 
       await StoryCacheManager.verifyCacheIntegrity();
 
-      expect(mockCacheFiles.verifyStoryFiles).toHaveBeenCalledWith('story-1', 12);
-      expect(mockCacheFiles.verifyStoryFiles).toHaveBeenCalledWith('story-2', 10);
+      expect(mockCacheFiles.verifyStoryFiles).toHaveBeenCalledWith('story-1');
+      expect(mockCacheFiles.verifyStoryFiles).toHaveBeenCalledWith('story-2');
       expect(mockCacheFiles.deleteStoryDirectory).not.toHaveBeenCalled();
       expect(mockCacheStorage.removeStoryEntry).not.toHaveBeenCalled();
     });
