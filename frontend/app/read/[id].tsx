@@ -41,17 +41,16 @@ export default function StoryReader() {
   useEffect(() => {
     const loadRecommendations = async () => {
       if (networkRecommendations && networkRecommendations.length > 0) {
-        // Online: filter network recommendations to only cached ones
-        const cached: Story[] = [];
-        for (const rec of networkRecommendations) {
-          const isCached = await StoryCacheManager.isStoryCached(rec.id);
-          if (isCached) {
-            const cachedStory = await StoryCacheManager.loadCachedStory(rec.id);
-            if (cachedStory) {
-              cached.push(cachedStory);
-            }
-          }
-        }
+        // Online: use summaries (one index read) to filter, then load cached versions
+        const summaries = await StoryCacheManager.getCachedStorySummaries();
+        const cachedIds = new Set(summaries.map(s => s.id));
+        const cachedRecs = networkRecommendations.filter(r => cachedIds.has(r.id));
+
+        // Load full cached stories in parallel (for file:// URLs)
+        const loadedStories = await Promise.all(
+          cachedRecs.map(rec => StoryCacheManager.loadCachedStory(rec.id))
+        );
+        const cached = loadedStories.filter((s): s is Story => s !== null);
         setCachedRecommendations(cached);
       } else {
         // Offline: show all cached stories (except current) as recommendations, max 4
