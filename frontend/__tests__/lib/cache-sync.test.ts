@@ -30,6 +30,16 @@ jest.mock('../../lib/api', () => ({
       limit: 10,
       offset: 0,
     }),
+    getStory: jest.fn().mockImplementation((id: string) => Promise.resolve({
+      id,
+      status: 'completed',
+      goal: 'test goal',
+      target_age_range: '4-8',
+      generation_type: 'illustrated',
+      is_illustrated: true,
+      created_at: new Date().toISOString(),
+      spreads: [{ spread_number: 1, text: 'test', word_count: 1, was_revised: false, illustration_url: 'http://test.com/1.png' }],
+    })),
   },
 }));
 
@@ -103,7 +113,10 @@ describe('CacheSync', () => {
       await CacheSync.syncIfNeeded([story1, story2]);
 
       expect(mockStoryCacheManager.cacheStory).toHaveBeenCalledTimes(1);
-      expect(mockStoryCacheManager.cacheStory).toHaveBeenCalledWith(story2);
+      // cacheStory is called with full story from getStory, check by id
+      expect(mockStoryCacheManager.cacheStory).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'story-2' })
+      );
     });
 
     it('skips non-completed stories', async () => {
@@ -113,7 +126,10 @@ describe('CacheSync', () => {
       await CacheSync.syncIfNeeded([pendingStory, completedStory]);
 
       expect(mockStoryCacheManager.cacheStory).toHaveBeenCalledTimes(1);
-      expect(mockStoryCacheManager.cacheStory).toHaveBeenCalledWith(completedStory);
+      // cacheStory is called with full story from getStory, check by id
+      expect(mockStoryCacheManager.cacheStory).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'completed' })
+      );
     });
 
     it('skips non-illustrated stories', async () => {
@@ -123,7 +139,10 @@ describe('CacheSync', () => {
       await CacheSync.syncIfNeeded([illustrated, notIllustrated]);
 
       expect(mockStoryCacheManager.cacheStory).toHaveBeenCalledTimes(1);
-      expect(mockStoryCacheManager.cacheStory).toHaveBeenCalledWith(illustrated);
+      // cacheStory is called with full story from getStory, check by id
+      expect(mockStoryCacheManager.cacheStory).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'illustrated' })
+      );
     });
 
     it('respects MAX_STORIES_PER_SYNC limit', async () => {
@@ -343,7 +362,10 @@ describe('CacheSync', () => {
       await CacheSync.triggerSync();
 
       expect(mockApi.listStories).toHaveBeenCalled();
-      expect(mockStoryCacheManager.cacheStory).toHaveBeenCalledWith(stories[0]);
+      // cacheStory is called with full story from getStory, check by id
+      expect(mockStoryCacheManager.cacheStory).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'api-story' })
+      );
     });
 
     it('silently fails when API call fails', async () => {
@@ -361,6 +383,22 @@ describe('CacheSync', () => {
       );
 
       let downloadStarted = 0;
+
+      // Mock getStory to have a delay so we can cancel during fetch
+      mockApi.getStory.mockImplementation(async (id: string) => {
+        await new Promise(r => setTimeout(r, 500));
+        return {
+          id,
+          status: 'completed',
+          goal: 'test goal',
+          target_age_range: '4-8',
+          generation_type: 'illustrated',
+          is_illustrated: true,
+          created_at: new Date().toISOString(),
+          spreads: [{ spread_number: 1, text: 'test', word_count: 1, was_revised: false, illustration_url: 'http://test.com/1.png' }],
+        };
+      });
+
       mockStoryCacheManager.cacheStory.mockImplementation(async () => {
         downloadStarted++;
         // Long delay so we can cancel mid-sync
@@ -371,8 +409,8 @@ describe('CacheSync', () => {
       // Start sync in background
       const syncPromise = CacheSync.syncIfNeeded(stories);
 
-      // Wait for at least one download to start
-      await new Promise(r => setTimeout(r, 50));
+      // Wait for at least one download to start (getStory delay + some buffer)
+      await new Promise(r => setTimeout(r, 600));
 
       // Cancel sync
       CacheSync.cancelSync();

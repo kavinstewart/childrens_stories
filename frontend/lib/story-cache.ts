@@ -11,6 +11,10 @@ import { cacheStorage, CacheEntry } from './cache-storage';
 import { cacheFiles } from './cache-files';
 import { CacheSync } from './cache-sync';
 
+// Debug logging for story cache - set to false in production
+const DEBUG = true;
+const log = (...args: unknown[]) => DEBUG && console.log('[StoryCache]', ...args);
+
 const DOWNLOAD_CONCURRENCY = 4;
 
 // Track in-progress caching operations to deduplicate concurrent requests
@@ -40,7 +44,9 @@ export const StoryCacheManager = {
    * Deduplicates concurrent requests for the same story.
    */
   cacheStory: async (story: Story): Promise<boolean> => {
+    log('cacheStory called for:', story.id, 'is_illustrated:', story.is_illustrated, 'spreads:', story.spreads?.length);
     if (!story.is_illustrated || !story.spreads?.length) {
+      log('SKIP: not illustrated or no spreads');
       return false;
     }
 
@@ -57,14 +63,17 @@ export const StoryCacheManager = {
       try {
         // Ensure we have enough space (estimate based on spread count)
         const estimatedSize = (story.spreads?.length || 12) * ESTIMATED_SPREAD_SIZE;
+        log('Ensuring cache space for', estimatedSize, 'bytes');
         await StoryCacheManager.ensureCacheSpace(estimatedSize);
 
         // Create directory
+        log('Creating directory for', storyId);
         await cacheFiles.ensureDirectoryExists(storyId);
 
         // Download all images with concurrency limit
         // Only download spreads that have an illustration_url (some may be text-only)
         const spreads = story.spreads!.filter(s => s.illustration_url);
+        log('Downloading', spreads.length, 'spreads with illustrations');
         let totalSize = 0;
 
         for (let i = 0; i < spreads.length; i += DOWNLOAD_CONCURRENCY) {
@@ -113,7 +122,8 @@ export const StoryCacheManager = {
         await cacheStorage.setStoryEntry(storyId, entry);
 
         return true;
-      } catch {
+      } catch (error) {
+        log('ERROR caching story', storyId, ':', error);
         // Cleanup partial data - remove from index first (atomic), then files
         try {
           await cacheStorage.removeStoryEntry(storyId);

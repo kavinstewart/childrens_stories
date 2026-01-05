@@ -18,6 +18,10 @@ import { Story, api } from './api';
 import { StoryCacheManager } from './story-cache';
 import { shouldSync, shouldSyncWithSettings, getSyncSettings, subscribeToNetworkChanges, SyncSettings } from './network-aware';
 
+// Debug logging for cache sync - set to false in production
+const DEBUG = true;
+const log = (...args: unknown[]) => DEBUG && console.log('[CacheSync]', ...args);
+
 export const SYNC_CONFIG = {
   /** Maximum concurrent story downloads (global limit) */
   MAX_CONCURRENT_DOWNLOADS: 2,
@@ -134,19 +138,24 @@ export const CacheSync = {
    * @param stories - List of stories to potentially cache
    */
   async syncIfNeeded(stories: Story[]): Promise<void> {
+    log('syncIfNeeded called with', stories.length, 'stories');
+
     // Check if sync is already running
     if (state.isRunning) {
+      log('SKIP: sync already running');
       return;
     }
 
     // Check throttle - don't sync if we synced recently
     const timeSinceLastSync = Date.now() - state.lastSyncTime;
     if (state.lastSyncTime > 0 && timeSinceLastSync < SYNC_CONFIG.SYNC_THROTTLE_MS) {
+      log('SKIP: throttled, last sync was', Math.round(timeSinceLastSync / 1000), 'seconds ago');
       return;
     }
 
     // Check network conditions
     if (!await shouldSync()) {
+      log('SKIP: network conditions not met (check WiFi/cellular settings)');
       return;
     }
 
@@ -162,10 +171,12 @@ export const CacheSync = {
 
     state.isRunning = true;
     state.lastSyncTime = Date.now();
+    log('Starting sync...');
 
     try {
       await this.runSync(stories, cachedSettings);
     } finally {
+      log('Sync finished');
       state.isRunning = false;
       state.queue = [];
       state.activeDownloads.clear();
@@ -181,13 +192,26 @@ export const CacheSync = {
   async runSync(stories: Story[], cachedSettings: SyncSettings): Promise<void> {
     // Get already cached story IDs
     const cachedIds = new Set(await StoryCacheManager.getCachedStoryIds());
+    log('Already cached:', cachedIds.size, 'stories');
 
     // Filter and prioritize stories
-    const toCache = stories
-      .filter(isEligibleForCache)
-      .filter(s => !cachedIds.has(s.id))
-      .filter(s => !isInBackoff(s.id))
-      .slice(0, SYNC_CONFIG.MAX_STORIES_PER_SYNC);
+    const eligible = stories.filter(isEligibleForCache);
+    const notCached = eligible.filter(s => !cachedIds.has(s.id));
+    const notInBackoff = notCached.filter(s => !isInBackoff(s.id));
+    const toCache = notInBackoff.slice(0, SYNC_CONFIG.MAX_STORIES_PER_SYNC);
+
+    log('Filter results:', {
+      total: stories.length,
+      eligible: eligible.length,
+      notCached: notCached.length,
+      notInBackoff: notInBackoff.length,
+      toCache: toCache.length,
+    });
+
+    if (toCache.length === 0) {
+      log('Nothing to cache - all stories already cached or ineligible');
+      return;
+    }
 
     // Sort by priority (newest first)
     toCache.sort((a, b) => calculatePriority(b) - calculatePriority(a));
@@ -197,6 +221,7 @@ export const CacheSync = {
       story,
       priority: calculatePriority(story),
     }));
+    log('Queue built with', state.queue.length, 'stories');
 
     // Process queue with concurrency limit
     while (state.queue.length > 0 || state.activeDownloads.size > 0) {
@@ -243,16 +268,24 @@ export const CacheSync = {
    * Download a single story and update state
    */
   async downloadStory(story: Story): Promise<boolean> {
+    log('Downloading story:', story.id);
     try {
-      const success = await StoryCacheManager.cacheStory(story);
+      // Fetch full story data (listStories returns summaries without spreads)
+      log('Fetching full story data for:', story.id);
+      const fullStory = await api.getStory(story.id);
+
+      const success = await StoryCacheManager.cacheStory(fullStory);
       if (!success) {
+        log('Download failed (cacheStory returned false):', story.id);
         recordFailure(story.id);
       } else {
+        log('Download success:', story.id);
         // Clear any failure record on success
         state.failedStories.delete(story.id);
       }
       return success;
-    } catch {
+    } catch (error) {
+      log('Download error:', story.id, error);
       recordFailure(story.id);
       return false;
     } finally {
@@ -310,10 +343,13 @@ export const CacheSync = {
    * Convenience method for when caller doesn't have stories already.
    */
   async triggerSync(): Promise<void> {
+    log('triggerSync called');
     try {
       const response = await api.listStories();
+      log('API returned', response.stories.length, 'stories');
       await this.syncIfNeeded(response.stories);
-    } catch {
+    } catch (error) {
+      log('triggerSync API error:', error);
       // Silently fail - network may be unavailable
     }
   },
@@ -323,8 +359,11 @@ export const CacheSync = {
    * Call this once on app mount. Returns unsubscribe function.
    */
   startAutoSync(): () => void {
+    log('startAutoSync called - subscribing to network changes');
+
     // Subscribe to network changes
     const unsubscribe = subscribeToNetworkChanges(async (networkState) => {
+      log('Network change detected:', networkState.type, 'connected:', networkState.isConnected);
       // Trigger sync when WiFi connects
       if (networkState.isConnected && networkState.type === 'wifi') {
         await this.triggerSync();
@@ -332,6 +371,7 @@ export const CacheSync = {
     });
 
     // Trigger initial sync
+    log('Triggering initial sync');
     this.triggerSync();
 
     return unsubscribe;
