@@ -413,6 +413,100 @@ describe('StoryCacheManager', () => {
     });
   });
 
+  describe('loadAllCachedStories', () => {
+    it('returns empty array for empty cache', async () => {
+      mockCacheStorage.getIndex.mockResolvedValue({});
+
+      const stories = await StoryCacheManager.loadAllCachedStories();
+
+      expect(stories).toEqual([]);
+    });
+
+    it('loads and returns all cached stories', async () => {
+      mockCacheStorage.getIndex.mockResolvedValue({
+        'story-1': { cachedAt: 1000, lastRead: 1000, sizeBytes: 500000, spreadCount: 12, title: 'A' },
+        'story-2': { cachedAt: 2000, lastRead: 2000, sizeBytes: 300000, spreadCount: 10, title: 'B' },
+      });
+      mockCacheFiles.loadStoryMetadata
+        .mockResolvedValueOnce(createMockStory({ id: 'story-1', title: 'Story A', created_at: '2024-01-01T00:00:00Z' }))
+        .mockResolvedValueOnce(createMockStory({ id: 'story-2', title: 'Story B', created_at: '2024-01-02T00:00:00Z' }));
+      mockCacheStorage.updateLastRead.mockResolvedValue(undefined);
+
+      const stories = await StoryCacheManager.loadAllCachedStories();
+
+      expect(stories).toHaveLength(2);
+      expect(mockCacheFiles.loadStoryMetadata).toHaveBeenCalledTimes(2);
+    });
+
+    it('sorts stories by created_at descending (newest first)', async () => {
+      mockCacheStorage.getIndex.mockResolvedValue({
+        'story-old': { cachedAt: 1000, lastRead: 1000, sizeBytes: 500000, spreadCount: 12, title: 'Old' },
+        'story-new': { cachedAt: 2000, lastRead: 2000, sizeBytes: 300000, spreadCount: 10, title: 'New' },
+      });
+      mockCacheFiles.loadStoryMetadata
+        .mockResolvedValueOnce(createMockStory({ id: 'story-old', title: 'Old Story', created_at: '2024-01-01T00:00:00Z' }))
+        .mockResolvedValueOnce(createMockStory({ id: 'story-new', title: 'New Story', created_at: '2024-01-15T00:00:00Z' }));
+      mockCacheStorage.updateLastRead.mockResolvedValue(undefined);
+
+      const stories = await StoryCacheManager.loadAllCachedStories();
+
+      expect(stories[0].title).toBe('New Story');
+      expect(stories[1].title).toBe('Old Story');
+    });
+
+    it('filters out stories that fail to load', async () => {
+      mockCacheStorage.getIndex.mockResolvedValue({
+        'story-1': { cachedAt: 1000, lastRead: 1000, sizeBytes: 500000, spreadCount: 12, title: 'A' },
+        'story-2': { cachedAt: 2000, lastRead: 2000, sizeBytes: 300000, spreadCount: 10, title: 'B' },
+        'story-3': { cachedAt: 3000, lastRead: 3000, sizeBytes: 400000, spreadCount: 11, title: 'C' },
+      });
+      mockCacheFiles.loadStoryMetadata
+        .mockResolvedValueOnce(createMockStory({ id: 'story-1', title: 'Story A' }))
+        .mockResolvedValueOnce(null) // story-2 fails to load
+        .mockResolvedValueOnce(createMockStory({ id: 'story-3', title: 'Story C' }));
+      mockCacheStorage.updateLastRead.mockResolvedValue(undefined);
+
+      const stories = await StoryCacheManager.loadAllCachedStories();
+
+      expect(stories).toHaveLength(2);
+      expect(stories.map(s => s.id)).toContain('story-1');
+      expect(stories.map(s => s.id)).toContain('story-3');
+      expect(stories.map(s => s.id)).not.toContain('story-2');
+    });
+
+    it('loads stories in parallel for better performance', async () => {
+      // Create 5 stories to load
+      const index: Record<string, { cachedAt: number; lastRead: number; sizeBytes: number; spreadCount: number; title: string }> = {};
+      for (let i = 0; i < 5; i++) {
+        index[`story-${i}`] = { cachedAt: i * 1000, lastRead: i * 1000, sizeBytes: 500000, spreadCount: 12, title: `Story ${i}` };
+      }
+      mockCacheStorage.getIndex.mockResolvedValue(index);
+
+      // Track concurrent load count
+      let concurrentLoads = 0;
+      let maxConcurrent = 0;
+
+      mockCacheFiles.loadStoryMetadata.mockImplementation(async (storyId: string) => {
+        concurrentLoads++;
+        maxConcurrent = Math.max(maxConcurrent, concurrentLoads);
+        await new Promise(r => setTimeout(r, 20)); // Simulate I/O delay
+        concurrentLoads--;
+        return createMockStory({ id: storyId, title: `Story ${storyId}` });
+      });
+      mockCacheStorage.updateLastRead.mockResolvedValue(undefined);
+
+      const startTime = Date.now();
+      const stories = await StoryCacheManager.loadAllCachedStories();
+      const elapsed = Date.now() - startTime;
+
+      expect(stories).toHaveLength(5);
+      // If parallel: all 5 load concurrently, maxConcurrent should be 5, elapsed ~20ms
+      // If sequential: maxConcurrent would be 1, elapsed ~100ms (5 * 20ms)
+      expect(maxConcurrent).toBe(5); // All loads should happen concurrently
+      expect(elapsed).toBeLessThan(80); // Should complete much faster than sequential (100ms+)
+    });
+  });
+
   describe('ensureCacheSpace', () => {
     it('does nothing when there is enough space', async () => {
       mockCacheStorage.getIndex.mockResolvedValue({

@@ -180,17 +180,18 @@ export const StoryCacheManager = {
   /**
    * Load all cached stories from disk.
    * Returns array of stories with file:// URLs for illustrations.
+   * Loads stories in parallel for better performance.
    */
   loadAllCachedStories: async (): Promise<Story[]> => {
     const storyIds = await StoryCacheManager.getCachedStoryIds();
-    const stories: Story[] = [];
 
-    for (const storyId of storyIds) {
-      const story = await StoryCacheManager.loadCachedStory(storyId);
-      if (story) {
-        stories.push(story);
-      }
-    }
+    // Load all stories in parallel - file reads don't contend
+    const loadedStories = await Promise.all(
+      storyIds.map(storyId => StoryCacheManager.loadCachedStory(storyId))
+    );
+
+    // Filter out null results (stories that failed to load)
+    const stories = loadedStories.filter((story): story is Story => story !== null);
 
     // Sort by created_at descending (newest first) to match API behavior
     return stories.sort((a, b) => {
