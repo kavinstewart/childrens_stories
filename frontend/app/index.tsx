@@ -108,7 +108,7 @@ export default function StoryLibrary() {
       <SafeAreaView className="flex-1" edges={['top', 'left', 'right']}>
         <ScrollView
           className="flex-1"
-          contentContainerStyle={{ padding: 24 }}
+          contentContainerStyle={{ padding: 24, flexGrow: 1 }}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="always"
           refreshControl={
