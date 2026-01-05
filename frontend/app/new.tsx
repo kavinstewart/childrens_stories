@@ -61,7 +61,7 @@ function WiggleButton({ children, enabled, onPress, style }: {
 }
 
 // Helper to shuffle and pick N items from an array, assigning colors
-function pickRandomWithColors<T>(arr: T[], colors: typeof pillColors, count: number): (T & { color: typeof pillColors[0] })[] {
+function pickRandomWithColors<T>(arr: readonly T[], colors: typeof pillColors, count: number): (T & { color: (typeof pillColors)[number] })[] {
   const shuffled = [...arr].sort(() => Math.random() - 0.5);
   return shuffled.slice(0, count).map((item, index) => ({
     ...item,

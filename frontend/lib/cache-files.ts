@@ -38,13 +38,14 @@ export const cacheFiles = {
       }
       const info = await FileSystem.getInfoAsync(destPath);
       // Validate minimum size (< 1KB is likely an error response)
-      if (info.exists && info.size < 1000) {
-        console.error(`[Cache] Download too small for spread ${spreadNumber}: ${info.size} bytes (likely error response)`);
+      const fileSize = info.exists && 'size' in info ? info.size : 0;
+      if (info.exists && fileSize < 1000) {
+        console.error(`[Cache] Download too small for spread ${spreadNumber}: ${fileSize} bytes (likely error response)`);
         await FileSystem.deleteAsync(destPath, { idempotent: true });
         return { success: false, size: 0 };
       }
-      console.log(`[Cache] Downloaded spread ${spreadNumber}: ${info.size} bytes`);
-      return { success: true, size: info.exists ? info.size : 0 };
+      console.log(`[Cache] Downloaded spread ${spreadNumber}: ${fileSize} bytes`);
+      return { success: true, size: fileSize };
     } catch (error) {
       console.error(`[Cache] Exception downloading spread ${spreadNumber}:`, error);
       return { success: false, size: 0 };
@@ -111,7 +112,7 @@ export const cacheFiles = {
     let total = 0;
     for (const file of files) {
       const info = await FileSystem.getInfoAsync(`${dir}${file}`);
-      if (info.exists && !info.isDirectory) {
+      if (info.exists && !info.isDirectory && 'size' in info) {
         total += info.size || 0;
       }
     }
