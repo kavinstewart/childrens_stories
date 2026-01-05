@@ -14,9 +14,9 @@
  * - Idempotent (safe to call multiple times)
  */
 
-import { Story } from './api';
+import { Story, api } from './api';
 import { StoryCacheManager } from './story-cache';
-import { shouldSync } from './network-aware';
+import { shouldSync, subscribeToNetworkChanges } from './network-aware';
 
 export const SYNC_CONFIG = {
   /** Maximum concurrent story downloads (global limit) */
@@ -249,5 +249,37 @@ export const CacheSync = {
     state.activeDownloads.clear();
     state.lastSyncTime = 0;
     state.failedStories.clear();
+  },
+
+  /**
+   * Trigger a sync by fetching stories from API.
+   * Convenience method for when caller doesn't have stories already.
+   */
+  async triggerSync(): Promise<void> {
+    try {
+      const response = await api.listStories();
+      await this.syncIfNeeded(response.stories);
+    } catch {
+      // Silently fail - network may be unavailable
+    }
+  },
+
+  /**
+   * Start automatic sync with network listener.
+   * Call this once on app mount. Returns unsubscribe function.
+   */
+  startAutoSync(): () => void {
+    // Subscribe to network changes
+    const unsubscribe = subscribeToNetworkChanges(async (networkState) => {
+      // Trigger sync when WiFi connects
+      if (networkState.isConnected && networkState.type === 'wifi') {
+        await this.triggerSync();
+      }
+    });
+
+    // Trigger initial sync
+    this.triggerSync();
+
+    return unsubscribe;
   },
 };

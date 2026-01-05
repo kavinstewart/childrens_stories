@@ -12,6 +12,7 @@ import { useAuthStore } from '@/features/auth/store';
 import { StoryCacheManager } from '@/lib/story-cache';
 import { migrateFromAsyncStorage } from '@/lib/cache-storage';
 import { remoteLogger } from '@/lib/remote-logger';
+import { CacheSync } from '@/lib/cache-sync';
 
 function AuthGate({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -50,6 +51,14 @@ function AuthGate({ children }: { children: React.ReactNode }) {
       remoteLogger.init();
     }
   }, [isAuthenticated]);
+
+  // Start automatic cache sync when authenticated and cache is ready
+  useEffect(() => {
+    if (!isAuthenticated || !cacheReady) return;
+
+    const unsubscribe = CacheSync.startAutoSync();
+    return unsubscribe;
+  }, [isAuthenticated, cacheReady]);
 
   // Handle auth routing
   useEffect(() => {

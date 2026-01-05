@@ -18,15 +18,29 @@ jest.mock('../../lib/network-aware', () => ({
     autoDownloadEnabled: true,
     allowCellular: false,
   }),
+  subscribeToNetworkChanges: jest.fn().mockReturnValue(jest.fn()),
+}));
+
+jest.mock('../../lib/api', () => ({
+  api: {
+    listStories: jest.fn().mockResolvedValue({
+      stories: [],
+      total: 0,
+      limit: 10,
+      offset: 0,
+    }),
+  },
 }));
 
 // Import after mocks
 import { CacheSync, SYNC_CONFIG } from '../../lib/cache-sync';
 import { StoryCacheManager } from '../../lib/story-cache';
 import * as networkAware from '../../lib/network-aware';
+import { api } from '../../lib/api';
 
 const mockStoryCacheManager = StoryCacheManager as jest.Mocked<typeof StoryCacheManager>;
 const mockNetworkAware = networkAware as jest.Mocked<typeof networkAware>;
+const mockApi = api as jest.Mocked<typeof api>;
 
 // Helper to create test stories
 const createTestStory = (overrides: Partial<Story> = {}): Story => ({
@@ -180,6 +194,65 @@ describe('CacheSync', () => {
 
       expect(cacheOrder[0]).toBe('new');
       expect(cacheOrder[1]).toBe('old');
+    });
+  });
+
+  describe('triggerSync', () => {
+    it('fetches stories from API and syncs them', async () => {
+      const stories = [createTestStory({ id: 'api-story' })];
+      mockApi.listStories.mockResolvedValue({
+        stories,
+        total: 1,
+        limit: 10,
+        offset: 0,
+      });
+
+      await CacheSync.triggerSync();
+
+      expect(mockApi.listStories).toHaveBeenCalled();
+      expect(mockStoryCacheManager.cacheStory).toHaveBeenCalledWith(stories[0]);
+    });
+
+    it('silently fails when API call fails', async () => {
+      mockApi.listStories.mockRejectedValue(new Error('Network error'));
+
+      // Should not throw
+      await expect(CacheSync.triggerSync()).resolves.toBeUndefined();
+    });
+  });
+
+  describe('startAutoSync', () => {
+    it('subscribes to network changes', () => {
+      const unsubscribe = CacheSync.startAutoSync();
+
+      expect(mockNetworkAware.subscribeToNetworkChanges).toHaveBeenCalled();
+      expect(typeof unsubscribe).toBe('function');
+    });
+
+    it('triggers initial sync on start', async () => {
+      mockApi.listStories.mockResolvedValue({
+        stories: [createTestStory()],
+        total: 1,
+        limit: 10,
+        offset: 0,
+      });
+
+      CacheSync.startAutoSync();
+
+      // Give it a moment to trigger
+      await new Promise(r => setTimeout(r, 10));
+
+      expect(mockApi.listStories).toHaveBeenCalled();
+    });
+
+    it('returns unsubscribe function', () => {
+      const mockUnsubscribe = jest.fn();
+      mockNetworkAware.subscribeToNetworkChanges.mockReturnValue(mockUnsubscribe);
+
+      const unsubscribe = CacheSync.startAutoSync();
+      unsubscribe();
+
+      expect(mockUnsubscribe).toHaveBeenCalled();
     });
   });
 });
