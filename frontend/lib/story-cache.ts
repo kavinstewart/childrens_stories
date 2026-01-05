@@ -153,11 +153,13 @@ export const StoryCacheManager = {
 
   /**
    * Remove a story from the cache.
-   * Deletes all files and removes from index.
+   * Removes from index FIRST (fail-safe), then deletes files.
+   * If crash between: orphaned files are cleaned up by verifyCacheIntegrity().
    */
   evictStory: async (storyId: string): Promise<void> => {
-    await cacheFiles.deleteStoryDirectory(storyId);
+    // Remove from index first - ensures isStoryCached() returns false even if file delete fails
     await cacheStorage.removeStoryEntry(storyId);
+    await cacheFiles.deleteStoryDirectory(storyId);
   },
 
   /**
