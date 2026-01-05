@@ -104,18 +104,34 @@ export const cacheFiles = {
     await FileSystem.deleteAsync(dir, { idempotent: true });
   },
 
-  verifyStoryFiles: async (storyId: string, expectedSpreadCount: number): Promise<boolean> => {
+  verifyStoryFiles: async (storyId: string, _expectedSpreadCount: number): Promise<boolean> => {
     const dir = cacheFiles.getStoryDir(storyId);
     const dirInfo = await FileSystem.getInfoAsync(dir);
     if (!dirInfo.exists) return false;
 
-    const metaInfo = await FileSystem.getInfoAsync(`${dir}metadata.json`);
+    const metaPath = `${dir}metadata.json`;
+    const metaInfo = await FileSystem.getInfoAsync(metaPath);
     if (!metaInfo.exists) return false;
 
-    for (let i = 1; i <= expectedSpreadCount; i++) {
-      const spreadPath = cacheFiles.getSpreadPath(storyId, i);
-      const spreadInfo = await FileSystem.getInfoAsync(spreadPath);
-      if (!spreadInfo.exists) return false;
+    // Load metadata to find which spreads should have images
+    try {
+      const content = await FileSystem.readAsStringAsync(metaPath);
+      const story: Story = JSON.parse(content);
+
+      // Check that each spread WITH an illustration has a corresponding file
+      for (const spread of story.spreads || []) {
+        if (spread.illustration_url) {
+          const spreadPath = cacheFiles.getSpreadPath(storyId, spread.spread_number);
+          const spreadInfo = await FileSystem.getInfoAsync(spreadPath);
+          if (!spreadInfo.exists) {
+            console.log(`[Cache] Verification failed: missing spread ${spread.spread_number} for story ${storyId}`);
+            return false;
+          }
+        }
+      }
+    } catch (error) {
+      console.error(`[Cache] Verification failed: could not read metadata for story ${storyId}`, error);
+      return false;
     }
 
     return true;

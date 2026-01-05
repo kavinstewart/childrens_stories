@@ -96,12 +96,12 @@ export const StoryCacheManager = {
         const metadataSize = JSON.stringify(story).length;
         totalSize += metadataSize;
 
-        // Update index
+        // Update index - use count of spreads WITH illustrations (what we actually downloaded)
         const entry: CacheEntry = {
           cachedAt: Date.now(),
           lastRead: Date.now(),
           sizeBytes: totalSize,
-          spreadCount: story.spreads.length,
+          spreadCount: spreads.length, // spreads with illustrations, not total
           title: story.title || 'Untitled',
         };
         await cacheStorage.setStoryEntry(storyId, entry);
