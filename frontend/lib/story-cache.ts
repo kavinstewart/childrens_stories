@@ -103,8 +103,9 @@ export const StoryCacheManager = {
         return true;
       } catch (error) {
         console.error(`Failed to cache story ${storyId}:`, error);
-        // Cleanup partial download
+        // Cleanup partial data - remove from index first (atomic), then files
         try {
+          await cacheStorage.removeStoryEntry(storyId);
           await cacheFiles.deleteStoryDirectory(storyId);
         } catch {
           // Ignore cleanup errors
