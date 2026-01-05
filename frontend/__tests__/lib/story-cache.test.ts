@@ -833,6 +833,28 @@ describe('StoryCacheManager', () => {
       expect(mockCacheFiles.deleteStoryDirectory).toHaveBeenCalledWith('story-1');
       expect(mockCacheStorage.removeStoryEntry).toHaveBeenCalledWith('story-1');
     });
+
+    it('removes index entry before file deletion (index-first ordering for crash safety)', async () => {
+      // This tests the fail-safe ordering: index is removed first, so isStoryCached returns false
+      // even if we crash between index removal and file deletion
+      // This mirrors the ordering test for evictStory()
+      const callOrder: string[] = [];
+      mockCacheStorage.getIndex.mockResolvedValue({
+        'orphaned-story': { cachedAt: 1000, lastRead: 1000, sizeBytes: 500000, spreadCount: 12, title: 'Orphaned' },
+      });
+      mockCacheFiles.verifyStoryFiles.mockResolvedValue(false); // Mark as orphaned
+      mockCacheStorage.removeStoryEntry.mockImplementation(async () => {
+        callOrder.push('removeStoryEntry');
+      });
+      mockCacheFiles.deleteStoryDirectory.mockImplementation(async () => {
+        callOrder.push('deleteStoryDirectory');
+      });
+
+      await StoryCacheManager.verifyCacheIntegrity();
+
+      // Index should be removed BEFORE file deletion (crash-safe ordering)
+      expect(callOrder).toEqual(['removeStoryEntry', 'deleteStoryDirectory']);
+    });
   });
 
   describe('boostStoryPriority', () => {

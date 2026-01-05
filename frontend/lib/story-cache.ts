@@ -299,10 +299,10 @@ export const StoryCacheManager = {
       }
     }
 
-    // Remove orphaned entries
+    // Remove orphaned entries (index first for crash safety)
     for (const storyId of orphanedIds) {
-      await cacheFiles.deleteStoryDirectory(storyId);
       await cacheStorage.removeStoryEntry(storyId);
+      await cacheFiles.deleteStoryDirectory(storyId);
     }
   },
 
