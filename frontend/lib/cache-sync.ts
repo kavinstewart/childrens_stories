@@ -120,6 +120,12 @@ export const CacheSync = {
       return;
     }
 
+    // Check throttle - don't sync if we synced recently
+    const timeSinceLastSync = Date.now() - state.lastSyncTime;
+    if (state.lastSyncTime > 0 && timeSinceLastSync < SYNC_CONFIG.SYNC_THROTTLE_MS) {
+      return;
+    }
+
     // Check network conditions
     if (!await shouldSync()) {
       return;

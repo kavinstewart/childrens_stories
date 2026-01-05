@@ -145,6 +145,22 @@ describe('CacheSync', () => {
 
       expect(mockStoryCacheManager.cacheStory).toHaveBeenCalledTimes(2);
     });
+
+    it('throttles rapid sync calls within SYNC_THROTTLE_MS', async () => {
+      const story = createTestStory({ id: 'story-1' });
+
+      // First sync should succeed
+      await CacheSync.syncIfNeeded([story]);
+      expect(mockStoryCacheManager.cacheStory).toHaveBeenCalledTimes(1);
+
+      // Reset mock but not CacheSync state (don't call CacheSync.reset())
+      mockStoryCacheManager.cacheStory.mockClear();
+      mockStoryCacheManager.getCachedStoryIds.mockResolvedValue([]); // Story not cached
+
+      // Immediate second sync should be throttled (within 5 minute window)
+      await CacheSync.syncIfNeeded([story]);
+      expect(mockStoryCacheManager.cacheStory).not.toHaveBeenCalled();
+    });
   });
 
   describe('boostPriority', () => {
