@@ -1,6 +1,7 @@
 import { View, Text, Pressable, Image } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { api, Story, StoryRecommendation } from '@/lib/api';
+import { cacheFiles } from '@/lib/cache-files';
 import { useAuthStore } from '@/features/auth/store';
 
 // Color gradients for story cards based on index or id
@@ -64,13 +65,10 @@ export function StoryCard({
   const isIllustrated = story?.is_illustrated ?? recommendation?.is_illustrated ?? false;
   const status = story?.status;
 
-  // Get cover image URL - use cached file:// URL if available, otherwise API URL
-  // Cached stories have spreads with file:// URLs in illustration_url
-  const firstSpread = story?.spreads?.[0];
-  const cachedImageUrl = firstSpread?.illustration_url;
-  const isLocalFile = cachedImageUrl?.startsWith('file://');
+  // Get cover image URL - compute file:// path at render time for cached stories
+  const isCached = story?.isCached ?? false;
   const coverUrl = isIllustrated
-    ? (isLocalFile ? cachedImageUrl : api.getSpreadImageUrl(id, 1))
+    ? (isCached ? cacheFiles.getSpreadPath(id, 1) : api.getSpreadImageUrl(id, 1))
     : null;
 
   // Calculate section heights (70% illustration, 30% info - matches library)
@@ -112,7 +110,7 @@ export function StoryCard({
             <Image
               source={{
                 uri: coverUrl,
-                headers: (!isLocalFile && token) ? { Authorization: `Bearer ${token}` } : undefined,
+                headers: (!isCached && token) ? { Authorization: `Bearer ${token}` } : undefined,
               }}
               style={{ width: '100%', height: '100%' }}
               resizeMode="cover"

@@ -137,12 +137,14 @@ export const StoryCacheManager = {
 
   /**
    * Load a cached story from disk.
-   * Returns story with file:// URLs for illustrations.
+   * Returns story with isCached flag set - file:// paths computed at render time.
    * Updates lastRead timestamp for LRU tracking.
    */
   loadCachedStory: async (storyId: string): Promise<Story | null> => {
     const story = await cacheFiles.loadStoryMetadata(storyId);
     if (story) {
+      // Mark as cached so UI can compute file:// paths at render time
+      story.isCached = true;
       // Update lastRead timestamp
       await cacheStorage.updateLastRead(storyId);
     }

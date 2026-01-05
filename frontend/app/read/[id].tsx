@@ -61,7 +61,7 @@ export default function StoryReader() {
       if (cached) {
         const loaded = await StoryCacheManager.loadCachedStory(id);
         if (loaded) {
-          console.log(`[Cache] Loaded cached story with file:// URLs`);
+          console.log(`[Cache] Loaded cached story (isCached=true, URLs computed at render)`);
           setCachedStory(loaded);
         }
       }
@@ -71,7 +71,6 @@ export default function StoryReader() {
 
   // Trigger background caching when story loads (if eligible)
   // Only runs after cache check completes to avoid race condition
-  // Use networkStory to cache the original URLs, not the cached file:// URLs
   useEffect(() => {
     if (!cacheCheckComplete) return; // Wait for cache check to finish
     if (networkStory?.is_illustrated && networkStory.status === 'completed' && !isCached && !cacheTriggeredRef.current) {

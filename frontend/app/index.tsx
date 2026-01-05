@@ -21,7 +21,7 @@ export default function StoryLibrary() {
   const [cachedStoryMap, setCachedStoryMap] = useState<Map<string, Story>>(new Map());
   const [isLoadingCache, setIsLoadingCache] = useState(true); // Start true - always load cache on mount
 
-  // Always load cached stories on mount (for offline support and file:// URLs)
+  // Always load cached stories on mount (for offline support, stories marked isCached=true)
   useEffect(() => {
     StoryCacheManager.loadAllCachedStories()
       .then((stories) => {
@@ -48,11 +48,11 @@ export default function StoryLibrary() {
     }
     if (!networkStories) return undefined;
 
-    // Overlay cached stories onto network stories (cached have file:// URLs for images)
+    // Overlay cached stories onto network stories (cached have isCached=true for render-time file:// computation)
     return networkStories.map(networkStory => {
       const cachedVersion = cachedStoryMap.get(networkStory.id);
       if (cachedVersion) {
-        // Use cached version - it has file:// URLs for offline image display
+        // Use cached version - it has isCached=true for offline image display
         return cachedVersion;
       }
       return networkStory;

@@ -331,14 +331,15 @@ describe('StoryCacheManager', () => {
       expect(mockCacheStorage.updateLastRead).not.toHaveBeenCalled();
     });
 
-    it('returns story and updates lastRead timestamp', async () => {
+    it('returns story with isCached flag and updates lastRead timestamp', async () => {
       const cachedStory = createMockStory();
       mockCacheFiles.loadStoryMetadata.mockResolvedValue(cachedStory);
       mockCacheStorage.updateLastRead.mockResolvedValue(undefined);
 
       const result = await StoryCacheManager.loadCachedStory('test-story-123');
 
-      expect(result).toEqual(cachedStory);
+      expect(result).toEqual({ ...cachedStory, isCached: true });
+      expect(result?.isCached).toBe(true);
       expect(mockCacheStorage.updateLastRead).toHaveBeenCalledWith('test-story-123');
     });
   });

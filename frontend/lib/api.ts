@@ -65,6 +65,7 @@ export interface Story {
   is_illustrated: boolean;
   error_message?: string;
   progress?: StoryProgress;
+  isCached?: boolean;  // Runtime flag: true when story is loaded from cache
 }
 
 export interface StoryListResponse {

@@ -82,17 +82,7 @@ export const cacheFiles = {
     try {
       const content = await FileSystem.readAsStringAsync(path);
       const story: Story = JSON.parse(content);
-
-      // Transform spread illustration_url to file:// paths for offline display
-      if (story.spreads) {
-        story.spreads = story.spreads.map(spread => ({
-          ...spread,
-          illustration_url: spread.illustration_url
-            ? cacheFiles.getSpreadPath(storyId, spread.spread_number)
-            : spread.illustration_url,
-        }));
-      }
-
+      // Return original story with server URLs - file:// paths computed at render time
       return story;
     } catch {
       return null;
