@@ -24,7 +24,7 @@ export default function StoryReader() {
   const [currentSpread, setCurrentSpread] = useState(0);
 
   // Cache management - handles loading cached story and background caching
-  const { story, isCached, isCaching, getImageUrl } = useStoryCache(id, networkStory);
+  const { story, cachedStory, isCached, cacheCheckComplete, isCaching, getImageUrl } = useStoryCache(id, networkStory);
 
   const spreads = story?.spreads || [];
   const totalSpreads = spreads.length;
