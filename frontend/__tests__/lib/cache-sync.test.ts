@@ -244,6 +244,68 @@ describe('CacheSync', () => {
     });
   });
 
+  describe('network disconnect mid-sync', () => {
+    it('checks shouldSyncWithSettings at start of each outer loop iteration', async () => {
+      // When shouldSyncWithSettings returns false at the start of the loop,
+      // no downloads should start for that iteration.
+      // Note: The check happens per outer loop iteration, not per download.
+      // More granular cancellation would require AbortController (see bead story-j9ql).
+
+      mockNetworkAware.shouldSync.mockResolvedValue(true); // Initial check passes
+      mockNetworkAware.shouldSyncWithSettings.mockResolvedValue(false); // Loop check fails
+
+      const stories = [
+        createTestStory({ id: 'story-1' }),
+        createTestStory({ id: 'story-2' }),
+      ];
+
+      await CacheSync.syncIfNeeded(stories);
+
+      // No stories should be downloaded because shouldSyncWithSettings returns false
+      expect(mockStoryCacheManager.cacheStory).not.toHaveBeenCalled();
+    });
+
+    it('stops processing when shouldSyncWithSettings becomes false between batches', async () => {
+      // This test verifies the outer loop break works when downloads stay active
+      // long enough to hit the concurrency limit and exit the inner loop.
+      const stories = Array.from({ length: 6 }, (_, i) =>
+        createTestStory({ id: `story-${i}` })
+      );
+
+      let downloadCount = 0;
+      let networkAvailable = true;
+
+      // Downloads must stay active through the INTER_STORY_DELAY (500ms)
+      // so activeDownloads.size stays at 2, forcing exit from inner loop
+      mockStoryCacheManager.cacheStory.mockImplementation(async () => {
+        downloadCount++;
+        // Very long download so concurrency limit is reached and maintained
+        await new Promise(r => setTimeout(r, 2000));
+        // After 2 downloads complete, disable network
+        if (downloadCount >= 2) {
+          networkAvailable = false;
+        }
+        return true;
+      });
+
+      // Mock shouldSyncWithSettings to check our networkAvailable flag
+      mockNetworkAware.shouldSyncWithSettings.mockImplementation(async () => networkAvailable);
+
+      await CacheSync.syncIfNeeded(stories);
+
+      // With 2000ms downloads:
+      // - t=0: start s0, start s1 at t=500 (concurrency=2, exit inner loop)
+      // - Wait for one to complete via Promise.race
+      // - t=2000: s0 completes (count=1), outer loop checks network (still true)
+      // - Inner loop starts s2, s3
+      // - t=2500: s1 completes (count=2), network=false
+      // - t=4000: s2 completes, outer loop checks network (now false), break
+      // Expected downloads: 4 (s0, s1, s2, s3 started before network check fails)
+      expect(downloadCount).toBeGreaterThanOrEqual(2);
+      expect(downloadCount).toBeLessThan(6);
+    }, 30000);
+  });
+
   describe('priority ordering', () => {
     it('processes stories in order of creation (newest first)', async () => {
       const cacheOrder: string[] = [];
