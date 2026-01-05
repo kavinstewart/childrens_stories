@@ -107,11 +107,17 @@ export const cacheFiles = {
   verifyStoryFiles: async (storyId: string, _expectedSpreadCount: number): Promise<boolean> => {
     const dir = cacheFiles.getStoryDir(storyId);
     const dirInfo = await FileSystem.getInfoAsync(dir);
-    if (!dirInfo.exists) return false;
+    if (!dirInfo.exists) {
+      console.log(`[Cache] Verification failed: directory missing for story ${storyId}`);
+      return false;
+    }
 
     const metaPath = `${dir}metadata.json`;
     const metaInfo = await FileSystem.getInfoAsync(metaPath);
-    if (!metaInfo.exists) return false;
+    if (!metaInfo.exists) {
+      console.log(`[Cache] Verification failed: metadata.json missing for story ${storyId}`);
+      return false;
+    }
 
     // Load metadata to find which spreads should have images
     try {
@@ -134,6 +140,7 @@ export const cacheFiles = {
       return false;
     }
 
+    console.log(`[Cache] Verification passed for story ${storyId}`);
     return true;
   },
 
