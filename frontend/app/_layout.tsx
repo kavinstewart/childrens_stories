@@ -3,7 +3,7 @@ import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
+// GestureHandlerRootView removed - was causing touch issues inside ScrollView
 import { useFonts } from 'expo-font';
 import { View, ActivityIndicator } from 'react-native';
 import { useEffect, useState } from 'react';
@@ -105,28 +105,26 @@ export default function RootLayout() {
   }
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <QueryClientProvider client={queryClient}>
-        <SafeAreaProvider>
-          <StatusBar style="dark" />
-          <AuthGate>
-            <Stack
-              screenOptions={{
-                headerShown: false,
-                animation: 'fade',
+    <QueryClientProvider client={queryClient}>
+      <SafeAreaProvider>
+        <StatusBar style="dark" />
+        <AuthGate>
+          <Stack
+            screenOptions={{
+              headerShown: false,
+              animation: 'fade',
+            }}
+          >
+            <Stack.Screen
+              name="edit-prompt"
+              options={{
+                presentation: 'fullScreenModal',
+                animation: 'slide_from_bottom',
               }}
-            >
-              <Stack.Screen
-                name="edit-prompt"
-                options={{
-                  presentation: 'fullScreenModal',
-                  animation: 'slide_from_bottom',
-                }}
-              />
-            </Stack>
-          </AuthGate>
-        </SafeAreaProvider>
-      </QueryClientProvider>
-    </GestureHandlerRootView>
+            />
+          </Stack>
+        </AuthGate>
+      </SafeAreaProvider>
+    </QueryClientProvider>
   );
 }
