@@ -37,18 +37,11 @@ export const StoryCacheManager = {
       return cachingInProgress.get(storyId)!;
     }
 
-    // Create deferred promise and set in map BEFORE any async work
-    // This prevents race conditions where multiple calls pass the check above
-    let resolvePromise!: (value: boolean) => void;
-    const cachePromise = new Promise<boolean>(resolve => {
-      resolvePromise = resolve;
-    });
-    cachingInProgress.set(storyId, cachePromise);
-
     console.log(`[Cache] Starting cache for story ${storyId}`);
 
-    // Now start the async caching work
-    (async () => {
+    // Create the caching work as a self-contained promise
+    // This replaces the deferred pattern to ensure the promise always resolves
+    const cachePromise = (async (): Promise<boolean> => {
       try {
         // Ensure we have enough space (estimate based on spread count)
         const estimatedSize = (story.spreads?.length || 12) * ESTIMATED_SPREAD_SIZE;
@@ -61,8 +54,8 @@ export const StoryCacheManager = {
 
         // Download all images with concurrency limit
         // Only download spreads that have an illustration_url (some may be text-only)
-        const spreads = story.spreads.filter(s => s.illustration_url);
-        console.log(`[Cache] Downloading ${spreads.length} spreads (filtered from ${story.spreads.length} total)`);
+        const spreads = story.spreads!.filter(s => s.illustration_url);
+        console.log(`[Cache] Downloading ${spreads.length} spreads (filtered from ${story.spreads!.length} total)`);
         let totalSize = 0;
 
         for (let i = 0; i < spreads.length; i += DOWNLOAD_CONCURRENCY) {
@@ -89,7 +82,7 @@ export const StoryCacheManager = {
           totalSize += results.reduce((sum, r) => sum + r.size, 0);
         }
 
-        // Save metadata with transformed URLs
+        // Save metadata
         await cacheFiles.saveStoryMetadata(storyId, story);
 
         // Get metadata size
@@ -107,18 +100,25 @@ export const StoryCacheManager = {
         await cacheStorage.setStoryEntry(storyId, entry);
 
         console.log(`[Cache] Caching succeeded for story ${storyId}`);
-        resolvePromise(true);
+        return true;
       } catch (error) {
         console.error(`Failed to cache story ${storyId}:`, error);
         // Cleanup partial download
-        await cacheFiles.deleteStoryDirectory(storyId);
+        try {
+          await cacheFiles.deleteStoryDirectory(storyId);
+        } catch {
+          // Ignore cleanup errors
+        }
         console.log(`[Cache] Caching failed for story ${storyId}`);
-        resolvePromise(false);
+        return false;
       } finally {
-        // Remove from in-progress map when done
+        // Remove from in-progress map when done - this ALWAYS runs
         cachingInProgress.delete(storyId);
       }
     })();
+
+    // Set in map BEFORE returning so concurrent calls can deduplicate
+    cachingInProgress.set(storyId, cachePromise);
 
     return cachePromise;
   },
