@@ -491,6 +491,72 @@ describe('StoryCacheManager', () => {
     });
   });
 
+  describe('atomicity and crash recovery', () => {
+    it('removes index entry before file deletion (index-first ordering)', async () => {
+      // This tests the fail-safe ordering: index is removed first, so isStoryCached returns false
+      // even if we crash between index removal and file deletion
+      const callOrder: string[] = [];
+      mockCacheStorage.removeStoryEntry.mockImplementation(async () => {
+        callOrder.push('removeStoryEntry');
+      });
+      mockCacheFiles.deleteStoryDirectory.mockImplementation(async () => {
+        callOrder.push('deleteStoryDirectory');
+      });
+
+      await StoryCacheManager.evictStory('test-123');
+
+      // Index should be removed BEFORE file deletion
+      expect(callOrder).toEqual(['removeStoryEntry', 'deleteStoryDirectory']);
+      expect(mockCacheStorage.removeStoryEntry).toHaveBeenCalledWith('test-123');
+    });
+
+    it('cleans up index on directory creation failure', async () => {
+      const story = createMockStory();
+      mockCacheStorage.getIndex.mockResolvedValue({});
+      mockCacheFiles.ensureDirectoryExists.mockRejectedValue(new Error('Cannot create directory'));
+      mockCacheStorage.removeStoryEntry.mockResolvedValue(undefined);
+      mockCacheFiles.deleteStoryDirectory.mockResolvedValue(undefined);
+
+      const result = await StoryCacheManager.cacheStory(story);
+
+      expect(result).toBe(false);
+      // Cleanup should have been attempted
+      expect(mockCacheStorage.removeStoryEntry).toHaveBeenCalledWith('test-story-123');
+    });
+
+    it('cleans up index on metadata save failure', async () => {
+      const story = createMockStory();
+      mockCacheStorage.getIndex.mockResolvedValue({});
+      mockCacheFiles.ensureDirectoryExists.mockResolvedValue(undefined);
+      mockCacheFiles.downloadSpreadImage.mockResolvedValue({ success: true, size: 50000 });
+      mockCacheFiles.saveStoryMetadata.mockRejectedValue(new Error('Cannot save metadata'));
+      mockCacheStorage.removeStoryEntry.mockResolvedValue(undefined);
+      mockCacheFiles.deleteStoryDirectory.mockResolvedValue(undefined);
+
+      const result = await StoryCacheManager.cacheStory(story);
+
+      expect(result).toBe(false);
+      // Cleanup should have removed index entry and attempted file deletion
+      expect(mockCacheStorage.removeStoryEntry).toHaveBeenCalledWith('test-story-123');
+      expect(mockCacheFiles.deleteStoryDirectory).toHaveBeenCalledWith('test-story-123');
+    });
+
+    it('handles cleanup failure gracefully (no throw)', async () => {
+      const story = createMockStory();
+      mockCacheStorage.getIndex.mockResolvedValue({});
+      mockCacheFiles.ensureDirectoryExists.mockResolvedValue(undefined);
+      mockCacheFiles.downloadSpreadImage.mockResolvedValue({ success: false, size: 0 });
+      // Both cleanup operations fail
+      mockCacheStorage.removeStoryEntry.mockRejectedValue(new Error('Index error'));
+      mockCacheFiles.deleteStoryDirectory.mockRejectedValue(new Error('File error'));
+
+      // Should not throw despite cleanup failures
+      const result = await StoryCacheManager.cacheStory(story);
+
+      expect(result).toBe(false);
+    });
+  });
+
   describe('verifyCacheIntegrity', () => {
     it('does nothing for empty cache', async () => {
       mockCacheStorage.getIndex.mockResolvedValue({});
