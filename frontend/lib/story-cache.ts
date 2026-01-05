@@ -33,11 +33,8 @@ export const StoryCacheManager = {
 
     // Deduplicate concurrent requests - return existing promise if caching is in progress
     if (cachingInProgress.has(storyId)) {
-      console.log(`[Cache] Deduplicating cache request for story ${storyId}`);
       return cachingInProgress.get(storyId)!;
     }
-
-    console.log(`[Cache] Starting cache for story ${storyId}`);
 
     // Create the caching work as a self-contained promise
     // This replaces the deferred pattern to ensure the promise always resolves
@@ -48,19 +45,15 @@ export const StoryCacheManager = {
         await StoryCacheManager.ensureCacheSpace(estimatedSize);
 
         // Create directory
-        console.log(`[Cache] Creating directory for story ${storyId}`);
         await cacheFiles.ensureDirectoryExists(storyId);
-        console.log(`[Cache] Directory created for story ${storyId}, starting downloads`);
 
         // Download all images with concurrency limit
         // Only download spreads that have an illustration_url (some may be text-only)
         const spreads = story.spreads!.filter(s => s.illustration_url);
-        console.log(`[Cache] Downloading ${spreads.length} spreads (filtered from ${story.spreads!.length} total)`);
         let totalSize = 0;
 
         for (let i = 0; i < spreads.length; i += DOWNLOAD_CONCURRENCY) {
           const batch = spreads.slice(i, i + DOWNLOAD_CONCURRENCY);
-          console.log(`[Cache] Starting batch ${Math.floor(i / DOWNLOAD_CONCURRENCY) + 1}: spreads ${batch.map(s => s.spread_number).join(', ')}`);
           const results = await Promise.all(
             batch.map(spread => {
               const url = api.getSpreadImageUrl(
@@ -99,10 +92,8 @@ export const StoryCacheManager = {
         };
         await cacheStorage.setStoryEntry(storyId, entry);
 
-        console.log(`[Cache] Caching succeeded for story ${storyId}`);
         return true;
-      } catch (error) {
-        console.error(`Failed to cache story ${storyId}:`, error);
+      } catch {
         // Cleanup partial data - remove from index first (atomic), then files
         try {
           await cacheStorage.removeStoryEntry(storyId);
@@ -110,7 +101,6 @@ export const StoryCacheManager = {
         } catch {
           // Ignore cleanup errors
         }
-        console.log(`[Cache] Caching failed for story ${storyId}`);
         return false;
       } finally {
         // Remove from in-progress map when done - this ALWAYS runs
@@ -233,7 +223,6 @@ export const StoryCacheManager = {
 
       await StoryCacheManager.evictStory(storyId);
       freedSpace += entry.sizeBytes;
-      console.log(`Evicted story ${storyId} to free ${entry.sizeBytes} bytes`);
     }
   },
 
@@ -264,13 +253,8 @@ export const StoryCacheManager = {
 
     // Remove orphaned entries
     for (const storyId of orphanedIds) {
-      console.log(`Removing orphaned cache entry: ${storyId}`);
       await cacheFiles.deleteStoryDirectory(storyId);
       await cacheStorage.removeStoryEntry(storyId);
-    }
-
-    if (orphanedIds.length > 0) {
-      console.log(`Cache integrity check: removed ${orphanedIds.length} orphaned entries`);
     }
   },
 

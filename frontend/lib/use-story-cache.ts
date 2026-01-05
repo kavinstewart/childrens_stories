@@ -66,11 +66,9 @@ export function useStoryCache(
     setCacheState({ isCached: false, story: null, checkComplete: false });
 
     StoryCacheManager.isStoryCached(storyId).then(async (cached) => {
-      console.log(`[Cache] isStoryCached(${storyId}): ${cached}`);
       if (cached) {
         const loaded = await StoryCacheManager.loadCachedStory(storyId);
         if (loaded) {
-          console.log(`[Cache] Loaded cached story (isCached=true, URLs computed at render)`);
           // Set all cache state atomically
           setCacheState({ isCached: true, story: loaded, checkComplete: true });
           return;
@@ -91,10 +89,8 @@ export function useStoryCache(
     if (cacheState.isCached) return;
 
     setIsCaching(true);
-    console.log(`[Reader] Triggering cache for story ${networkStory.id}`);
     StoryCacheManager.cacheStory(networkStory)
       .then(async (success) => {
-        console.log(`[Reader] Cache result for story ${networkStory.id}: ${success ? 'succeeded' : 'failed'}`);
         if (success) {
           // Load and set atomically
           const loaded = await StoryCacheManager.loadCachedStory(networkStory.id);

@@ -69,20 +69,15 @@ export default function StoryReader() {
 
   const goBack = () => {
     if (showEndScreen) {
-      console.log(`[Reader] goBack: leaving end screen`);
       setShowEndScreen(false);
     } else {
-      const newSpread = Math.max(0, currentSpread - 1);
-      console.log(`[Reader] goBack: ${currentSpread + 1} -> ${newSpread + 1}`);
-      setCurrentSpread(newSpread);
+      setCurrentSpread(Math.max(0, currentSpread - 1));
     }
   };
   const goForward = () => {
     if (isLastSpread) {
-      console.log(`[Reader] goForward: entering end screen`);
       setShowEndScreen(true);
     } else {
-      console.log(`[Reader] goForward: ${currentSpread + 1} -> ${currentSpread + 2}`);
       setCurrentSpread(currentSpread + 1);
     }
   };
@@ -137,9 +132,6 @@ export default function StoryReader() {
 
   const isFirstSpread = currentSpread === 0 && !showEndScreen;
   const progressPercent = showEndScreen ? 100 : (totalSpreads > 0 ? ((currentSpread + 1) / totalSpreads) * 100 : 0);
-
-  // Debug logging for spread navigation
-  console.log(`[Reader] Render: spread=${currentSpread + 1}/${totalSpreads}, isCached=${isCached}, showEndScreen=${showEndScreen}, imageUrl=${imageUrl?.substring(0, 50)}...`);
 
   // Calculate card dimensions for recommendations
   const availableWidth = SCREEN_WIDTH - 48 - (CARD_GAP * (CARD_COUNT - 1)); // padding + gaps

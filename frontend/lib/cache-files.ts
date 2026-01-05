@@ -17,15 +17,7 @@ export const cacheFiles = {
 
   ensureDirectoryExists: async (storyId: string): Promise<void> => {
     const dir = cacheFiles.getStoryDir(storyId);
-    console.log(`[Cache] ensureDirectoryExists: creating ${dir}`);
-    try {
-      await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
-      const info = await FileSystem.getInfoAsync(dir);
-      console.log(`[Cache] ensureDirectoryExists: created ${dir}, exists=${info.exists}, isDirectory=${info.isDirectory}`);
-    } catch (error) {
-      console.error(`[Cache] ensureDirectoryExists: failed to create ${dir}:`, error);
-      throw error;
-    }
+    await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
   },
 
   downloadSpreadImage: async (
@@ -38,32 +30,25 @@ export const cacheFiles = {
     try {
       // Check directory exists before download
       const dirInfo = await FileSystem.getInfoAsync(dir);
-      console.log(`[Cache] Downloading spread ${spreadNumber}: dir=${dir}, dirExists=${dirInfo.exists}, destPath=${destPath}`);
       if (!dirInfo.exists) {
-        console.error(`[Cache] Directory does not exist for spread ${spreadNumber}: ${dir}`);
         return { success: false, size: 0 };
       }
-      console.log(`[Cache] Downloading spread ${spreadNumber} from: ${sourceUrl}`);
       const token = await authStorage.getToken();
       const result = await FileSystem.downloadAsync(sourceUrl, destPath, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       if (result.status !== 200) {
-        console.error(`[Cache] Download failed for spread ${spreadNumber}: HTTP ${result.status}`);
         return { success: false, size: 0 };
       }
       const info = await FileSystem.getInfoAsync(destPath);
       // Validate minimum size (< 1KB is likely an error response)
       const fileSize = info.exists && 'size' in info ? info.size : 0;
       if (info.exists && fileSize < 1000) {
-        console.error(`[Cache] Download too small for spread ${spreadNumber}: ${fileSize} bytes (likely error response)`);
         await FileSystem.deleteAsync(destPath, { idempotent: true });
         return { success: false, size: 0 };
       }
-      console.log(`[Cache] Downloaded spread ${spreadNumber}: ${fileSize} bytes`);
       return { success: true, size: fileSize };
-    } catch (error) {
-      console.error(`[Cache] Exception downloading spread ${spreadNumber}:`, error);
+    } catch {
       return { success: false, size: 0 };
     }
   },
@@ -98,14 +83,12 @@ export const cacheFiles = {
     const dir = cacheFiles.getStoryDir(storyId);
     const dirInfo = await FileSystem.getInfoAsync(dir);
     if (!dirInfo.exists) {
-      console.log(`[Cache] Verification failed: directory missing for story ${storyId}`);
       return false;
     }
 
     const metaPath = `${dir}metadata.json`;
     const metaInfo = await FileSystem.getInfoAsync(metaPath);
     if (!metaInfo.exists) {
-      console.log(`[Cache] Verification failed: metadata.json missing for story ${storyId}`);
       return false;
     }
 
@@ -120,17 +103,14 @@ export const cacheFiles = {
           const spreadPath = cacheFiles.getSpreadPath(storyId, spread.spread_number);
           const spreadInfo = await FileSystem.getInfoAsync(spreadPath);
           if (!spreadInfo.exists) {
-            console.log(`[Cache] Verification failed: missing spread ${spread.spread_number} for story ${storyId}`);
             return false;
           }
         }
       }
-    } catch (error) {
-      console.error(`[Cache] Verification failed: could not read metadata for story ${storyId}`, error);
+    } catch {
       return false;
     }
 
-    console.log(`[Cache] Verification passed for story ${storyId}`);
     return true;
   },
 };

@@ -24,7 +24,6 @@ export default function StoryLibrary() {
   useEffect(() => {
     StoryCacheManager.loadAllCachedStories()
       .then((stories) => {
-        console.log(`[Library] Loaded ${stories.length} cached stories`);
         setCachedStories(stories);
       })
       .finally(() => setIsLoadingCache(false));
