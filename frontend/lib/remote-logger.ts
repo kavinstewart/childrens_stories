@@ -7,6 +7,9 @@
 
 import { api } from './api';
 
+// Build identifier - update this when making changes to help debug which version is running
+const BUILD_ID = '2026-01-05T01:22:00Z';
+
 const BATCH_INTERVAL_MS = 5000; // Send every 5 seconds
 const MAX_BATCH_SIZE = 50; // Or when we hit 50 entries
 const MAX_QUEUE_SIZE = 500; // Don't let queue grow unbounded
@@ -131,7 +134,9 @@ export const remoteLogger = {
 
     startBatchTimer();
     isInitialized = true;
-    originalConsole.log('[RemoteLogger] Initialized');
+    originalConsole.log(`[RemoteLogger] Initialized (build: ${BUILD_ID})`);
+    // Also queue this so it appears in remote logs
+    queueLog('info', [`[RemoteLogger] Initialized (build: ${BUILD_ID})`]);
   },
 
   /**
