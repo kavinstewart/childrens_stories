@@ -33,7 +33,7 @@ function getAbsoluteSpreadUrl(
 
 // Convert expo-file-system URI to native path
 // expo-file-system returns file:// URIs but native downloader expects plain paths
-function uriToNativePath(uri: string): string {
+export function uriToNativePath(uri: string): string {
   // Strip file:// prefix if present
   if (uri.startsWith('file://')) {
     return uri.slice(7);

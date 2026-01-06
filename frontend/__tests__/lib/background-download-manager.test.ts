@@ -65,6 +65,7 @@ import { cacheFiles } from '../../lib/cache-files';
 import {
   BackgroundDownloadManager,
   DownloadCallbacks,
+  uriToNativePath,
 } from '../../lib/background-download-manager';
 
 const mockNativeDownloader = NativeDownloader as jest.Mocked<typeof NativeDownloader>;
@@ -360,5 +361,32 @@ describe('BackgroundDownloadManager', () => {
 
       expect(progress).toBeNull();
     });
+  });
+});
+
+describe('uriToNativePath', () => {
+  it('strips file:// prefix from URI', () => {
+    const result = uriToNativePath('file:///var/mobile/Containers/Data/doc/story.png');
+    expect(result).toBe('/var/mobile/Containers/Data/doc/story.png');
+  });
+
+  it('returns path unchanged if no file:// prefix', () => {
+    const result = uriToNativePath('/var/mobile/Containers/Data/doc/story.png');
+    expect(result).toBe('/var/mobile/Containers/Data/doc/story.png');
+  });
+
+  it('handles empty string', () => {
+    const result = uriToNativePath('');
+    expect(result).toBe('');
+  });
+
+  it('does not strip other URL schemes', () => {
+    const result = uriToNativePath('https://example.com/image.png');
+    expect(result).toBe('https://example.com/image.png');
+  });
+
+  it('only strips file:// at the start, not in the middle', () => {
+    const result = uriToNativePath('/path/with/file://in/middle.png');
+    expect(result).toBe('/path/with/file://in/middle.png');
   });
 });

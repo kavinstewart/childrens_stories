@@ -10,6 +10,20 @@ global.fetch = mockFetch;
 describe('getSpreadImageUrl', () => {
   const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://dev.exoselfsystems.com';
 
+  describe('returns absolute URL', () => {
+    it('always returns URL starting with https:// or http://', () => {
+      // This is critical - the native downloader requires absolute URLs
+      // Relative URLs like /stories/abc/spreads/1/image will fail
+      const url = api.getSpreadImageUrl('story-123', 1);
+      expect(url).toMatch(/^https?:\/\//);
+    });
+
+    it('never returns a relative URL', () => {
+      const url = api.getSpreadImageUrl('story-123', 1);
+      expect(url).not.toMatch(/^\/[^/]/); // Not starting with single slash
+    });
+  });
+
   describe('without timestamp (no cache busting)', () => {
     it('returns base URL without query params', () => {
       const url = api.getSpreadImageUrl('abc', 3);
