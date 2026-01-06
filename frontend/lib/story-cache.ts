@@ -9,6 +9,7 @@
 import { Story, api } from './api';
 import { cacheStorage, CacheEntry } from './cache-storage';
 import { cacheFiles } from './cache-files';
+import { downloadQueueStorage } from './download-queue-storage';
 // NOTE: Do NOT import CacheSync here - it creates a require cycle that can freeze the JS thread
 
 // Debug logging for story cache - set to false in production
@@ -262,14 +263,22 @@ export const StoryCacheManager = {
    */
   loadAllCachedStories: async (): Promise<Story[]> => {
     const storyIds = await StoryCacheManager.getCachedStoryIds();
+    log('loadAllCachedStories: found', storyIds.length, 'story IDs in index');
 
     // Load all stories in parallel - file reads don't contend
     const loadedStories = await Promise.all(
-      storyIds.map(storyId => StoryCacheManager.loadCachedStory(storyId))
+      storyIds.map(async storyId => {
+        const story = await StoryCacheManager.loadCachedStory(storyId);
+        if (!story) {
+          log('loadAllCachedStories: failed to load story', storyId);
+        }
+        return story;
+      })
     );
 
     // Filter out null results (stories that failed to load)
     const stories = loadedStories.filter((story): story is Story => story !== null);
+    log('loadAllCachedStories: successfully loaded', stories.length, 'of', storyIds.length, 'stories');
 
     // Sort by created_at descending (newest first) to match API behavior
     return stories.sort((a, b) => {
@@ -334,12 +343,15 @@ export const StoryCacheManager = {
 
   /**
    * Clear all cached stories.
+   * Also clears the download queue to ensure fresh downloads use correct paths.
    */
   clearAllCache: async (): Promise<void> => {
     const storyIds = await StoryCacheManager.getCachedStoryIds();
     for (const storyId of storyIds) {
       await StoryCacheManager.evictStory(storyId);
     }
+    // Clear download queue to ensure fresh downloads with correct paths
+    await downloadQueueStorage.clearAll();
   },
 
   /**

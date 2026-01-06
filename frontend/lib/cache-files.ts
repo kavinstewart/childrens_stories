@@ -49,8 +49,15 @@ export const cacheFiles = {
   },
 
   ensureDirectoryExists: async (storyId: string): Promise<void> => {
+    // Ensure parent 'stories/' directory exists first
+    const storiesDir = getStoriesDir();
+    if (!storiesDir.exists) {
+      storiesDir.create();
+    }
     const dir = getStoryDirectory(storyId);
-    dir.create();
+    if (!dir.exists) {
+      dir.create();
+    }
   },
 
   downloadSpreadImage: async (
@@ -108,7 +115,8 @@ export const cacheFiles = {
       const story: Story = JSON.parse(content);
       // Return original story with server URLs - file:// paths computed at render time
       return story;
-    } catch {
+    } catch (error) {
+      console.log('[cacheFiles] loadStoryMetadata failed for', storyId, ':', error);
       return null;
     }
   },

@@ -11,7 +11,7 @@
  * ensuring touch events remain responsive.
  */
 
-import { Story } from './api';
+import { Story, api } from './api';
 import { NativeDownloader } from './native-downloader';
 import {
   downloadQueueStorage,
@@ -20,6 +20,26 @@ import {
 } from './download-queue-storage';
 import { cacheFiles } from './cache-files';
 import { authStorage } from './auth-storage';
+
+// Get full absolute URL for a spread image
+// Uses api.getSpreadImageUrl to ensure correct base URL
+function getAbsoluteSpreadUrl(
+  storyId: string,
+  spreadNumber: number,
+  updatedAt?: string
+): string {
+  return api.getSpreadImageUrl(storyId, spreadNumber, updatedAt);
+}
+
+// Convert expo-file-system URI to native path
+// expo-file-system returns file:// URIs but native downloader expects plain paths
+function uriToNativePath(uri: string): string {
+  // Strip file:// prefix if present
+  if (uri.startsWith('file://')) {
+    return uri.slice(7);
+  }
+  return uri;
+}
 
 export interface DownloadCallbacks {
   /** Called when all spreads for a story have been downloaded */
@@ -201,8 +221,12 @@ export const BackgroundDownloadManager = {
       return;
     }
 
-    // Ensure directory exists
+    // Ensure directory exists (uses expo-file-system, creates at correct location)
     await cacheFiles.ensureDirectoryExists(storyId);
+
+    // Log the destination path for debugging
+    const samplePath = uriToNativePath(cacheFiles.getSpreadPath(storyId, 1));
+    console.log('[BackgroundDownloadManager] Download destination:', samplePath);
 
     // Save story metadata
     await cacheFiles.saveStoryMetadata(storyId, story);
@@ -219,12 +243,21 @@ export const BackgroundDownloadManager = {
 
     // Queue each spread
     for (const spread of spreadsWithImages) {
+      // Use absolute URL - the API returns relative paths like /stories/{id}/spreads/{num}/image
+      // but the native downloader needs full https:// URLs
+      const absoluteUrl = getAbsoluteSpreadUrl(
+        storyId,
+        spread.spread_number,
+        spread.illustration_updated_at
+      );
+      // Convert expo-file-system URI to native path (strip file:// prefix)
+      const destination = uriToNativePath(cacheFiles.getSpreadPath(storyId, spread.spread_number));
       const spreadEntry: SpreadDownloadEntry = {
         storyId,
         spreadNumber: spread.spread_number,
         status: 'queued',
-        url: spread.illustration_url!,
-        destination: cacheFiles.getSpreadPath(storyId, spread.spread_number),
+        url: absoluteUrl,
+        destination,
       };
       await downloadQueueStorage.queueSpread(spreadEntry);
     }

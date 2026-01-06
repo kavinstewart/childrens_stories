@@ -58,7 +58,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   }, [isAuthenticated]);
 
   // Start automatic cache sync when authenticated and cache is ready
-  // Uses polling instead of netinfo addEventListener (which blocks touch on new arch)
+  // Uses polling (NetInfo event listeners were blocking touch on new arch)
   useEffect(() => {
     if (!isAuthenticated || !cacheReady) return;
 
