@@ -49,8 +49,7 @@
             ]
           }
         }
-      ],
-      "./modules/audio"
+      ]
     ],
     "extra": {
       "router": {},
