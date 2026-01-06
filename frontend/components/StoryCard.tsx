@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { View, Text, Image, Pressable } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { api, Story, StoryRecommendation } from '@/lib/api';
@@ -65,11 +66,21 @@ export function StoryCard({
   const isIllustrated = story?.is_illustrated ?? recommendation?.is_illustrated ?? false;
   const status = story?.status;
 
-  // Get cover image URL - compute file:// path at render time for cached stories
+  // Get cover image URLs - compute file:// path at render time for cached stories
   const isCached = story?.isCached ?? false;
+  const cachedUrl = isCached ? cacheFiles.getSpreadPath(id, 1) : null;
+  const networkUrl = api.getSpreadImageUrl(id, 1);
+
+  // Track if cached image failed to load (fallback to network)
+  const [useFallback, setUseFallback] = useState(false);
+
+  // Use cached URL first, fall back to network if cached fails or not cached
   const coverUrl = isIllustrated
-    ? (isCached ? cacheFiles.getSpreadPath(id, 1) : api.getSpreadImageUrl(id, 1))
+    ? (cachedUrl && !useFallback ? cachedUrl : networkUrl)
     : null;
+
+  // Determine if we need auth headers (only for network URLs)
+  const needsAuth = !cachedUrl || useFallback;
 
   // Calculate section heights (70% illustration, 30% info - matches library)
   const illustrationHeight = height * 0.70;
@@ -110,10 +121,16 @@ export function StoryCard({
             <Image
               source={{
                 uri: coverUrl,
-                headers: (!isCached && token) ? { Authorization: `Bearer ${token}` } : undefined,
+                headers: (needsAuth && token) ? { Authorization: `Bearer ${token}` } : undefined,
               }}
               style={{ width: '100%', height: '100%' }}
               resizeMode="cover"
+              onError={() => {
+                // If cached image fails, fall back to network URL
+                if (cachedUrl && !useFallback) {
+                  setUseFallback(true);
+                }
+              }}
             />
           ) : (
             <LinearGradient
