@@ -119,9 +119,9 @@ export default function StoryLibrary() {
                 <Text className="text-2xl">{'⚙️'}</Text>
               </Pressable>
 
-              {/* New Story Button */}
+              {/* New Story Button - routes to voice screen by default */}
               <Pressable
-                onPress={() => router.push('/new')}
+                onPress={() => router.push('/new-voice')}
                 className="bg-purple-600 py-4 px-6 rounded-2xl"
                 style={({ pressed }) => ({
                   opacity: pressed ? 0.8 : 1,
