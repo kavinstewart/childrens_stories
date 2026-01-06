@@ -1,12 +1,11 @@
 /**
  * React hook for Hume EVI chat integration
  *
- * Manages WebSocket connection to Hume EVI, handles audio streaming
- * via native module, and processes messages and tool calls.
+ * Uses React Native's built-in WebSocket (not the Hume JS SDK which requires Node.js).
+ * Audio handling is done via the native AudioModule.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Hume, HumeClient } from 'hume';
 import { Platform } from 'react-native';
 
 import AudioModule from '../../modules/audio';
@@ -19,9 +18,30 @@ import type {
   UseEviChatReturn,
 } from './types';
 
+// Hume EVI WebSocket endpoint
+const EVI_WEBSOCKET_URL = 'wss://api.hume.ai/v0/evi/chat';
+
 // Audio format constants matching native module
 const SAMPLE_RATE = 48000;
 const CHANNELS = 1;
+
+/**
+ * EVI WebSocket message types (incoming)
+ */
+interface EviMessage {
+  type: string;
+  // audio_output
+  data?: string;
+  // user_message, assistant_message
+  message?: { content?: string };
+  // tool_call
+  tool_call_id?: string;
+  name?: string;
+  parameters?: string;
+  // error
+  error?: string;
+  code?: string;
+}
 
 /**
  * Hook for managing Hume EVI voice chat sessions
@@ -36,10 +56,10 @@ export function useEviChat(options: UseEviChatOptions): UseEviChatReturn {
   const [isMuted, setIsMuted] = useState(false);
 
   // Refs for WebSocket, cleanup, and state guards
-  const socketRef = useRef<Hume.empathicVoice.chat.ChatSocket | null>(null);
+  const socketRef = useRef<WebSocket | null>(null);
   const audioListenerRef = useRef<{ remove: () => void } | null>(null);
-  const isConnectingRef = useRef(false); // Guard against rapid connect calls
-  const isMountedRef = useRef(true); // Track mount state for async operations
+  const isConnectingRef = useRef(false);
+  const isMountedRef = useRef(true);
 
   /**
    * Add a message to the chat history
@@ -55,10 +75,20 @@ export function useEviChat(options: UseEviChatOptions): UseEviChatReturn {
   }, []);
 
   /**
+   * Send a message through the WebSocket
+   */
+  const sendMessage = useCallback((type: string, payload: Record<string, unknown> = {}) => {
+    const socket = socketRef.current;
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({ type, ...payload }));
+    }
+  }, []);
+
+  /**
    * Handle incoming EVI messages
    */
   const handleMessage = useCallback(
-    (message: Hume.empathicVoice.SubscribeEvent) => {
+    (message: EviMessage) => {
       switch (message.type) {
         case 'audio_output':
           // Queue audio for playback via native module
@@ -90,7 +120,7 @@ export function useEviChat(options: UseEviChatOptions): UseEviChatReturn {
 
         case 'tool_call':
           // Handle tool call if handler provided
-          if (onToolCall && message.toolCallId && message.name) {
+          if (onToolCall && message.tool_call_id && message.name) {
             let parameters: Record<string, unknown> = {};
             if (message.parameters) {
               try {
@@ -100,7 +130,7 @@ export function useEviChat(options: UseEviChatOptions): UseEviChatReturn {
               }
             }
             const toolCall: ToolCall = {
-              toolCallId: message.toolCallId,
+              toolCallId: message.tool_call_id,
               name: message.name,
               parameters,
             };
@@ -108,15 +138,15 @@ export function useEviChat(options: UseEviChatOptions): UseEviChatReturn {
             onToolCall(toolCall)
               .then((result) => {
                 // Send tool response back to EVI
-                socketRef.current?.sendToolResponseMessage({
-                  toolCallId: toolCall.toolCallId,
+                sendMessage('tool_response', {
+                  tool_call_id: toolCall.toolCallId,
                   content: result,
                 });
               })
               .catch((err) => {
                 console.error('Tool call failed:', err);
-                socketRef.current?.sendToolResponseMessage({
-                  toolCallId: toolCall.toolCallId,
+                sendMessage('tool_response', {
+                  tool_call_id: toolCall.toolCallId,
                   content: JSON.stringify({ error: err.message }),
                 });
               });
@@ -125,30 +155,25 @@ export function useEviChat(options: UseEviChatOptions): UseEviChatReturn {
 
         case 'error':
           console.error('EVI error:', message);
-          setError(new Error(message.message || 'Unknown EVI error'));
+          setError(new Error(message.error || 'Unknown EVI error'));
           break;
       }
     },
-    [addMessage, onToolCall]
+    [addMessage, onToolCall, sendMessage]
   );
 
   /**
    * Handle audio input from native module
-   * Note: Uses socketRef directly to avoid stale closure issues with status state
    */
   const handleAudioInput = useCallback((event: { base64EncodedAudio: string }) => {
-    // Check socketRef directly - it's always current, unlike status which could be stale
-    const socket = socketRef.current;
-    if (socket) {
-      socket.sendAudioInput({ data: event.base64EncodedAudio });
-    }
-  }, []);
+    sendMessage('audio_input', { data: event.base64EncodedAudio });
+  }, [sendMessage]);
 
   /**
    * Connect to Hume EVI
    */
   const connect = useCallback(async () => {
-    // Use ref to guard against rapid successive calls (avoids stale closure issues)
+    // Guard against rapid successive calls
     if (isConnectingRef.current || socketRef.current) {
       return;
     }
@@ -159,7 +184,7 @@ export function useEviChat(options: UseEviChatOptions): UseEviChatReturn {
     setMessages([]);
 
     try {
-      // Check platform - EVI only supported on iOS for now
+      // Check platform - EVI only supported on iOS and web for now
       if (Platform.OS !== 'ios' && Platform.OS !== 'web') {
         throw new Error('EVI is only supported on iOS and web');
       }
@@ -173,21 +198,17 @@ export function useEviChat(options: UseEviChatOptions): UseEviChatReturn {
       // Fetch access token from backend
       const tokenResponse = await api.getHumeToken();
 
-      // Create Hume client with access token
-      const client = new HumeClient({
-        accessToken: tokenResponse.access_token,
-      });
+      // Build WebSocket URL with config ID and access token
+      // Note: Token in query param is the documented Hume approach for WebSocket auth
+      // (WebSocket API doesn't support custom headers in browsers/React Native)
+      // See: https://dev.hume.ai/docs/introduction/api-key
+      const wsUrl = `${EVI_WEBSOCKET_URL}?config_id=${encodeURIComponent(configId)}&access_token=${encodeURIComponent(tokenResponse.access_token)}`;
 
-      // Connect to EVI chat
-      const socket = client.empathicVoice.chat.connect({
-        configId,
-      });
-
+      // Create WebSocket connection
+      const socket = new WebSocket(wsUrl);
       socketRef.current = socket;
 
-      // Set up event handlers
-      socket.on('open', async () => {
-        // Check if component still mounted before updating state
+      socket.onopen = async () => {
         if (!isMountedRef.current) {
           socket.close();
           return;
@@ -201,18 +222,18 @@ export function useEviChat(options: UseEviChatOptions): UseEviChatReturn {
           name: tool.name,
           description: tool.description,
           parameters: JSON.stringify(tool.parameters),
-          fallbackContent: tool.fallbackContent,
+          fallback_content: tool.fallbackContent,
         }));
 
         // Send session settings with audio encoding info
-        socket.sendSessionSettings({
+        sendMessage('session_settings', {
           audio: {
             encoding: 'linear16',
-            sampleRate: SAMPLE_RATE,
+            sample_rate: SAMPLE_RATE,
             channels: CHANNELS,
           },
           ...(sessionSettings?.systemPrompt && {
-            systemPrompt: sessionSettings.systemPrompt,
+            system_prompt: sessionSettings.systemPrompt,
           }),
           ...(humeTools && {
             tools: humeTools,
@@ -226,20 +247,27 @@ export function useEviChat(options: UseEviChatOptions): UseEviChatReturn {
         if (isMountedRef.current) {
           setStatus('connected');
         }
-      });
+      };
 
-      socket.on('message', handleMessage);
+      socket.onmessage = (event) => {
+        try {
+          const message = JSON.parse(event.data) as EviMessage;
+          handleMessage(message);
+        } catch (e) {
+          console.error('Failed to parse EVI message:', e);
+        }
+      };
 
-      socket.on('error', (err) => {
-        console.error('EVI WebSocket error:', err);
+      socket.onerror = (event) => {
+        console.error('EVI WebSocket error:', event);
         isConnectingRef.current = false;
         if (isMountedRef.current) {
-          setError(err instanceof Error ? err : new Error(String(err)));
+          setError(new Error('WebSocket connection error'));
           setStatus('error');
         }
-      });
+      };
 
-      socket.on('close', () => {
+      socket.onclose = () => {
         console.log('EVI WebSocket closed');
         isConnectingRef.current = false;
         socketRef.current = null;
@@ -247,7 +275,7 @@ export function useEviChat(options: UseEviChatOptions): UseEviChatReturn {
           setStatus('disconnected');
         }
         AudioModule.stopRecording().catch(console.error);
-      });
+      };
 
       // Set up audio input listener
       const subscription = AudioModule.addListener('onAudioInput', handleAudioInput);
@@ -260,7 +288,7 @@ export function useEviChat(options: UseEviChatOptions): UseEviChatReturn {
         setStatus('error');
       }
     }
-  }, [configId, handleMessage, handleAudioInput, sessionSettings]);
+  }, [configId, handleMessage, handleAudioInput, sendMessage, sessionSettings]);
 
   /**
    * Disconnect from Hume EVI
@@ -311,13 +339,11 @@ export function useEviChat(options: UseEviChatOptions): UseEviChatReturn {
    * Send tool response (for external tool call handling)
    */
   const sendToolResponse = useCallback((toolCallId: string, content: string) => {
-    if (socketRef.current) {
-      socketRef.current.sendToolResponseMessage({
-        toolCallId,
-        content,
-      });
-    }
-  }, []);
+    sendMessage('tool_response', {
+      tool_call_id: toolCallId,
+      content,
+    });
+  }, [sendMessage]);
 
   // Track mount state and cleanup on unmount
   useEffect(() => {
