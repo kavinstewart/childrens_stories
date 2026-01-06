@@ -1,8 +1,8 @@
 import { View, Text, TextInput, ScrollView, ActivityIndicator, StyleProp, ViewStyle, Pressable } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -69,14 +69,34 @@ function pickRandomWithColors<T>(arr: readonly T[], colors: typeof pillColors, c
   }));
 }
 
+// Valid fallback messages (whitelist for security)
+const VALID_FALLBACK_MESSAGES = new Set([
+  'Voice unavailable - microphone permission denied',
+  'Voice unavailable - connection failed',
+  'Voice unavailable - connection timeout',
+]);
+
 export default function NewStory() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { fallback } = useLocalSearchParams<{ fallback?: string }>();
   const [prompt, setPrompt] = useState('');
+
+  // Only show banner if fallback is a valid whitelisted message
+  const validFallbackMessage = fallback && VALID_FALLBACK_MESSAGES.has(fallback) ? fallback : null;
+  const [showFallbackBanner, setShowFallbackBanner] = useState(!!validFallbackMessage);
   // Pick 4 random inspiration prompts on mount with colors
   const [visiblePrompts] = useState(() => pickRandomWithColors(inspirationPrompts, pillColors, 4));
 
   const createStory = useCreateStory();
+
+  // Auto-dismiss fallback banner after 5 seconds
+  useEffect(() => {
+    if (showFallbackBanner) {
+      const timer = setTimeout(() => setShowFallbackBanner(false), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [showFallbackBanner]);
 
   const canCreate = prompt.trim().length > 0;
 
@@ -115,6 +135,35 @@ export default function NewStory() {
 
       <View style={{ flex: 1, paddingTop: insets.top, paddingLeft: insets.left, paddingRight: insets.right }}>
         <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 24 }}>
+          {/* Voice Fallback Banner */}
+          {showFallbackBanner && validFallbackMessage && (
+            <Pressable
+              onPress={() => setShowFallbackBanner(false)}
+              style={{
+                backgroundColor: 'rgba(124, 58, 237, 0.1)',
+                borderRadius: 12,
+                paddingHorizontal: 16,
+                paddingVertical: 12,
+                marginBottom: 16,
+                flexDirection: 'row',
+                alignItems: 'center',
+              }}
+            >
+              <Text style={{ fontSize: 18, marginRight: 8 }}>🎤</Text>
+              <Text
+                style={{
+                  fontFamily: fontFamily.nunito,
+                  fontSize: 14,
+                  color: '#6B7280',
+                  flex: 1,
+                }}
+              >
+                {validFallbackMessage}
+              </Text>
+              <Text style={{ fontSize: 14, color: '#9CA3AF' }}>✕</Text>
+            </Pressable>
+          )}
+
           {/* Header */}
           <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 24 }}>
             <Pressable

@@ -129,6 +129,9 @@ function MessageBubble({ message }: { message: ChatMessage }) {
   );
 }
 
+// Auto-fallback timeout (how long to wait before auto-redirect on connection issues)
+const AUTO_FALLBACK_TIMEOUT_MS = 8000;
+
 export default function NewVoiceStory() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -199,10 +202,49 @@ export default function NewVoiceStory() {
   }, [disconnect]);
 
   // Navigate to text input if not on supported platform
-  const handleSwitchToText = () => {
+  const handleSwitchToText = useCallback((reason?: string) => {
     disconnect();
-    router.replace('/new');
-  };
+    if (reason) {
+      router.replace(`/new?fallback=${encodeURIComponent(reason)}`);
+    } else {
+      router.replace('/new');
+    }
+  }, [disconnect, router]);
+
+  // Auto-fallback on error conditions
+  useEffect(() => {
+    if (!error || isCreating) return;
+
+    const errorMessage = error.message?.toLowerCase() || '';
+
+    // Immediate fallback for permission denied
+    if (errorMessage.includes('permission denied') || errorMessage.includes('microphone')) {
+      handleSwitchToText('Voice unavailable - microphone permission denied');
+      return;
+    }
+
+    // Timeout-based fallback for connection errors
+    const timeoutId = setTimeout(() => {
+      if (status === 'error') {
+        handleSwitchToText('Voice unavailable - connection failed');
+      }
+    }, AUTO_FALLBACK_TIMEOUT_MS);
+
+    return () => clearTimeout(timeoutId);
+  }, [error, status, isCreating, handleSwitchToText]);
+
+  // Auto-fallback if still connecting after timeout (WebSocket timeout)
+  useEffect(() => {
+    if (status !== 'connecting') return;
+
+    const timeoutId = setTimeout(() => {
+      if (status === 'connecting') {
+        handleSwitchToText('Voice unavailable - connection timeout');
+      }
+    }, AUTO_FALLBACK_TIMEOUT_MS);
+
+    return () => clearTimeout(timeoutId);
+  }, [status, handleSwitchToText]);
 
   // Show unsupported platform message
   if (Platform.OS !== 'ios' && Platform.OS !== 'web') {
@@ -242,7 +284,7 @@ export default function NewVoiceStory() {
           >
             Voice story creation is only available on iOS devices.
           </Text>
-          <Pressable onPress={handleSwitchToText}>
+          <Pressable onPress={() => handleSwitchToText()}>
             <LinearGradient
               colors={['#EC4899', '#8B5CF6']}
               start={{ x: 0, y: 0 }}
@@ -423,7 +465,7 @@ export default function NewVoiceStory() {
 
           {/* Type instead button */}
           <Pressable
-            onPress={handleSwitchToText}
+            onPress={() => handleSwitchToText()}
             style={{
               backgroundColor: 'rgba(255,255,255,0.8)',
               paddingHorizontal: 20,
