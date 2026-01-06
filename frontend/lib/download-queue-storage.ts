@@ -239,6 +239,27 @@ export const downloadQueueStorage = {
   },
 
   /**
+   * Get all incomplete stories (queued or downloading).
+   */
+  getIncompleteStories: async (): Promise<DownloadQueueEntry[]> => {
+    const database = getDb();
+    const rows = database.getAllSync<{
+      story_id: string;
+      status: string;
+      total_spreads: number;
+      completed_spreads: number;
+      queued_at: number;
+      started_at: number | null;
+      completed_at: number | null;
+      last_error: string | null;
+      retry_count: number;
+      next_retry_at: number | null;
+    }>("SELECT * FROM download_queue WHERE status IN ('queued', 'downloading') ORDER BY queued_at ASC");
+
+    return rows.map(rowToQueueEntry);
+  },
+
+  /**
    * Get download status for a specific story.
    */
   getStoryDownloadStatus: async (storyId: string): Promise<DownloadQueueEntry | null> => {
