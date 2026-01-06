@@ -34,6 +34,28 @@ cd frontend && npx playwright test        # E2E tests (requires APP_PIN in .env)
 - **Task tracking**: Use `bd` for all planning (not TodoWrite)
 - **Testing**: Run relevant tests before closing implementation work
 
+## Services (systemd)
+
+All services run as **user-level systemd** units (not system-level):
+
+```bash
+# List services
+systemctl --user list-units --type=service | grep -E "stories|expo"
+
+# Manage services
+systemctl --user restart expo-frontend.service
+systemctl --user status stories-backend.service
+journalctl --user -u expo-frontend.service -f  # Follow logs
+```
+
+| Service | Description |
+|---------|-------------|
+| `expo-frontend.service` | Metro bundler + Expo tunnel (port 8081) |
+| `stories-backend.service` | FastAPI backend |
+| `stories-worker.service` | ARQ background worker |
+
+Service files: `~/.config/systemd/user/*.service`
+
 ## Task Tracking with `bd`
 ```bash
 bd create --title="..." --type=task|bug|feature
