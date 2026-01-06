@@ -1,6 +1,6 @@
-import { View, Text, TextInput, Pressable, ScrollView, ActivityIndicator, StyleProp, ViewStyle } from 'react-native';
+import { View, Text, TextInput, ScrollView, ActivityIndicator, StyleProp, ViewStyle, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useState } from 'react';
 import Animated, {
@@ -71,6 +71,7 @@ function pickRandomWithColors<T>(arr: readonly T[], colors: typeof pillColors, c
 
 export default function NewStory() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [prompt, setPrompt] = useState('');
   // Pick 4 random inspiration prompts on mount with colors
   const [visiblePrompts] = useState(() => pickRandomWithColors(inspirationPrompts, pillColors, 4));
@@ -112,7 +113,7 @@ export default function NewStory() {
         <Text style={{ fontSize: 20, opacity: 0.25 }}>💫</Text>
       </FloatingElement>
 
-      <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right']}>
+      <View style={{ flex: 1, paddingTop: insets.top, paddingLeft: insets.left, paddingRight: insets.right }}>
         <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 24 }}>
           {/* Header */}
           <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 24 }}>
@@ -324,7 +325,7 @@ export default function NewStory() {
             </Text>
           )}
         </ScrollView>
-      </SafeAreaView>
+      </View>
     </LinearGradient>
   );
 }

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
-import { View, Text, Pressable, Alert, ActivityIndicator, Switch } from 'react-native';
+import { View, Text, Alert, ActivityIndicator, Switch, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StoryCacheManager } from '@/lib/story-cache';
 import { fontFamily } from '@/lib/fonts';
 import { getSyncSettings, setSyncSettings, SyncSettings, DEFAULT_SYNC_SETTINGS } from '@/lib/network-aware';
@@ -15,6 +15,7 @@ const formatSize = (bytes: number): string => {
 
 export default function Settings() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [cacheSize, setCacheSize] = useState<number | null>(null);
   const [storyCount, setStoryCount] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -96,7 +97,7 @@ export default function Settings() {
   };
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#1a1a2e' }}>
+    <View style={{ flex: 1, backgroundColor: '#1a1a2e', paddingTop: insets.top, paddingLeft: insets.left, paddingRight: insets.right }}>
       {/* Header */}
       <View style={{
         flexDirection: 'row',
@@ -318,6 +319,6 @@ export default function Settings() {
           )}
         </View>
       </View>
-    </SafeAreaView>
+    </View>
   );
 }

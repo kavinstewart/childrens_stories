@@ -1,4 +1,4 @@
-import { View, Text, Pressable, Image } from 'react-native';
+import { View, Text, Image, Pressable } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { api, Story, StoryRecommendation } from '@/lib/api';
 import { cacheFiles } from '@/lib/cache-files';

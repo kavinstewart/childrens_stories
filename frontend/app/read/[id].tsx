@@ -1,4 +1,4 @@
-import { View, Text, Pressable, Image, ActivityIndicator, Dimensions } from 'react-native';
+import { View, Text, Image, ActivityIndicator, Dimensions, Pressable } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useState, useEffect } from 'react';
