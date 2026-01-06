@@ -1,23 +1,22 @@
 /**
  * CacheSync - Automatic background sync manager for offline story caching
  *
- * Automatically downloads stories for offline access when:
- * - App is in foreground
- * - Network conditions allow (WiFi by default, cellular if enabled)
- * - User has auto-download enabled
+ * Uses BackgroundDownloadManager for native background downloads that don't
+ * block the JS thread or touch events.
  *
  * Features:
- * - Global concurrency limit (2 concurrent downloads)
+ * - Event-driven download completion via callbacks
  * - Priority ordering (newest stories first)
- * - Network-aware (stops if WiFi disconnects)
  * - Failure tracking with backoff
+ * - Resume incomplete downloads on app restart
  * - Idempotent (safe to call multiple times)
  */
 
 import { InteractionManager } from 'react-native';
 import { Story, api } from './api';
 import { StoryCacheManager } from './story-cache';
-import { shouldSync, shouldSyncWithSettings, getSyncSettings, subscribeToNetworkChanges, SyncSettings } from './network-aware';
+import { BackgroundDownloadManager, DownloadCallbacks } from './background-download-manager';
+import { getSyncSettings, SyncSettings } from './network-aware';
 
 // Debug logging for cache sync - set to false in production
 const DEBUG = true;
@@ -54,7 +53,7 @@ interface FailedStory {
 interface SyncState {
   isRunning: boolean;
   queue: QueuedStory[];
-  activeDownloads: Map<string, Promise<boolean>>;
+  activeDownloads: Set<string>;
   lastSyncTime: number;
   failedStories: Map<string, FailedStory>;
   abortController: AbortController | null;
@@ -63,7 +62,7 @@ interface SyncState {
 const state: SyncState = {
   isRunning: false,
   queue: [],
-  activeDownloads: new Map(),
+  activeDownloads: new Set(),
   lastSyncTime: 0,
   failedStories: new Map(),
   abortController: null,
@@ -112,6 +111,13 @@ function recordFailure(storyId: string): void {
 }
 
 /**
+ * Clear failure record on success
+ */
+function clearFailure(storyId: string): void {
+  state.failedStories.delete(storyId);
+}
+
+/**
  * Clean up old failed story entries that have exceeded the TTL.
  * This prevents unbounded memory growth from permanently failing stories.
  */
@@ -125,10 +131,24 @@ function cleanupExpiredFailures(): void {
 }
 
 /**
- * Sleep for a given duration
+ * Create download callbacks for event-driven completion handling
  */
-function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
+function createDownloadCallbacks(): DownloadCallbacks {
+  return {
+    onStoryComplete: (storyId: string) => {
+      log('Story download complete:', storyId);
+      state.activeDownloads.delete(storyId);
+      clearFailure(storyId);
+    },
+    onStoryFailed: (storyId: string, error: string) => {
+      log('Story download failed:', storyId, error);
+      state.activeDownloads.delete(storyId);
+      recordFailure(storyId);
+    },
+    onStoryProgress: (storyId: string, completed: number, total: number) => {
+      log('Story download progress:', storyId, `${completed}/${total}`);
+    },
+  };
 }
 
 export const CacheSync = {
@@ -154,18 +174,11 @@ export const CacheSync = {
       return;
     }
 
-    // Check network conditions
-    if (!await shouldSync()) {
-      log('SKIP: network conditions not met (check WiFi/cellular settings)');
-      return;
-    }
-
     // Clean up old failure entries to prevent unbounded memory growth
     cleanupExpiredFailures();
 
     // Cache settings for the duration of this sync batch
-    // This avoids repeated AsyncStorage reads in the loop
-    const cachedSettings = await getSyncSettings();
+    const _cachedSettings = await getSyncSettings();
 
     // Create AbortController for this sync session
     state.abortController = new AbortController();
@@ -175,22 +188,20 @@ export const CacheSync = {
     log('Starting sync...');
 
     try {
-      await this.runSync(stories, cachedSettings);
+      await this.runSync(stories);
     } finally {
       log('Sync finished');
       state.isRunning = false;
       state.queue = [];
-      state.activeDownloads.clear();
       state.abortController = null;
     }
   },
 
   /**
-   * Run the actual sync process
+   * Run the actual sync process - queues stories to BackgroundDownloadManager
    * @param stories - Stories to potentially cache
-   * @param cachedSettings - Pre-fetched settings to avoid repeated AsyncStorage reads
    */
-  async runSync(stories: Story[], cachedSettings: SyncSettings): Promise<void> {
+  async runSync(stories: Story[]): Promise<void> {
     // Get already cached story IDs
     const cachedIds = new Set(await StoryCacheManager.getCachedStoryIds());
     log('Already cached:', cachedIds.size, 'stories');
@@ -198,13 +209,15 @@ export const CacheSync = {
     // Filter and prioritize stories
     const eligible = stories.filter(isEligibleForCache);
     const notCached = eligible.filter(s => !cachedIds.has(s.id));
-    const notInBackoff = notCached.filter(s => !isInBackoff(s.id));
+    const notDownloading = notCached.filter(s => !BackgroundDownloadManager.isDownloading(s.id));
+    const notInBackoff = notDownloading.filter(s => !isInBackoff(s.id));
     const toCache = notInBackoff.slice(0, SYNC_CONFIG.MAX_STORIES_PER_SYNC);
 
     log('Filter results:', {
       total: stories.length,
       eligible: eligible.length,
       notCached: notCached.length,
+      notDownloading: notDownloading.length,
       notInBackoff: notInBackoff.length,
       toCache: toCache.length,
     });
@@ -224,73 +237,31 @@ export const CacheSync = {
     }));
     log('Queue built with', state.queue.length, 'stories');
 
-    // Process queue with concurrency limit
-    while (state.queue.length > 0 || state.activeDownloads.size > 0) {
+    // Create callbacks for download events
+    const callbacks = createDownloadCallbacks();
+
+    // Queue stories to BackgroundDownloadManager
+    // The actual downloads run on native threads and won't block the JS thread
+    for (const item of state.queue) {
       // Check if sync was cancelled
       if (state.abortController?.signal.aborted) {
+        log('Sync cancelled, stopping queue processing');
         break;
       }
 
-      // Re-check network before each story (using cached settings to avoid AsyncStorage reads)
-      if (!await shouldSyncWithSettings(cachedSettings)) {
-        break;
-      }
-
-      // Start new downloads up to concurrency limit
-      while (
-        state.queue.length > 0 &&
-        state.activeDownloads.size < SYNC_CONFIG.MAX_CONCURRENT_DOWNLOADS
-      ) {
-        const item = state.queue.shift();
-        if (!item) break;
-
-        const promise = this.downloadStory(item.story);
-        state.activeDownloads.set(item.story.id, promise);
-
-        // Small delay between starting downloads
-        if (state.queue.length > 0) {
-          await sleep(SYNC_CONFIG.INTER_STORY_DELAY_MS);
-        }
-      }
-
-      // Wait for at least one download to complete if at capacity
-      if (state.activeDownloads.size >= SYNC_CONFIG.MAX_CONCURRENT_DOWNLOADS) {
-        await Promise.race(state.activeDownloads.values());
-      }
-
-      // If no more in queue and none active, we're done
-      if (state.queue.length === 0 && state.activeDownloads.size === 0) {
-        break;
-      }
-    }
-  },
-
-  /**
-   * Download a single story and update state
-   */
-  async downloadStory(story: Story): Promise<boolean> {
-    log('Downloading story:', story.id);
-    try {
       // Fetch full story data (listStories returns summaries without spreads)
-      log('Fetching full story data for:', story.id);
-      const fullStory = await api.getStory(story.id);
+      try {
+        log('Fetching full story data for:', item.story.id);
+        const fullStory = await api.getStory(item.story.id);
 
-      const success = await StoryCacheManager.cacheStory(fullStory);
-      if (!success) {
-        log('Download failed (cacheStory returned false):', story.id);
-        recordFailure(story.id);
-      } else {
-        log('Download success:', story.id);
-        // Clear any failure record on success
-        state.failedStories.delete(story.id);
+        // Queue the download - runs on native thread
+        state.activeDownloads.add(item.story.id);
+        await BackgroundDownloadManager.queueStoryDownload(fullStory, callbacks);
+        log('Queued story for download:', item.story.id);
+      } catch (error) {
+        log('Failed to fetch/queue story:', item.story.id, error);
+        recordFailure(item.story.id);
       }
-      return success;
-    } catch (error) {
-      log('Download error:', story.id, error);
-      recordFailure(story.id);
-      return false;
-    } finally {
-      state.activeDownloads.delete(story.id);
     }
   },
 
@@ -356,12 +327,25 @@ export const CacheSync = {
   },
 
   /**
+   * Resume incomplete downloads from previous sessions.
+   * Call this on app startup to continue downloads that were interrupted.
+   */
+  async resumeIncompleteDownloads(): Promise<void> {
+    log('Resuming incomplete downloads...');
+    const callbacks = createDownloadCallbacks();
+    await BackgroundDownloadManager.resumeIncompleteDownloads(callbacks);
+  },
+
+  /**
    * Start automatic sync with periodic polling.
    * Call this once on app mount. Returns unsubscribe function.
    *
    * NOTE: We use polling instead of NetInfo.addEventListener because the event
    * listener blocks touch events on React Native's new architecture (Expo Go).
    * Polling every 60 seconds is a reasonable trade-off for reliable touch handling.
+   *
+   * All sync operations are wrapped in InteractionManager.runAfterInteractions
+   * to ensure user touch events are always prioritized over background sync.
    */
   startAutoSync(): () => void {
     log('startAutoSync called - using polling (no netinfo subscription)');
@@ -369,20 +353,30 @@ export const CacheSync = {
     let intervalId: ReturnType<typeof setInterval> | null = null;
     let cancelled = false;
 
-    // Delay initial sync by 3 seconds to let app fully settle
+    // Resume incomplete downloads immediately (don't wait for initial sync)
+    this.resumeIncompleteDownloads();
+
+    // Delay initial sync by 5 seconds to let app fully settle
     const initialTimeout = setTimeout(() => {
       if (cancelled) return;
 
-      log('Initial sync after 3s delay');
-      this.triggerSync();
+      // Use InteractionManager to defer sync until after any pending interactions
+      InteractionManager.runAfterInteractions(() => {
+        if (cancelled) return;
+        log('Initial sync after interactions complete');
+        this.triggerSync();
+      });
 
-      // Then poll every 60 seconds
+      // Then poll every 60 seconds, always deferring to interactions
       intervalId = setInterval(() => {
         if (cancelled) return;
-        log('Periodic sync check');
-        this.triggerSync();
+        InteractionManager.runAfterInteractions(() => {
+          if (cancelled) return;
+          log('Periodic sync check after interactions');
+          this.triggerSync();
+        });
       }, 60_000);
-    }, 3000);
+    }, 5000);
 
     return () => {
       cancelled = true;
