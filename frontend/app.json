@@ -14,7 +14,10 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.anonymous.expo-nativewind-test"
+      "bundleIdentifier": "com.kavinstewart.childrensstories",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -29,7 +32,15 @@
     },
     "plugins": [
       "expo-router",
-      "expo-sqlite"
-    ]
+      "expo-sqlite",
+      "@kesha-antonov/react-native-background-downloader"
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "e48e9e31-babb-445f-a500-bff63dcf1d6e"
+      }
+    },
+    "owner": "kavinstewart"
   }
 }
