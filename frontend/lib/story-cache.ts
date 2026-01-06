@@ -145,6 +145,54 @@ export const StoryCacheManager = {
   },
 
   /**
+   * Update the cache index after a background download completes.
+   * Called by CacheSync when BackgroundDownloadManager reports completion.
+   * Reads metadata from disk and updates cacheStorage index.
+   */
+  updateCacheIndex: async (storyId: string): Promise<void> => {
+    log('updateCacheIndex called for:', storyId);
+
+    // Load the metadata that was saved by BackgroundDownloadManager
+    const story = await cacheFiles.loadStoryMetadata(storyId);
+    if (!story) {
+      log('No metadata found for:', storyId);
+      throw new Error(`No metadata found for story ${storyId}`);
+    }
+
+    // Verify files are present
+    const filesValid = await cacheFiles.verifyStoryFiles(storyId);
+    if (!filesValid) {
+      log('File verification failed for:', storyId);
+      throw new Error(`Files not valid for story ${storyId}`);
+    }
+
+    // Calculate size by estimating from spread count
+    // (actual size was tracked by BackgroundDownloadManager but we estimate here)
+    const spreadsWithImages = story.spreads?.filter(s => s.illustration_url) || [];
+    const estimatedSize = spreadsWithImages.length * ESTIMATED_SPREAD_SIZE;
+    const metadataSize = JSON.stringify(story).length;
+    const totalSize = estimatedSize + metadataSize;
+
+    // Find cover spread
+    const coverSpread = story.spreads?.find(s => s.illustration_url);
+
+    // Update the cache index
+    const entry: CacheEntry = {
+      cachedAt: Date.now(),
+      lastRead: Date.now(),
+      sizeBytes: totalSize,
+      spreadCount: spreadsWithImages.length,
+      title: story.title || 'Untitled',
+      goal: story.goal || '',
+      isIllustrated: story.is_illustrated ?? false,
+      coverSpreadNumber: coverSpread?.spread_number ?? 1,
+    };
+
+    await cacheStorage.setStoryEntry(storyId, entry);
+    log('Cache index updated for:', storyId, entry);
+  },
+
+  /**
    * Check if a story is cached and all files are present.
    */
   isStoryCached: async (storyId: string): Promise<boolean> => {

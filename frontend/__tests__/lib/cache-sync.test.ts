@@ -9,7 +9,7 @@ import { Story } from '../../lib/api';
 jest.mock('../../lib/story-cache', () => ({
   StoryCacheManager: {
     getCachedStoryIds: jest.fn().mockResolvedValue([]),
-    // cacheStory no longer used - BackgroundDownloadManager handles downloads
+    updateCacheIndex: jest.fn().mockResolvedValue(undefined),
   },
 }));
 
@@ -231,6 +231,22 @@ describe('CacheSync', () => {
 
       // Should be able to queue again (no failure backoff)
       expect(mockBackgroundDownloadManager.queueStoryDownload).toHaveBeenCalled();
+    });
+
+    it('updates cache index when story completes successfully', async () => {
+      let capturedCallbacks: any = null;
+      mockBackgroundDownloadManager.queueStoryDownload.mockImplementation(async (_story, callbacks) => {
+        capturedCallbacks = callbacks;
+      });
+
+      const story = createTestStory({ id: 'story-1' });
+      await CacheSync.syncIfNeeded([story]);
+
+      // Simulate completion callback
+      await capturedCallbacks?.onStoryComplete?.('story-1');
+
+      // Should have called updateCacheIndex
+      expect(mockStoryCacheManager.updateCacheIndex).toHaveBeenCalledWith('story-1');
     });
 
     it('records failure when story download fails', async () => {

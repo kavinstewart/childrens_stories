@@ -858,14 +858,73 @@ describe('StoryCacheManager', () => {
   });
 
   describe('boostStoryPriority', () => {
-    it('calls CacheSync.boostPriority with the story ID', () => {
+    it('is a no-op (deprecated - use CacheSync.boostPriority directly)', () => {
+      // This function is intentionally a no-op to avoid require cycle
+      // Callers should use CacheSync.boostPriority() directly
       StoryCacheManager.boostStoryPriority('test-story-123');
 
-      expect(mockCacheSync.boostPriority).toHaveBeenCalledWith('test-story-123');
+      // Should NOT call CacheSync (it's a no-op)
+      expect(mockCacheSync.boostPriority).not.toHaveBeenCalled();
     });
 
-    it('does not throw when CacheSync.boostPriority is called', () => {
+    it('does not throw when called', () => {
       expect(() => StoryCacheManager.boostStoryPriority('any-id')).not.toThrow();
+    });
+  });
+
+  describe('updateCacheIndex', () => {
+    it('updates cache index from stored metadata', async () => {
+      const story = createMockStory({ id: 'story-123' });
+      mockCacheFiles.loadStoryMetadata.mockResolvedValue(story);
+      mockCacheFiles.verifyStoryFiles.mockResolvedValue(true);
+      mockCacheStorage.setStoryEntry.mockResolvedValue(undefined);
+
+      await StoryCacheManager.updateCacheIndex('story-123');
+
+      expect(mockCacheFiles.loadStoryMetadata).toHaveBeenCalledWith('story-123');
+      expect(mockCacheFiles.verifyStoryFiles).toHaveBeenCalledWith('story-123');
+      expect(mockCacheStorage.setStoryEntry).toHaveBeenCalledWith(
+        'story-123',
+        expect.objectContaining({
+          title: 'Test Story Title',
+          goal: 'A test story',
+          isIllustrated: true,
+          spreadCount: 3,
+          coverSpreadNumber: 1,
+        })
+      );
+    });
+
+    it('throws error if metadata not found', async () => {
+      mockCacheFiles.loadStoryMetadata.mockResolvedValue(null);
+
+      await expect(StoryCacheManager.updateCacheIndex('missing-123')).rejects.toThrow(
+        'No metadata found for story missing-123'
+      );
+    });
+
+    it('throws error if files not valid', async () => {
+      const story = createMockStory({ id: 'story-123' });
+      mockCacheFiles.loadStoryMetadata.mockResolvedValue(story);
+      mockCacheFiles.verifyStoryFiles.mockResolvedValue(false);
+
+      await expect(StoryCacheManager.updateCacheIndex('story-123')).rejects.toThrow(
+        'Files not valid for story story-123'
+      );
+    });
+
+    it('uses Untitled for stories without title', async () => {
+      const story = createMockStory({ id: 'story-123', title: undefined });
+      mockCacheFiles.loadStoryMetadata.mockResolvedValue(story);
+      mockCacheFiles.verifyStoryFiles.mockResolvedValue(true);
+      mockCacheStorage.setStoryEntry.mockResolvedValue(undefined);
+
+      await StoryCacheManager.updateCacheIndex('story-123');
+
+      expect(mockCacheStorage.setStoryEntry).toHaveBeenCalledWith(
+        'story-123',
+        expect.objectContaining({ title: 'Untitled' })
+      );
     });
   });
 

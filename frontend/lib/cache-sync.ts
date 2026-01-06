@@ -135,10 +135,18 @@ function cleanupExpiredFailures(): void {
  */
 function createDownloadCallbacks(): DownloadCallbacks {
   return {
-    onStoryComplete: (storyId: string) => {
+    onStoryComplete: async (storyId: string) => {
       log('Story download complete:', storyId);
       state.activeDownloads.delete(storyId);
       clearFailure(storyId);
+
+      // Update the cache index so isStoryCached returns true
+      try {
+        await StoryCacheManager.updateCacheIndex(storyId);
+        log('Cache index updated for:', storyId);
+      } catch (error) {
+        log('Failed to update cache index for:', storyId, error);
+      }
     },
     onStoryFailed: (storyId: string, error: string) => {
       log('Story download failed:', storyId, error);
