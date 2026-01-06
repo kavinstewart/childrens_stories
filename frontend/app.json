@@ -16,7 +16,8 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.kavinstewart.childrensstories",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSMicrophoneUsageDescription": "This app uses the microphone to let you create stories by talking to the AI assistant"
       }
     },
     "android": {
@@ -28,12 +29,28 @@
       "predictiveBackGestureEnabled": false
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
     },
     "plugins": [
       "expo-router",
       "expo-sqlite",
-      "@kesha-antonov/react-native-background-downloader"
+      "@kesha-antonov/react-native-background-downloader",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "deploymentTarget": "16.0",
+            "extraPods": [
+              {
+                "name": "Hume",
+                "version": "0.0.1-beta5"
+              }
+            ]
+          }
+        }
+      ],
+      "./modules/audio"
     ],
     "extra": {
       "router": {},
