@@ -203,12 +203,16 @@ export default function NewVoiceStory() {
 
   // Navigate to text input if not on supported platform
   const handleSwitchToText = useCallback((reason?: string) => {
+    console.log('[EVI] handleSwitchToText called, reason:', reason);
+    console.log('[EVI] Calling disconnect...');
     disconnect();
+    console.log('[EVI] Navigating to /new...');
     if (reason) {
       router.replace(`/new?fallback=${encodeURIComponent(reason)}`);
     } else {
       router.replace('/new');
     }
+    console.log('[EVI] Navigation initiated');
   }, [disconnect, router]);
 
   // Auto-fallback on error conditions

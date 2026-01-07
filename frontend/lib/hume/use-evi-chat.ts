@@ -313,12 +313,24 @@ export function useEviChat(options: UseEviChatOptions): UseEviChatReturn {
    * Disconnect from Hume EVI
    */
   const disconnect = useCallback(() => {
+    // Guard against double-disconnect (native audio module crashes if stopped twice)
+    if (!socketRef.current && !audioListenerRef.current) {
+      console.log(LOG_PREFIX, 'Already disconnected, skipping');
+      return;
+    }
+
+    console.log(LOG_PREFIX, 'Disconnecting...');
+
     // Reset connection guard
     isConnectingRef.current = false;
 
-    // Stop recording
-    AudioModule.stopRecording().catch(console.error);
-    AudioModule.stopPlayback().catch(console.error);
+    // Stop recording and playback
+    AudioModule.stopRecording().catch((err) =>
+      console.error(LOG_PREFIX, 'Failed to stop recording:', err)
+    );
+    AudioModule.stopPlayback().catch((err) =>
+      console.error(LOG_PREFIX, 'Failed to stop playback:', err)
+    );
 
     // Remove audio listener
     if (audioListenerRef.current) {
@@ -336,6 +348,7 @@ export function useEviChat(options: UseEviChatOptions): UseEviChatReturn {
       setStatus('disconnected');
       setError(null);
     }
+    console.log(LOG_PREFIX, 'Disconnect complete');
   }, []);
 
   /**

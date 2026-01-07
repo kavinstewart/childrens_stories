@@ -6,6 +6,7 @@ import Hume
 public class AudioModule: Module {
     private let audioHub = AudioHub.shared
     private var audioHubIsPrepared = false
+    private var isRecordingActive = false
     private var _soundPlayer: SoundPlayer?
 
     private static let audioFormat = AVAudioFormat(
@@ -70,11 +71,41 @@ public class AudioModule: Module {
             }
             try await prepare()
             try await self.audioHub.startMicrophone(handler: handleMicrophoneData)
+            self.isRecordingActive = true
         }
 
         AsyncFunction("stopRecording") {
-            try await prepare()
-            await self.audioHub.stopMicrophone()
+            // Primary defense: only stop if we actually started recording
+            guard self.isRecordingActive else {
+                print("[AudioModule] stopRecording called but recording not active - skipping")
+                return
+            }
+
+            // Reset state immediately to prevent double-stop
+            self.isRecordingActive = false
+
+            // Secondary defense: catch ObjC exceptions from Hume SDK
+            // The SDK's stopMicrophone() can throw NSException when AVAudioEngine is in invalid state
+            var error: NSError?
+            let success = ObjCExceptionCatcher.tryBlock({
+                // Use a semaphore to bridge async to sync for the ObjC block
+                let semaphore = DispatchSemaphore(value: 0)
+                Task {
+                    await self.audioHub.stopMicrophone()
+                    semaphore.signal()
+                }
+                semaphore.wait()
+            }, error: &error)
+
+            if !success {
+                print("[AudioModule] stopMicrophone threw exception: \(error?.localizedDescription ?? "unknown")")
+                // Fallback: force release audio session to clean up resources
+                do {
+                    try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+                } catch {
+                    print("[AudioModule] Failed to deactivate audio session: \(error)")
+                }
+            }
         }
 
         AsyncFunction("mute") {

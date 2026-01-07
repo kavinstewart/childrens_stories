@@ -16,7 +16,9 @@ Pod::Spec.new do |s|
 
   s.pod_target_xcconfig = {
     'DEFINES_MODULE' => 'YES',
+    'SWIFT_OBJC_BRIDGING_HEADER' => '$(PODS_TARGET_SRCROOT)/Audio-Bridging-Header.h',
   }
 
   s.source_files = "**/*.{h,m,mm,swift,hpp,cpp}"
+  s.public_header_files = "**/*.h"
 end
