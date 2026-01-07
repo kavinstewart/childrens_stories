@@ -1,76 +1,151 @@
 import { EventEmitter } from 'expo-modules-core';
-import {
-  convertBlobToBase64,
-  getAudioStream,
-  ensureSingleValidAudioTrack,
-  getBrowserSupportedMimeType,
-  MimeType,
-} from 'hume';
-import { EVIWebAudioPlayer } from 'hume';
 import { AudioModuleEvents, MicrophoneMode } from './AudioModule.types';
 
 const emitter = new EventEmitter<AudioModuleEvents>();
 
-let recorder: MediaRecorder | null = null;
-let audioStream: MediaStream | null = null;
+let audioContext: AudioContext | null = null;
+let mediaStream: MediaStream | null = null;
+let processor: ScriptProcessorNode | null = null;
+let source: MediaStreamAudioSourceNode | null = null;
 let isMuted = false;
 
-let _player: EVIWebAudioPlayer | null = null;
-const player = async () => {
-  if (_player) return _player;
-  const p = new EVIWebAudioPlayer();
-  await p.init();
-  _player = p;
-  return p;
-};
+// Convert Float32 PCM to base64-encoded Int16 PCM
+function float32ToBase64Int16(float32Array: Float32Array): string {
+  const int16Array = new Int16Array(float32Array.length);
+  for (let i = 0; i < float32Array.length; i++) {
+    const s = Math.max(-1, Math.min(1, float32Array[i]));
+    int16Array[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+  }
+  const uint8Array = new Uint8Array(int16Array.buffer);
+  let binary = '';
+  for (let i = 0; i < uint8Array.length; i++) {
+    binary += String.fromCharCode(uint8Array[i]);
+  }
+  return btoa(binary);
+}
 
-const mimeType: MimeType = (() => {
-  const result = getBrowserSupportedMimeType();
-  return result.success ? result.mimeType : MimeType.WEBM;
-})();
+// Web Audio API player for TTS playback
+let playbackContext: AudioContext | null = null;
+let audioQueue: AudioBuffer[] = [];
+let isPlaying = false;
+
+async function getPlaybackContext(): Promise<AudioContext> {
+  if (!playbackContext) {
+    playbackContext = new AudioContext({ sampleRate: 24000 });
+  }
+  if (playbackContext.state === 'suspended') {
+    await playbackContext.resume();
+  }
+  return playbackContext;
+}
+
+async function playNextInQueue(): Promise<void> {
+  if (isPlaying || audioQueue.length === 0) return;
+  isPlaying = true;
+
+  const buffer = audioQueue.shift()!;
+  const ctx = await getPlaybackContext();
+  const source = ctx.createBufferSource();
+  source.buffer = buffer;
+  source.connect(ctx.destination);
+  source.onended = () => {
+    isPlaying = false;
+    playNextInQueue();
+  };
+  source.start();
+}
 
 export default {
   sampleRate: 48000,
-  isLinear16PCM: false,
+  isLinear16PCM: true,
 
   async getPermissions(): Promise<boolean> {
-    console.log('Requesting microphone permissions...');
-    await navigator.mediaDevices.getUserMedia({ audio: true });
-    console.log('Microphone permissions granted.');
-    return true;
+    console.log('[AudioModule.web] Requesting microphone permissions...');
+    try {
+      await navigator.mediaDevices.getUserMedia({ audio: true });
+      console.log('[AudioModule.web] Microphone permissions granted.');
+      return true;
+    } catch {
+      console.log('[AudioModule.web] Microphone permissions denied.');
+      return false;
+    }
   },
 
   async startRecording(): Promise<void> {
-    console.log('Starting audio recording...');
+    console.log('[AudioModule.web] Starting audio recording...');
 
-    audioStream = await getAudioStream();
-    ensureSingleValidAudioTrack(audioStream);
+    mediaStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        sampleRate: 48000,
+        channelCount: 1,
+        echoCancellation: true,
+        noiseSuppression: true,
+      },
+    });
 
-    recorder = new MediaRecorder(audioStream, { mimeType });
+    audioContext = new AudioContext({ sampleRate: 48000 });
+    source = audioContext.createMediaStreamSource(mediaStream);
 
-    recorder.ondataavailable = async ({ data }) => {
+    // Use ScriptProcessorNode for capturing raw PCM
+    // Note: ScriptProcessorNode is deprecated but widely supported
+    // AudioWorklet would be the modern replacement
+    processor = audioContext.createScriptProcessor(4096, 1, 1);
+
+    processor.onaudioprocess = (event) => {
       if (isMuted) return;
-      if (data.size < 1) return;
-
-      const base64EncodedAudio = await convertBlobToBase64(data);
+      const inputData = event.inputBuffer.getChannelData(0);
+      const base64EncodedAudio = float32ToBase64Int16(inputData);
       emitter.emit('onAudioInput', { base64EncodedAudio });
     };
 
-    recorder.start(100); // Record audio in 100ms slices
-    console.log('Audio recording started.');
+    source.connect(processor);
+    processor.connect(audioContext.destination);
+
+    console.log('[AudioModule.web] Audio recording started.');
   },
 
   async stopRecording(): Promise<void> {
-    console.log('Stopping audio recording...');
-    recorder?.stop();
-    recorder = null;
-    audioStream?.getTracks().forEach((track) => track.stop());
-    audioStream = null;
-    console.log('Audio recording stopped.');
+    console.log('[AudioModule.web] Stopping audio recording...');
+
+    if (processor) {
+      processor.disconnect();
+      processor = null;
+    }
+    if (source) {
+      source.disconnect();
+      source = null;
+    }
+    if (audioContext) {
+      await audioContext.close();
+      audioContext = null;
+    }
+    if (mediaStream) {
+      mediaStream.getTracks().forEach((track) => track.stop());
+      mediaStream = null;
+    }
+
+    console.log('[AudioModule.web] Audio recording stopped.');
   },
 
   async enqueueAudio(base64EncodedAudio: string): Promise<void> {
-    (await player()).enqueue({ type: 'audio_output', data: base64EncodedAudio });
+    try {
+      const ctx = await getPlaybackContext();
+
+      // Decode base64 to raw bytes
+      const binaryString = atob(base64EncodedAudio);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+
+      // Decode audio data (assumes PCM format from TTS service)
+      const audioBuffer = await ctx.decodeAudioData(bytes.buffer);
+      audioQueue.push(audioBuffer);
+      playNextInQueue();
+    } catch (error) {
+      console.error('[AudioModule.web] Error enqueuing audio:', error);
+      emitter.emit('onError', { message: String(error) });
+    }
   },
 
   async mute(): Promise<void> {
@@ -82,9 +157,11 @@ export default {
   },
 
   async stopPlayback(): Promise<void> {
-    const p = await player();
-    if (p?.playing) {
-      p?.stop();
+    audioQueue = [];
+    isPlaying = false;
+    if (playbackContext) {
+      await playbackContext.close();
+      playbackContext = null;
     }
   },
 
@@ -97,7 +174,7 @@ export default {
   },
 
   async showMicrophoneModes(): Promise<void> {
-    console.log('Microphone modes are only available on iOS');
+    console.log('[AudioModule.web] Microphone modes are only available on iOS');
     return;
   },
 

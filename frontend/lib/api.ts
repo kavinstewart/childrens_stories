@@ -128,11 +128,6 @@ export interface LoginResponse {
   token_type: string;
 }
 
-export interface HumeTokenResponse {
-  access_token: string;
-  expires_in: number;
-}
-
 class ApiError extends Error {
   constructor(public status: number, message: string) {
     super(message);
@@ -303,11 +298,6 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(request),
     });
-  },
-
-  // Get Hume EVI access token
-  getHumeToken: async (): Promise<HumeTokenResponse> => {
-    return fetchApi('/auth/hume-token');
   },
 
   // Send frontend logs to backend

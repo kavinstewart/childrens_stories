@@ -1,58 +1,41 @@
 import AVFoundation
 import ExpoModulesCore
 import Foundation
-import Hume
 
 public class AudioModule: Module {
-    private let audioHub = AudioHub.shared
-    private var audioHubIsPrepared = false
+    private var audioEngine: AVAudioEngine?
+    private var inputNode: AVAudioInputNode?
     private var isRecordingActive = false
-    private var _soundPlayer: SoundPlayer?
+    private var isMuted = false
 
-    private static let audioFormat = AVAudioFormat(
+    // Audio playback
+    private var audioPlayer: AVAudioPlayerNode?
+    private var playbackQueue: [Data] = []
+    private var isPlaying = false
+
+    // Audio format: 16-bit PCM, 48kHz, mono
+    private static let sampleRate: Double = 48000
+    private static let recordingFormat = AVAudioFormat(
         commonFormat: .pcmFormatInt16,
-        sampleRate: 48000,
+        sampleRate: sampleRate,
         channels: 1,
         interleaved: false
     )!
 
-    private func handleMicrophoneData(_ data: Data, _: Float) {
-        self.sendEvent("onAudioInput", ["base64EncodedAudio": data.base64EncodedString()])
-    }
-
-    private func handleAudioOutput(_ audioOutput: AudioOutput) {
-        guard let clip = SoundClip.from(audioOutput) else {
-            self.sendEvent("onError", ["message": "Failed to decode audio output"])
-            return
-        }
-        playAudioClip(clip)
-    }
-
-    private func playAudioClip(_ clip: SoundClip) {
-        Task {
-            do {
-                let soundPlayer = try await getSoundPlayer(format: Self.audioFormat)
-                await soundPlayer.enqueueAudio(soundClip: clip)
-            } catch {
-                self.sendEvent("onError", ["message": error.localizedDescription])
-            }
-        }
-    }
-
-    private func getSoundPlayer(format: AVAudioFormat) async throws -> SoundPlayer {
-        if let _soundPlayer {
-            return _soundPlayer
-        } else {
-            _soundPlayer = SoundPlayer(format: format)
-        }
-        try await audioHub.addNode(_soundPlayer!.audioSourceNode, format: format)
-        return _soundPlayer!
-    }
+    private static let playbackFormat = AVAudioFormat(
+        commonFormat: .pcmFormatInt16,
+        sampleRate: 24000,
+        channels: 1,
+        interleaved: false
+    )!
 
     public func definition() -> ModuleDefinition {
         Name("Audio")
 
-        Constants(["sampleRate": 48000, "isLinear16PCM": true])
+        Constants([
+            "sampleRate": Self.sampleRate,
+            "isLinear16PCM": true
+        ])
 
         Events("onAudioInput", "onError")
 
@@ -69,66 +52,37 @@ public class AudioModule: Module {
                     userInfo: [NSLocalizedDescriptionKey: "Microphone permission not granted"]
                 )
             }
-            try await prepare()
-            try await self.audioHub.startMicrophone(handler: handleMicrophoneData)
-            self.isRecordingActive = true
+            try self.startRecording()
         }
 
         AsyncFunction("stopRecording") {
-            // Skip Hume SDK's stopMicrophone() due to bug that crashes when calling
-            // [AVAudioEngine prepare] internally. See: https://github.com/HumeAI/hume-swift-sdk/issues/46
-            // Instead, manually deactivate audio session to release some resources.
-            // TODO: Re-enable stopMicrophone() when Hume fixes their SDK
-            print("[AudioModule] stopRecording called - skipping SDK stop, deactivating audio session")
-            self.isRecordingActive = false
-
-            // Try to release audio session resources without calling buggy SDK method
-            do {
-                try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-            } catch {
-                print("[AudioModule] Failed to deactivate audio session: \(error)")
-            }
+            self.stopRecording()
         }
 
         AsyncFunction("mute") {
-            await audioHub.muteMic(true)
+            self.isMuted = true
         }
 
         AsyncFunction("unmute") {
-            await audioHub.muteMic(false)
+            self.isMuted = false
         }
 
         AsyncFunction("enqueueAudio") { (base64EncodedAudio: String) in
-            try await prepare()
             guard let audioData = Data(base64Encoded: base64EncodedAudio) else {
                 self.sendEvent("onError", ["message": "Invalid base64 audio data"])
                 return
             }
-            guard let clip = SoundClip.from(audioData) else {
-                self.sendEvent("onError", ["message": "Failed to create sound clip"])
-                return
-            }
-            self.playAudioClip(clip)
+            self.playbackQueue.append(audioData)
+            self.playNextInQueue()
         }
 
         AsyncFunction("stopPlayback") {
-            await _soundPlayer?.clearQueue()
+            self.stopPlayback()
         }
 
         AsyncFunction("showMicrophoneModes") {
             if #available(iOS 15.0, *) {
-                let wasRecording = await self.audioHub.isRecording
-
-                if !wasRecording {
-                    try await self.prepare()
-                    try await self.audioHub.startMicrophone(handler: { _, _ in })
-                }
-
                 AVCaptureDevice.showSystemUserInterface(.microphoneModes)
-
-                if !wasRecording {
-                    await self.audioHub.stopMicrophone()
-                }
             } else {
                 throw NSError(
                     domain: "AudioModule",
@@ -183,9 +137,151 @@ public class AudioModule: Module {
         }
     }
 
-    private func prepare() async throws {
-        guard !audioHubIsPrepared else { return }
-        await self.audioHub.prepare()
-        audioHubIsPrepared = true
+    private func startRecording() throws {
+        guard !isRecordingActive else { return }
+
+        let audioSession = AVAudioSession.sharedInstance()
+        try audioSession.setCategory(.playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker, .allowBluetooth])
+        try audioSession.setActive(true)
+
+        audioEngine = AVAudioEngine()
+        guard let audioEngine = audioEngine else { return }
+
+        inputNode = audioEngine.inputNode
+        guard let inputNode = inputNode else { return }
+
+        let inputFormat = inputNode.outputFormat(forBus: 0)
+
+        // Install tap on input node to capture audio
+        inputNode.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) { [weak self] buffer, _ in
+            guard let self = self, !self.isMuted else { return }
+
+            // Convert to 16-bit PCM
+            guard let convertedBuffer = self.convertToInt16PCM(buffer: buffer) else { return }
+
+            // Convert to base64
+            let base64Audio = self.bufferToBase64(convertedBuffer)
+            self.sendEvent("onAudioInput", ["base64EncodedAudio": base64Audio])
+        }
+
+        try audioEngine.start()
+        isRecordingActive = true
+        print("[AudioModule] Recording started")
+    }
+
+    private func stopRecording() {
+        guard isRecordingActive else { return }
+
+        inputNode?.removeTap(onBus: 0)
+        audioEngine?.stop()
+        audioEngine = nil
+        inputNode = nil
+        isRecordingActive = false
+
+        do {
+            try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        } catch {
+            print("[AudioModule] Failed to deactivate audio session: \(error)")
+        }
+
+        print("[AudioModule] Recording stopped")
+    }
+
+    private func playNextInQueue() {
+        guard !isPlaying, !playbackQueue.isEmpty else { return }
+        isPlaying = true
+
+        let audioData = playbackQueue.removeFirst()
+
+        do {
+            let audioSession = AVAudioSession.sharedInstance()
+            try audioSession.setCategory(.playback, mode: .default)
+            try audioSession.setActive(true)
+
+            // Create audio player if needed
+            if audioPlayer == nil {
+                audioPlayer = AVAudioPlayerNode()
+                audioEngine = AVAudioEngine()
+                audioEngine?.attach(audioPlayer!)
+                audioEngine?.connect(audioPlayer!, to: audioEngine!.mainMixerNode, format: Self.playbackFormat)
+            }
+
+            guard let audioEngine = audioEngine, let audioPlayer = audioPlayer else {
+                isPlaying = false
+                return
+            }
+
+            // Convert data to audio buffer
+            let frameCount = UInt32(audioData.count / 2) // 16-bit = 2 bytes per sample
+            guard let buffer = AVAudioPCMBuffer(pcmFormat: Self.playbackFormat, frameCapacity: frameCount) else {
+                isPlaying = false
+                return
+            }
+            buffer.frameLength = frameCount
+
+            // Copy data to buffer
+            audioData.withUnsafeBytes { rawPtr in
+                guard let baseAddress = rawPtr.baseAddress else { return }
+                memcpy(buffer.int16ChannelData![0], baseAddress, audioData.count)
+            }
+
+            if !audioEngine.isRunning {
+                try audioEngine.start()
+            }
+
+            audioPlayer.scheduleBuffer(buffer) { [weak self] in
+                DispatchQueue.main.async {
+                    self?.isPlaying = false
+                    self?.playNextInQueue()
+                }
+            }
+
+            if !audioPlayer.isPlaying {
+                audioPlayer.play()
+            }
+        } catch {
+            print("[AudioModule] Playback error: \(error)")
+            sendEvent("onError", ["message": error.localizedDescription])
+            isPlaying = false
+        }
+    }
+
+    private func stopPlayback() {
+        audioPlayer?.stop()
+        playbackQueue.removeAll()
+        isPlaying = false
+    }
+
+    private func convertToInt16PCM(buffer: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
+        guard let converter = AVAudioConverter(from: buffer.format, to: Self.recordingFormat) else {
+            return nil
+        }
+
+        let ratio = Self.sampleRate / buffer.format.sampleRate
+        let outputFrameCapacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio)
+
+        guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: Self.recordingFormat, frameCapacity: outputFrameCapacity) else {
+            return nil
+        }
+
+        var error: NSError?
+        converter.convert(to: outputBuffer, error: &error) { _, outStatus in
+            outStatus.pointee = .haveData
+            return buffer
+        }
+
+        if let error = error {
+            print("[AudioModule] Conversion error: \(error)")
+            return nil
+        }
+
+        return outputBuffer
+    }
+
+    private func bufferToBase64(_ buffer: AVAudioPCMBuffer) -> String {
+        let channelData = buffer.int16ChannelData![0]
+        let dataSize = Int(buffer.frameLength) * MemoryLayout<Int16>.size
+        let data = Data(bytes: channelData, count: dataSize)
+        return data.base64EncodedString()
     }
 }
