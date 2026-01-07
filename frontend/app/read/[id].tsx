@@ -1,7 +1,7 @@
 import { View, Text, Image, ActivityIndicator, Dimensions, Pressable } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useStory, useRecommendations } from '@/features/stories/hooks';
 import { Story } from '@/lib/api';
 import { fontFamily } from '@/lib/fonts';
@@ -9,6 +9,7 @@ import { StoryCard } from '@/components/StoryCard';
 import { StoryCacheManager } from '@/lib/story-cache';
 import { useStoryCache } from '@/lib/use-story-cache';
 import { useAuthStore } from '@/features/auth/store';
+import { useTTS } from '@/lib/voice';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -30,6 +31,91 @@ export default function StoryReader() {
   const totalSpreads = spreads.length;
   const [showEndScreen, setShowEndScreen] = useState(false);
   const isLastSpread = currentSpread === totalSpreads - 1;
+
+  // TTS for reading aloud
+  const [isAutoReading, setIsAutoReading] = useState(false);
+  const autoReadRef = useRef(false);
+  const currentSpreadRef = useRef(currentSpread);
+
+  // Keep ref in sync with state for use in callbacks
+  useEffect(() => {
+    currentSpreadRef.current = currentSpread;
+    autoReadRef.current = isAutoReading;
+  }, [currentSpread, isAutoReading]);
+
+  // Handle TTS completion - auto-advance if auto-reading
+  const handleTTSDone = useCallback(() => {
+    if (autoReadRef.current && currentSpreadRef.current < totalSpreads - 1) {
+      // Small delay before advancing for natural pacing
+      setTimeout(() => {
+        setCurrentSpread(prev => prev + 1);
+      }, 500);
+    } else if (autoReadRef.current && currentSpreadRef.current === totalSpreads - 1) {
+      // Reached the end
+      setIsAutoReading(false);
+      setShowEndScreen(true);
+    }
+  }, [totalSpreads]);
+
+  const {
+    status: ttsStatus,
+    connect: connectTTS,
+    disconnect: disconnectTTS,
+    speak,
+    stopPlayback,
+    isSpeaking,
+    error: ttsError,
+  } = useTTS({
+    onDone: handleTTSDone,
+    onError: (err) => {
+      console.error('[Reader] TTS error:', err);
+      setIsAutoReading(false);
+    },
+  });
+
+  const isTTSReady = ttsStatus === 'ready' || ttsStatus === 'speaking';
+  const isTTSConnecting = ttsStatus === 'connecting';
+
+  // Read current spread aloud
+  const readCurrentSpread = useCallback(async () => {
+    const spreadData = spreads[currentSpread];
+    if (!spreadData?.text) return;
+
+    if (ttsStatus !== 'ready' && ttsStatus !== 'speaking') {
+      await connectTTS();
+      // Wait a bit for connection
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+
+    await speak(spreadData.text, `spread-${currentSpread}`);
+  }, [spreads, currentSpread, ttsStatus, connectTTS, speak]);
+
+  // Toggle auto-read mode
+  const toggleAutoRead = useCallback(async () => {
+    if (isAutoReading) {
+      // Stop auto-reading
+      setIsAutoReading(false);
+      await stopPlayback();
+    } else {
+      // Start auto-reading
+      setIsAutoReading(true);
+      await readCurrentSpread();
+    }
+  }, [isAutoReading, stopPlayback, readCurrentSpread]);
+
+  // Auto-read when spread changes (if auto-reading is enabled)
+  useEffect(() => {
+    if (isAutoReading && !showEndScreen && spreads[currentSpread]?.text) {
+      readCurrentSpread();
+    }
+  }, [currentSpread, isAutoReading, showEndScreen, spreads, readCurrentSpread]);
+
+  // Cleanup TTS on unmount
+  useEffect(() => {
+    return () => {
+      disconnectTTS();
+    };
+  }, [disconnectTTS]);
 
   // Fetch recommendations (only used on last page, but hook must be called unconditionally)
   const { data: networkRecommendations } = useRecommendations(id, CARD_COUNT);
@@ -303,39 +389,72 @@ export default function StoryReader() {
           </Text>
         </View>
 
-        {/* Edit Button - only show when on a spread (not end screen) and story is illustrated */}
-        {!showEndScreen && story.is_illustrated && currentSpreadData && (
-          <Pressable
-            onPress={() => {
-              router.push({
-                pathname: '/edit-prompt',
-                params: {
-                  storyId: story.id,
-                  spreadNumber: currentSpreadData.spread_number.toString(),
-                  composedPrompt: currentSpreadData.composed_prompt || '',
-                  illustrationUpdatedAt: currentSpreadData.illustration_updated_at || '',
-                },
-              });
-            }}
-            style={{
-              backgroundColor: '#FAF7F2',
-              paddingVertical: 16,
-              paddingHorizontal: 22,
-              borderRadius: 22,
-              borderWidth: 2,
-              borderColor: '#EDE8E0',
-              alignItems: 'center',
-              justifyContent: 'center',
-              shadowColor: '#000',
-              shadowOffset: { width: 0, height: 2 },
-              shadowOpacity: 0.15,
-              shadowRadius: 6,
-              elevation: 4,
-            }}
-          >
-            <Text style={{ fontSize: 32 }}>✏️</Text>
-          </Pressable>
-        )}
+        {/* Right side buttons - Speaker and Edit */}
+        <View style={{ flexDirection: 'row', gap: 12 }}>
+          {/* Speaker Button - Read aloud */}
+          {!showEndScreen && currentSpreadData && (
+            <Pressable
+              onPress={toggleAutoRead}
+              disabled={isTTSConnecting}
+              style={{
+                backgroundColor: isAutoReading ? '#F97316' : '#FAF7F2',
+                paddingVertical: 16,
+                paddingHorizontal: 22,
+                borderRadius: 22,
+                borderWidth: 2,
+                borderColor: isAutoReading ? '#EA580C' : '#EDE8E0',
+                alignItems: 'center',
+                justifyContent: 'center',
+                shadowColor: isAutoReading ? '#F97316' : '#000',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: isAutoReading ? 0.3 : 0.15,
+                shadowRadius: 6,
+                elevation: 4,
+                opacity: isTTSConnecting ? 0.6 : 1,
+              }}
+            >
+              {isTTSConnecting ? (
+                <ActivityIndicator size="small" color="#4A4035" />
+              ) : (
+                <Text style={{ fontSize: 32 }}>{isAutoReading ? '🔊' : '🔈'}</Text>
+              )}
+            </Pressable>
+          )}
+
+          {/* Edit Button - only show when on a spread (not end screen) and story is illustrated */}
+          {!showEndScreen && story.is_illustrated && currentSpreadData && (
+            <Pressable
+              onPress={() => {
+                router.push({
+                  pathname: '/edit-prompt',
+                  params: {
+                    storyId: story.id,
+                    spreadNumber: currentSpreadData.spread_number.toString(),
+                    composedPrompt: currentSpreadData.composed_prompt || '',
+                    illustrationUpdatedAt: currentSpreadData.illustration_updated_at || '',
+                  },
+                });
+              }}
+              style={{
+                backgroundColor: '#FAF7F2',
+                paddingVertical: 16,
+                paddingHorizontal: 22,
+                borderRadius: 22,
+                borderWidth: 2,
+                borderColor: '#EDE8E0',
+                alignItems: 'center',
+                justifyContent: 'center',
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.15,
+                shadowRadius: 6,
+                elevation: 4,
+              }}
+            >
+              <Text style={{ fontSize: 32 }}>✏️</Text>
+            </Pressable>
+          )}
+        </View>
       </View>
 
       {/* Bottom Content */}
@@ -427,6 +546,40 @@ export default function StoryReader() {
                 color: '#4A4035',
                 marginTop: 2,
               }}>Again</Text>
+            </Pressable>
+
+            {/* Listen Button - Start auto-read from beginning */}
+            <Pressable
+              onPress={() => {
+                setCurrentSpread(0);
+                setShowEndScreen(false);
+                setIsAutoReading(true);
+              }}
+              disabled={isTTSConnecting}
+              style={{
+                backgroundColor: '#FAF7F2',
+                width: 100,
+                height: 70,
+                borderRadius: 20,
+                borderWidth: 2,
+                borderColor: '#EDE8E0',
+                alignItems: 'center',
+                justifyContent: 'center',
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.15,
+                shadowRadius: 6,
+                elevation: 4,
+                opacity: isTTSConnecting ? 0.6 : 1,
+              }}
+            >
+              <Text style={{ fontSize: 24 }}>🔊</Text>
+              <Text style={{
+                fontSize: 12,
+                fontFamily: fontFamily.nunitoBold,
+                color: '#4A4035',
+                marginTop: 2,
+              }}>Listen</Text>
             </Pressable>
 
             {/* Library Button */}
