@@ -75,17 +75,19 @@ public class AudioModule: Module {
         }
 
         AsyncFunction("stopRecording") {
-            // Guard: only stop if we actually started recording successfully
-            // This prevents crashes from Hume SDK's stopMicrophone() when engine isn't in valid state
-            guard self.isRecordingActive else {
-                print("[AudioModule] stopRecording called but recording not active - skipping")
+            // Check both our flag AND the SDK's internal state
+            let sdkIsRecording = await self.audioHub.isRecording
+
+            guard self.isRecordingActive && sdkIsRecording else {
+                print("[AudioModule] stopRecording skipped - isRecordingActive: \(self.isRecordingActive), sdkIsRecording: \(sdkIsRecording)")
+                self.isRecordingActive = false
                 return
             }
 
             // Reset state immediately to prevent double-stop
             self.isRecordingActive = false
 
-            // Now safe to stop - engine should be in valid state since recording started
+            // Stop recording - SDK confirms it's actually recording
             await self.audioHub.stopMicrophone()
         }
 
