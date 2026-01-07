@@ -242,21 +242,27 @@ async def stt_websocket(websocket: WebSocket):
 
     # Authenticate BEFORE counting against rate limit
     if not await authenticate_websocket(websocket):
-        await websocket.send_json({
-            "type": "error",
-            "message": "Authentication required"
-        })
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        try:
+            await websocket.send_json({
+                "type": "error",
+                "message": "Authentication required"
+            })
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        except Exception:
+            pass  # Connection already closed
         return
 
     # Check rate limit only after successful auth
     current_connections = _active_connections.get(client_ip, 0)
     if current_connections >= MAX_CONNECTIONS_PER_IP:
-        await websocket.send_json({
-            "type": "error",
-            "message": "Too many connections"
-        })
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        try:
+            await websocket.send_json({
+                "type": "error",
+                "message": "Too many connections"
+            })
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        except Exception:
+            pass  # Connection already closed
         logger.warning(f"Rate limit exceeded for {client_ip}")
         return
 
@@ -264,7 +270,6 @@ async def stt_websocket(websocket: WebSocket):
 
     proxy = None
     try:
-
         proxy = DeepgramSTTProxy(websocket)
 
         # Connect to Deepgram
@@ -461,21 +466,27 @@ async def tts_websocket(websocket: WebSocket):
 
     # Authenticate BEFORE counting against rate limit
     if not await authenticate_websocket(websocket):
-        await websocket.send_json({
-            "type": "error",
-            "message": "Authentication required"
-        })
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        try:
+            await websocket.send_json({
+                "type": "error",
+                "message": "Authentication required"
+            })
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        except Exception:
+            pass  # Connection already closed
         return
 
     # Check rate limit only after successful auth
     current_connections = _active_connections.get(client_ip, 0)
     if current_connections >= MAX_CONNECTIONS_PER_IP:
-        await websocket.send_json({
-            "type": "error",
-            "message": "Too many connections"
-        })
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        try:
+            await websocket.send_json({
+                "type": "error",
+                "message": "Too many connections"
+            })
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        except Exception:
+            pass  # Connection already closed
         logger.warning(f"Rate limit exceeded for {client_ip}")
         return
 
@@ -483,7 +494,6 @@ async def tts_websocket(websocket: WebSocket):
 
     proxy = None
     try:
-
         proxy = CartesiaTTSProxy(websocket)
 
         # Connect to Cartesia
