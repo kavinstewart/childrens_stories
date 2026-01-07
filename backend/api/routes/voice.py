@@ -1,12 +1,14 @@
-"""Voice routes for streaming STT via Deepgram."""
+"""Voice routes for streaming STT via Deepgram and TTS via Cartesia."""
 
 import asyncio
 import base64
 import json
 import logging
 import os
+import uuid
 from typing import Optional
 
+from cartesia import AsyncCartesia
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 from websockets import connect as ws_connect
 from websockets.exceptions import ConnectionClosed
@@ -60,6 +62,11 @@ async def authenticate_websocket(websocket: WebSocket) -> bool:
 # Deepgram configuration
 DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY", "")
 DEEPGRAM_WS_URL = "wss://api.deepgram.com/v1/listen"
+
+# Cartesia TTS configuration
+CARTESIA_API_KEY = os.getenv("CARTESIA_API_KEY", "")
+# Default voice - can be overridden per request
+DEFAULT_VOICE_ID = os.getenv("CARTESIA_VOICE_ID", "a0e99841-438c-4a64-b679-ae501e7d6091")  # Default Cartesia voice
 
 # Default STT parameters optimized for voice input
 DEFAULT_STT_PARAMS = {
@@ -230,28 +237,33 @@ async def stt_websocket(websocket: WebSocket):
     # Get client IP for rate limiting
     client_ip = websocket.client.host if websocket.client else "unknown"
 
-    # Check rate limit
+    await websocket.accept()
+    logger.info(f"STT WebSocket connection accepted from {client_ip}")
+
+    # Authenticate BEFORE counting against rate limit
+    if not await authenticate_websocket(websocket):
+        await websocket.send_json({
+            "type": "error",
+            "message": "Authentication required"
+        })
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+
+    # Check rate limit only after successful auth
     current_connections = _active_connections.get(client_ip, 0)
     if current_connections >= MAX_CONNECTIONS_PER_IP:
+        await websocket.send_json({
+            "type": "error",
+            "message": "Too many connections"
+        })
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         logger.warning(f"Rate limit exceeded for {client_ip}")
         return
 
     _active_connections[client_ip] = current_connections + 1
 
-    await websocket.accept()
-    logger.info(f"STT WebSocket connection accepted from {client_ip}")
-
     proxy = None
     try:
-        # Authenticate the connection
-        if not await authenticate_websocket(websocket):
-            await websocket.send_json({
-                "type": "error",
-                "message": "Authentication required"
-            })
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-            return
 
         proxy = DeepgramSTTProxy(websocket)
 
@@ -302,5 +314,231 @@ async def stt_websocket(websocket: WebSocket):
         if proxy:
             await proxy.close()
         logger.info("STT WebSocket session ended")
+        # Decrement connection count
+        _active_connections[client_ip] = max(0, _active_connections.get(client_ip, 1) - 1)
+
+
+# TTS configuration
+MAX_TEXT_LENGTH = 5000  # Max characters per TTS request
+
+
+class CartesiaTTSProxy:
+    """Streams text to Cartesia TTS and audio back to client."""
+
+    def __init__(self, client_ws: WebSocket):
+        self.client_ws = client_ws
+        self.cartesia_client: Optional[AsyncCartesia] = None
+        self.ws = None
+        self.is_connected = False
+
+    async def connect(self) -> bool:
+        """Connect to Cartesia TTS WebSocket."""
+        if not CARTESIA_API_KEY:
+            logger.error("CARTESIA_API_KEY not configured")
+            await self.client_ws.send_json({
+                "type": "error",
+                "message": "TTS service not configured"
+            })
+            return False
+
+        try:
+            self.cartesia_client = AsyncCartesia(api_key=CARTESIA_API_KEY)
+            self.ws = await self.cartesia_client.tts.websocket()
+            self.is_connected = True
+            logger.info("Connected to Cartesia TTS")
+
+            await self.client_ws.send_json({
+                "type": "connected",
+                "message": "TTS ready"
+            })
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to connect to Cartesia: {e}")
+            await self.client_ws.send_json({
+                "type": "error",
+                "message": f"Failed to connect to TTS service: {str(e)}"
+            })
+            return False
+
+    async def synthesize(self, text: str, voice_id: Optional[str] = None, context_id: Optional[str] = None):
+        """Synthesize text to speech and stream audio chunks to client."""
+        if not self.is_connected or not self.ws:
+            return
+
+        voice = voice_id or DEFAULT_VOICE_ID
+        ctx_id = context_id or str(uuid.uuid4())
+
+        try:
+            # Stream audio from Cartesia
+            async for output in await self.ws.send(
+                model_id="sonic",
+                transcript=text,
+                voice={"mode": "id", "id": voice},
+                context_id=ctx_id,
+                output_format={
+                    "container": "raw",
+                    "encoding": "pcm_s16le",
+                    "sample_rate": 24000,
+                },
+                stream=True,
+            ):
+                if output.get("type") == "chunk":
+                    # Send base64-encoded audio chunk to client
+                    audio_data = output.get("data")
+                    if audio_data:
+                        await self.client_ws.send_json({
+                            "type": "audio",
+                            "data": base64.b64encode(audio_data).decode() if isinstance(audio_data, bytes) else audio_data,
+                            "context_id": ctx_id,
+                        })
+                elif output.get("type") == "timestamps":
+                    # Forward word timestamps if available
+                    await self.client_ws.send_json({
+                        "type": "timestamps",
+                        "words": output.get("word_timestamps", {}).get("words", []),
+                        "context_id": ctx_id,
+                    })
+
+            # Signal synthesis complete
+            await self.client_ws.send_json({
+                "type": "done",
+                "context_id": ctx_id,
+            })
+
+        except Exception as e:
+            logger.error(f"TTS synthesis error: {e}")
+            await self.client_ws.send_json({
+                "type": "error",
+                "message": f"TTS synthesis failed: {str(e)}",
+                "context_id": ctx_id,
+            })
+
+    async def close(self):
+        """Close the Cartesia connection."""
+        self.is_connected = False
+        if self.ws:
+            try:
+                await self.ws.close()
+            except Exception as e:
+                logger.debug(f"Error closing Cartesia connection: {e}")
+        if self.cartesia_client:
+            try:
+                await self.cartesia_client.close()
+            except Exception as e:
+                logger.debug(f"Error closing Cartesia client: {e}")
+        logger.info("Cartesia TTS proxy closed")
+
+
+def is_valid_uuid(value: str) -> bool:
+    """Check if a string is a valid UUID."""
+    try:
+        uuid.UUID(value)
+        return True
+    except (ValueError, TypeError):
+        return False
+
+
+@router.websocket("/tts")
+async def tts_websocket(websocket: WebSocket):
+    """WebSocket endpoint for streaming text-to-speech.
+
+    Protocol:
+    - Client sends: {"type": "auth", "token": "<jwt>"}
+    - Client sends: {"type": "synthesize", "text": "...", "voice_id": "...", "context_id": "..."}
+    - Client sends: {"type": "stop"} to end the session
+    - Server sends: {"type": "connected", "message": "TTS ready"}
+    - Server sends: {"type": "audio", "data": "<base64 PCM>", "context_id": "..."}
+    - Server sends: {"type": "timestamps", "words": [...], "context_id": "..."}
+    - Server sends: {"type": "done", "context_id": "..."}
+    - Server sends: {"type": "error", "message": "..."}
+    """
+    # Get client IP for rate limiting
+    client_ip = websocket.client.host if websocket.client else "unknown"
+
+    await websocket.accept()
+    logger.info(f"TTS WebSocket connection accepted from {client_ip}")
+
+    # Authenticate BEFORE counting against rate limit
+    if not await authenticate_websocket(websocket):
+        await websocket.send_json({
+            "type": "error",
+            "message": "Authentication required"
+        })
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+
+    # Check rate limit only after successful auth
+    current_connections = _active_connections.get(client_ip, 0)
+    if current_connections >= MAX_CONNECTIONS_PER_IP:
+        await websocket.send_json({
+            "type": "error",
+            "message": "Too many connections"
+        })
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        logger.warning(f"Rate limit exceeded for {client_ip}")
+        return
+
+    _active_connections[client_ip] = current_connections + 1
+
+    proxy = None
+    try:
+
+        proxy = CartesiaTTSProxy(websocket)
+
+        # Connect to Cartesia
+        if not await proxy.connect():
+            await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
+            return
+
+        # Process messages from client
+        while True:
+            try:
+                message = await websocket.receive_json()
+                msg_type = message.get("type")
+
+                if msg_type == "synthesize":
+                    text = message.get("text", "")
+                    if not text:
+                        await websocket.send_json({
+                            "type": "error",
+                            "message": "No text provided"
+                        })
+                        continue
+
+                    # Validate text length
+                    if len(text) > MAX_TEXT_LENGTH:
+                        await websocket.send_json({
+                            "type": "error",
+                            "message": f"Text too long (max {MAX_TEXT_LENGTH} chars)"
+                        })
+                        continue
+
+                    voice_id = message.get("voice_id")
+                    # Validate voice_id if provided
+                    if voice_id and not is_valid_uuid(voice_id):
+                        await websocket.send_json({
+                            "type": "error",
+                            "message": "Invalid voice_id format (must be UUID)"
+                        })
+                        continue
+
+                    context_id = message.get("context_id")
+                    await proxy.synthesize(text, voice_id, context_id)
+
+                elif msg_type == "stop":
+                    logger.info("Client requested stop")
+                    break
+
+            except WebSocketDisconnect:
+                logger.info("Client disconnected")
+                break
+
+    except Exception as e:
+        logger.error(f"TTS WebSocket error: {e}")
+    finally:
+        if proxy:
+            await proxy.close()
+        logger.info("TTS WebSocket session ended")
         # Decrement connection count
         _active_connections[client_ip] = max(0, _active_connections.get(client_ip, 1) - 1)
