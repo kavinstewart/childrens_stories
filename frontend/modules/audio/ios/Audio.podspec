@@ -16,9 +16,7 @@ Pod::Spec.new do |s|
 
   s.pod_target_xcconfig = {
     'DEFINES_MODULE' => 'YES',
-    'SWIFT_INCLUDE_PATHS' => '$(PODS_TARGET_SRCROOT)',
   }
 
-  s.source_files = "**/*.{h,m,mm,swift,hpp,cpp}"
-  s.preserve_paths = 'module.modulemap'
+  s.source_files = "**/*.swift"
 end
