@@ -374,6 +374,23 @@ export default function NewStory() {
             </Text>
           )}
 
+          {/* Switch to voice input link */}
+          <Pressable
+            onPress={() => router.replace('/new-voice')}
+            style={{ marginTop: 16, alignItems: 'center', paddingBottom: insets.bottom }}
+          >
+            <Text
+              style={{
+                fontFamily: fontFamily.nunito,
+                fontSize: 14,
+                color: '#7C3AED',
+                textDecorationLine: 'underline',
+              }}
+            >
+              Or use your voice instead 🎤
+            </Text>
+          </Pressable>
+
         </ScrollView>
       </View>
     </LinearGradient>
