@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .auth.routes import router as auth_router
 from .config import DATABASE_URL
-from .routes import logs, stories
+from .routes import logs, stories, voice
 from . import arq_pool as arq_pool_module
 
 logger = logging.getLogger(__name__)
@@ -87,6 +87,7 @@ app.add_middleware(
 app.include_router(auth_router)  # No prefix - already has /auth
 app.include_router(stories.router, prefix="/stories", tags=["Stories"])
 app.include_router(logs.router, prefix="/logs", tags=["Logs"])
+app.include_router(voice.router, prefix="/voice", tags=["Voice"])
 
 
 @app.get("/health", tags=["Health"])
