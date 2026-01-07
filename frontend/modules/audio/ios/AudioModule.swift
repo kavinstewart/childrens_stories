@@ -2,6 +2,7 @@ import AVFoundation
 import ExpoModulesCore
 import Foundation
 import Hume
+import ObjCExceptionCatcher
 
 public class AudioModule: Module {
     private let audioHub = AudioHub.shared
