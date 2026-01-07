@@ -75,20 +75,19 @@ public class AudioModule: Module {
         }
 
         AsyncFunction("stopRecording") {
-            // Check both our flag AND the SDK's internal state
-            let sdkIsRecording = await self.audioHub.isRecording
-
-            guard self.isRecordingActive && sdkIsRecording else {
-                print("[AudioModule] stopRecording skipped - isRecordingActive: \(self.isRecordingActive), sdkIsRecording: \(sdkIsRecording)")
-                self.isRecordingActive = false
-                return
-            }
-
-            // Reset state immediately to prevent double-stop
+            // Skip Hume SDK's stopMicrophone() due to bug that crashes when calling
+            // [AVAudioEngine prepare] internally. See: https://github.com/HumeAI/hume-swift-sdk/issues/46
+            // Instead, manually deactivate audio session to release some resources.
+            // TODO: Re-enable stopMicrophone() when Hume fixes their SDK
+            print("[AudioModule] stopRecording called - skipping SDK stop, deactivating audio session")
             self.isRecordingActive = false
 
-            // Stop recording - SDK confirms it's actually recording
-            await self.audioHub.stopMicrophone()
+            // Try to release audio session resources without calling buggy SDK method
+            do {
+                try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+            } catch {
+                print("[AudioModule] Failed to deactivate audio session: \(error)")
+            }
         }
 
         AsyncFunction("mute") {

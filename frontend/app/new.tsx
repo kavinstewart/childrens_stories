@@ -373,6 +373,29 @@ export default function NewStory() {
               Tell me about your story or tap an idea above
             </Text>
           )}
+
+          {/* Voice mode option */}
+          <Pressable
+            onPress={() => router.replace('/new-voice')}
+            style={{
+              marginTop: 24,
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+            }}
+          >
+            <Text style={{ fontSize: 18 }}>🎤</Text>
+            <Text
+              style={{
+                fontFamily: fontFamily.nunito,
+                fontSize: 14,
+                color: '#6B7280',
+              }}
+            >
+              Or use voice instead
+            </Text>
+          </Pressable>
         </ScrollView>
       </View>
     </LinearGradient>
