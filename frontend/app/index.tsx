@@ -119,7 +119,19 @@ export default function StoryLibrary() {
                 <Text className="text-2xl">{'⚙️'}</Text>
               </Pressable>
 
-              {/* New Story Button - routes to text input by default (voice has SDK bugs) */}
+              {/* Voice Input Button */}
+              <Pressable
+                onPress={() => router.push('/new-voice')}
+                className="bg-pink-500 py-4 px-4 rounded-2xl"
+                style={({ pressed }) => ({
+                  opacity: pressed ? 0.8 : 1,
+                  transform: [{ scale: pressed ? 0.95 : 1 }],
+                })}
+              >
+                <Text className="text-2xl">🎤</Text>
+              </Pressable>
+
+              {/* New Story Button - routes to text input */}
               <Pressable
                 onPress={() => router.push('/new')}
                 className="bg-purple-600 py-4 px-6 rounded-2xl"
@@ -193,14 +205,26 @@ export default function StoryLibrary() {
               <Text className="text-gray-600 mb-6">
                 Create your first magical adventure
               </Text>
-              <Pressable
-                onPress={() => router.push('/new')}
-                className="bg-purple-600 px-8 py-4 rounded-2xl"
-              >
-                <Text className="text-white font-bold text-lg">
-                  Create a Story
-                </Text>
-              </Pressable>
+              <View className="flex-row gap-4">
+                <Pressable
+                  onPress={() => router.push('/new-voice')}
+                  className="bg-pink-500 px-8 py-4 rounded-2xl flex-row items-center gap-2"
+                >
+                  <Text className="text-2xl">🎤</Text>
+                  <Text className="text-white font-bold text-lg">
+                    Use Voice
+                  </Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => router.push('/new')}
+                  className="bg-purple-600 px-8 py-4 rounded-2xl flex-row items-center gap-2"
+                >
+                  <Text className="text-2xl">✏️</Text>
+                  <Text className="text-white font-bold text-lg">
+                    Type Story
+                  </Text>
+                </Pressable>
+              </View>
             </View>
           )}
 
