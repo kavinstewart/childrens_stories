@@ -21,6 +21,9 @@ import type {
 // Hume EVI WebSocket endpoint
 const EVI_WEBSOCKET_URL = 'wss://api.hume.ai/v0/evi/chat';
 
+// Logging prefix for easy filtering
+const LOG_PREFIX = '[EVI]';
+
 // Audio format constants matching native module
 const SAMPLE_RATE = 48000;
 const CHANNELS = 1;
@@ -94,7 +97,7 @@ export function useEviChat(options: UseEviChatOptions): UseEviChatReturn {
           // Queue audio for playback via native module
           if (message.data) {
             AudioModule.enqueueAudio(message.data).catch((err) => {
-              console.error('Failed to enqueue audio:', err);
+              console.error(LOG_PREFIX, 'Failed to enqueue audio:', err);
             });
           }
           break;
@@ -114,7 +117,7 @@ export function useEviChat(options: UseEviChatOptions): UseEviChatReturn {
         case 'user_interruption':
           // User interrupted - stop playback
           AudioModule.stopPlayback().catch((err) => {
-            console.error('Failed to stop playback:', err);
+            console.error(LOG_PREFIX, 'Failed to stop playback:', err);
           });
           break;
 
@@ -126,7 +129,7 @@ export function useEviChat(options: UseEviChatOptions): UseEviChatReturn {
               try {
                 parameters = JSON.parse(message.parameters);
               } catch (e) {
-                console.error('Failed to parse tool call parameters:', e);
+                console.error(LOG_PREFIX, 'Failed to parse tool call parameters:', e);
               }
             }
             const toolCall: ToolCall = {
@@ -144,7 +147,7 @@ export function useEviChat(options: UseEviChatOptions): UseEviChatReturn {
                 });
               })
               .catch((err) => {
-                console.error('Tool call failed:', err);
+                console.error(LOG_PREFIX, 'Tool call failed:', err);
                 sendMessage('tool_response', {
                   tool_call_id: toolCall.toolCallId,
                   content: JSON.stringify({ error: err.message }),
@@ -154,7 +157,7 @@ export function useEviChat(options: UseEviChatOptions): UseEviChatReturn {
           break;
 
         case 'error':
-          console.error('EVI error:', message);
+          console.error(LOG_PREFIX, 'Server error:', message.error, message.code);
           setError(new Error(message.error || 'Unknown EVI error'));
           break;
       }
@@ -184,19 +187,26 @@ export function useEviChat(options: UseEviChatOptions): UseEviChatReturn {
     setMessages([]);
 
     try {
+      console.log(LOG_PREFIX, 'Starting connection...');
+
       // Check platform - EVI only supported on iOS and web for now
       if (Platform.OS !== 'ios' && Platform.OS !== 'web') {
         throw new Error('EVI is only supported on iOS and web');
       }
+      console.log(LOG_PREFIX, 'Platform check passed:', Platform.OS);
 
       // Get microphone permissions
+      console.log(LOG_PREFIX, 'Requesting microphone permissions...');
       const hasPermission = await AudioModule.getPermissions();
       if (!hasPermission) {
         throw new Error('Microphone permission denied');
       }
+      console.log(LOG_PREFIX, 'Microphone permission granted');
 
       // Fetch access token from backend
+      console.log(LOG_PREFIX, 'Fetching Hume access token...');
       const tokenResponse = await api.getHumeToken();
+      console.log(LOG_PREFIX, 'Access token received');
 
       // Build WebSocket URL with config ID and access token
       // Note: Token in query param is the documented Hume approach for WebSocket auth
@@ -205,10 +215,12 @@ export function useEviChat(options: UseEviChatOptions): UseEviChatReturn {
       const wsUrl = `${EVI_WEBSOCKET_URL}?config_id=${encodeURIComponent(configId)}&access_token=${encodeURIComponent(tokenResponse.access_token)}`;
 
       // Create WebSocket connection
+      console.log(LOG_PREFIX, 'Connecting to WebSocket...');
       const socket = new WebSocket(wsUrl);
       socketRef.current = socket;
 
       socket.onopen = async () => {
+        console.log(LOG_PREFIX, 'WebSocket connected');
         if (!isMountedRef.current) {
           socket.close();
           return;
@@ -226,6 +238,7 @@ export function useEviChat(options: UseEviChatOptions): UseEviChatReturn {
         }));
 
         // Send session settings with audio encoding info
+        console.log(LOG_PREFIX, 'Sending session settings...');
         sendMessage('session_settings', {
           audio: {
             encoding: 'linear16',
@@ -241,7 +254,9 @@ export function useEviChat(options: UseEviChatOptions): UseEviChatReturn {
         });
 
         // Start recording audio
+        console.log(LOG_PREFIX, 'Starting audio recording...');
         await AudioModule.startRecording();
+        console.log(LOG_PREFIX, 'Audio recording started, connection ready');
 
         isConnectingRef.current = false;
         if (isMountedRef.current) {
@@ -252,14 +267,18 @@ export function useEviChat(options: UseEviChatOptions): UseEviChatReturn {
       socket.onmessage = (event) => {
         try {
           const message = JSON.parse(event.data) as EviMessage;
+          if (message.type !== 'audio_output') {
+            // Log non-audio messages (audio is too frequent)
+            console.log(LOG_PREFIX, 'Received:', message.type);
+          }
           handleMessage(message);
         } catch (e) {
-          console.error('Failed to parse EVI message:', e);
+          console.error(LOG_PREFIX, 'Failed to parse message:', e);
         }
       };
 
       socket.onerror = (event) => {
-        console.error('EVI WebSocket error:', event);
+        console.error(LOG_PREFIX, 'WebSocket error:', event);
         isConnectingRef.current = false;
         if (isMountedRef.current) {
           setError(new Error('WebSocket connection error'));
@@ -267,8 +286,8 @@ export function useEviChat(options: UseEviChatOptions): UseEviChatReturn {
         }
       };
 
-      socket.onclose = () => {
-        console.log('EVI WebSocket closed');
+      socket.onclose = (event) => {
+        console.log(LOG_PREFIX, 'WebSocket closed, code:', event.code, 'reason:', event.reason);
         isConnectingRef.current = false;
         socketRef.current = null;
         if (isMountedRef.current) {
@@ -281,7 +300,7 @@ export function useEviChat(options: UseEviChatOptions): UseEviChatReturn {
       const subscription = AudioModule.addListener('onAudioInput', handleAudioInput);
       audioListenerRef.current = subscription;
     } catch (err) {
-      console.error('Failed to connect to EVI:', err);
+      console.error(LOG_PREFIX, 'Connection failed:', err);
       isConnectingRef.current = false;
       if (isMountedRef.current) {
         setError(err instanceof Error ? err : new Error(String(err)));
