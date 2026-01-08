@@ -104,6 +104,16 @@ export function useTTS(options: UseTTSOptions = {}): UseTTSResult {
           break;
 
         case 'timestamps':
+          // Debug: Log first word to verify format is {word, start, end}
+          if (data.words?.length > 0) {
+            const first = data.words[0];
+            console.log('[TTS] Timestamp format check:', {
+              hasWord: 'word' in first,
+              hasStart: 'start' in first,
+              hasEnd: 'end' in first,
+              sample: first,
+            });
+          }
           onTimestamps?.(data.words, data.context_id);
           break;
 
