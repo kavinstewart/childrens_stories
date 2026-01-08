@@ -88,6 +88,38 @@ describe('KaraokeText', () => {
     });
   });
 
+  describe('newline preservation', () => {
+    it('preserves newlines during active karaoke playback', () => {
+      const textWithNewlines = 'Hello world\nThis is a test';
+      const { toJSON } = render(
+        <KaraokeText
+          text={textWithNewlines}
+          currentWordIndex={2}
+          isActive={true}
+        />
+      );
+
+      const stringified = JSON.stringify(toJSON());
+      // Should preserve the newline character
+      expect(stringified).toContain('\\n');
+    });
+
+    it('preserves multiple newlines during active karaoke playback', () => {
+      const textWithNewlines = 'Line one\n\nLine three';
+      const { toJSON } = render(
+        <KaraokeText
+          text={textWithNewlines}
+          currentWordIndex={1}
+          isActive={true}
+        />
+      );
+
+      const stringified = JSON.stringify(toJSON());
+      // Should preserve both newline characters
+      expect(stringified).toMatch(/\\n.*\\n/);
+    });
+  });
+
   describe('splitIntoWords behavior', () => {
     it('handles multiple spaces between words', () => {
       const { toJSON } = render(

@@ -19,12 +19,30 @@ interface KaraokeTextProps {
   highlightStyle?: StyleProp<TextStyle>;
 }
 
+interface WordWithWhitespace {
+  word: string;
+  /** Whitespace that appears BEFORE this word */
+  precedingWhitespace: string;
+}
+
 /**
- * Split text into words while preserving whitespace for proper rendering.
+ * Split text into words while preserving the whitespace before each word.
+ * This allows us to maintain newlines and other whitespace during karaoke rendering.
  */
-function splitIntoWords(text: string): string[] {
-  // Split on whitespace but keep words only
-  return text.split(/\s+/).filter(word => word.length > 0);
+function splitIntoWordsWithWhitespace(text: string): WordWithWhitespace[] {
+  const result: WordWithWhitespace[] = [];
+  // Match: optional whitespace followed by non-whitespace word
+  const regex = /(\s*)(\S+)/g;
+  let match;
+
+  while ((match = regex.exec(text)) !== null) {
+    result.push({
+      precedingWhitespace: match[1],
+      word: match[2],
+    });
+  }
+
+  return result;
 }
 
 export function KaraokeText({
@@ -34,23 +52,23 @@ export function KaraokeText({
   style,
   highlightStyle,
 }: KaraokeTextProps) {
-  const words = splitIntoWords(text);
+  const wordsWithWhitespace = splitIntoWordsWithWhitespace(text);
 
   if (!isActive || currentWordIndex < 0) {
     // Not in karaoke mode - render plain text
     return <Text style={style}>{text}</Text>;
   }
 
-  // Render with highlighted word
+  // Render with highlighted word, preserving original whitespace
   return (
     <Text style={style}>
-      {words.map((word, index) => {
+      {wordsWithWhitespace.map(({ word, precedingWhitespace }, index) => {
         const isHighlighted = index === currentWordIndex;
         const isSpoken = index < currentWordIndex;
 
         return (
           <Text key={index}>
-            {index > 0 ? ' ' : ''}
+            {precedingWhitespace}
             <Text
               style={[
                 isHighlighted && highlightStyle,
