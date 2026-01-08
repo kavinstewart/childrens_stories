@@ -164,6 +164,16 @@ export function useCachedTTS(options: UseCachedTTSOptions = {}): UseCachedTTSRes
 
     const ctx = contextId || `tts-${Date.now()}`;
 
+    // Stop any previous playback before starting new
+    // This prevents "Failed to enqueue audio chunk" errors
+    try {
+      playbackCancelledRef.current = true;
+      await tts.stopPlayback();
+      playbackCancelledRef.current = false;
+    } catch (err) {
+      console.warn('[CachedTTS] Error stopping previous playback:', err);
+    }
+
     // Check cache first
     if (enableCache) {
       try {
