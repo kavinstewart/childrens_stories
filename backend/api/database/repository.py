@@ -303,14 +303,15 @@ class StoryRepository:
                         r["character_name"],
                         r.get("character_description"),
                         r.get("reference_image_path"),
+                        r.get("bible_json"),
                     )
                     for r in character_refs
                 ]
                 await self.conn.executemany(
                     """
                     INSERT INTO character_references
-                        (story_id, character_name, character_description, reference_image_path)
-                    VALUES ($1, $2, $3, $4)
+                        (story_id, character_name, character_description, reference_image_path, bible_json)
+                    VALUES ($1, $2, $3, $4, $5)
                     """,
                     ref_data,
                 )
@@ -472,16 +473,29 @@ class StoryRepository:
         char_refs: list[asyncpg.Record],
     ) -> list[CharacterReferenceResponse]:
         """Convert character reference records to CharacterReferenceResponse list."""
-        return [
-            CharacterReferenceResponse(
-                character_name=r["character_name"],
-                character_description=r["character_description"],
-                reference_image_url=f"/stories/{story_id}/characters/{r['character_name']}/image"
-                if r["reference_image_path"]
-                else None,
+        responses = []
+        for r in char_refs:
+            # Parse bible_json if present
+            bible_data = None
+            if r.get("bible_json"):
+                bible_json = r["bible_json"]
+                # Handle both string and dict (asyncpg may auto-parse JSONB)
+                if isinstance(bible_json, str):
+                    bible_data = json.loads(bible_json)
+                else:
+                    bible_data = bible_json
+
+            responses.append(
+                CharacterReferenceResponse(
+                    character_name=r["character_name"],
+                    character_description=r["character_description"],
+                    reference_image_url=f"/stories/{story_id}/characters/{r['character_name']}/image"
+                    if r["reference_image_path"]
+                    else None,
+                    bible=bible_data,
+                )
             )
-            for r in char_refs
-        ]
+        return responses
 
     def _record_to_response(
         self,

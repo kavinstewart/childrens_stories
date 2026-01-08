@@ -209,6 +209,39 @@ class CharacterBible:
             parts.append(f"with {self.signature_item}")
         return ", ".join(parts)
 
+    def to_dict(self) -> dict:
+        """Convert to dict for JSON storage in database."""
+        return {
+            "name": self.name,
+            "species": self.species,
+            "age_appearance": self.age_appearance,
+            "body": self.body,
+            "face": self.face,
+            "hair": self.hair,
+            "eyes": self.eyes,
+            "clothing": self.clothing,
+            "signature_item": self.signature_item,
+            "color_palette": self.color_palette,
+            "style_tags": self.style_tags,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "CharacterBible":
+        """Reconstruct from stored dict data."""
+        return cls(
+            name=data.get("name", ""),
+            species=data.get("species", ""),
+            age_appearance=data.get("age_appearance", ""),
+            body=data.get("body", ""),
+            face=data.get("face", ""),
+            hair=data.get("hair", ""),
+            eyes=data.get("eyes", ""),
+            clothing=data.get("clothing", ""),
+            signature_item=data.get("signature_item", ""),
+            color_palette=data.get("color_palette", []),
+            style_tags=data.get("style_tags", []),
+        )
+
 
 @dataclass
 class CharacterReferenceSheet:
@@ -218,6 +251,7 @@ class CharacterReferenceSheet:
     reference_image: bytes  # PNG/JPEG bytes of the reference portrait
     prompt_used: str = ""
     character_description: str = ""  # Age, physical features, etc. from character bible
+    bible: Optional["CharacterBible"] = None  # Full character bible for editing
 
     def to_pil_image(self) -> "Image.Image":
         """Convert to PIL Image for passing to Nano Banana Pro."""

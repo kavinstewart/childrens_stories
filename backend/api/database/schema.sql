@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS character_references (
     character_name VARCHAR(100) NOT NULL,
     character_description TEXT,
     reference_image_path TEXT,
+    bible_json JSONB,  -- Full CharacterBible for editing (story-37l6)
     PRIMARY KEY (story_id, character_name)
 );
 

@@ -90,6 +90,7 @@ Layout: Front view, 3/4 view, side profile (all full body), plus 4 expression he
             reference_image=image_data,
             prompt_used=prompt,
             character_description=description,
+            bible=bible,  # Store full bible for editing (story-37l6)
         )
 
     def generate_for_story(

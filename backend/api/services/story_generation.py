@@ -190,11 +190,17 @@ async def _save_story(
             ref_path = refs_dir / f"{_safe_filename(name)}_reference.png"
             ref_path.write_bytes(sheet.reference_image)
 
+            # Include full bible as JSON for editing (story-37l6)
+            bible_json = None
+            if sheet.bible:
+                bible_json = json.dumps(sheet.bible.to_dict())
+
             char_refs_data.append(
                 {
                     "character_name": name,
                     "character_description": sheet.character_description,
                     "reference_image_path": str(ref_path),
+                    "bible_json": bible_json,
                 }
             )
 

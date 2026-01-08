@@ -50,6 +50,7 @@ class CharacterReferenceResponse(BaseModel):
     character_name: str
     character_description: Optional[str] = None
     reference_image_url: Optional[str] = None
+    bible: Optional[dict] = None  # Full CharacterBible for editing
 
 
 class StoryProgressResponse(BaseModel):
