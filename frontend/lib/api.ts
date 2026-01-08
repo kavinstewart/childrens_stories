@@ -312,4 +312,18 @@ export const api = {
       body: JSON.stringify({ entries }),
     });
   },
+
+  // Summarize voice transcript into story goal
+  summarizeTranscript: async (transcript: string): Promise<SummarizeResponse> => {
+    return fetchApi('/voice/summarize', {
+      method: 'POST',
+      body: JSON.stringify({ transcript }),
+    });
+  },
 };
+
+// Response type for voice summarize endpoint
+export interface SummarizeResponse {
+  goal: string;
+  summary: string;
+}

@@ -1,8 +1,12 @@
 /**
  * Voice recording screen for creating stories via speech.
  *
- * Uses Deepgram STT to transcribe speech in real-time,
- * then creates a story from the transcript.
+ * Flow:
+ * 1. idle - Tap mic to start recording
+ * 2. recording - STT transcribes speech, stops on tap or 3s silence
+ * 3. processing - LLM summarizes transcript into goal
+ * 4. confirming - TTS speaks confirmation, user can create or re-record
+ * 5. creating - Story creation in progress
  */
 
 import { View, Text, Pressable, ScrollView, ActivityIndicator } from 'react-native';
@@ -24,26 +28,35 @@ import Animated, {
 import { useCreateStory } from '@/features/stories/hooks';
 import { fontFamily } from '@/lib/fonts';
 import { FloatingElement } from '@/components/animations';
-import { useSTT, STTTranscript } from '@/lib/voice';
+import { useSTT, useTTS, STTTranscript } from '@/lib/voice';
+import { api } from '@/lib/api';
 
-// Pulsing microphone animation
-function PulseMic({
-  isListening,
+type VoiceState = 'idle' | 'recording' | 'processing' | 'confirming' | 'creating';
+
+const SILENCE_TIMEOUT_MS = 3000; // 3 seconds of silence triggers stop
+
+// Animated microphone button
+function MicButton({
+  state,
   isSpeaking,
   onPress,
   disabled,
 }: {
-  isListening: boolean;
+  state: VoiceState;
   isSpeaking: boolean;
   onPress: () => void;
   disabled: boolean;
 }) {
   const pulse = useSharedValue(1);
   const ring = useSharedValue(0);
+  const spin = useSharedValue(0);
+
+  const isRecording = state === 'recording';
+  const isProcessing = state === 'processing';
+  const isConfirming = state === 'confirming';
 
   useEffect(() => {
-    if (isListening) {
-      // Continuous pulse when listening
+    if (isRecording) {
       pulse.value = withRepeat(
         withSequence(
           withTiming(1.05, { duration: 800, easing: Easing.inOut(Easing.ease) }),
@@ -52,15 +65,22 @@ function PulseMic({
         -1,
         true
       );
+    } else if (isProcessing) {
+      spin.value = withRepeat(
+        withTiming(360, { duration: 1500, easing: Easing.linear }),
+        -1,
+        false
+      );
     } else {
       cancelAnimation(pulse);
+      cancelAnimation(spin);
       pulse.value = withSpring(1);
+      spin.value = 0;
     }
-  }, [isListening, pulse]);
+  }, [isRecording, isProcessing, pulse, spin]);
 
   useEffect(() => {
-    if (isSpeaking) {
-      // Expanding ring when speech detected
+    if (isSpeaking && isRecording) {
       ring.value = withRepeat(
         withSequence(
           withTiming(1, { duration: 600 }),
@@ -73,10 +93,13 @@ function PulseMic({
       cancelAnimation(ring);
       ring.value = 0;
     }
-  }, [isSpeaking, ring]);
+  }, [isSpeaking, isRecording, ring]);
 
   const micStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: pulse.value }],
+    transform: [
+      { scale: pulse.value },
+      { rotate: `${spin.value}deg` },
+    ],
   }));
 
   const ringStyle = useAnimatedStyle(() => ({
@@ -84,11 +107,25 @@ function PulseMic({
     transform: [{ scale: interpolate(ring.value, [0, 1], [1, 2]) }],
   }));
 
+  const getColors = () => {
+    if (disabled) return ['#D1D5DB', '#9CA3AF'];
+    if (isRecording) return ['#EC4899', '#8B5CF6'];
+    if (isProcessing) return ['#F59E0B', '#D97706'];
+    if (isConfirming) return ['#10B981', '#059669'];
+    return ['#8B5CF6', '#6366F1'];
+  };
+
+  const getEmoji = () => {
+    if (isProcessing) return '🤔';
+    if (isConfirming) return '🔊';
+    if (isRecording) return '🎙️';
+    return '🎤';
+  };
+
   return (
     <Pressable onPress={onPress} disabled={disabled}>
       <View style={{ alignItems: 'center', justifyContent: 'center' }}>
-        {/* Pulsing ring when speaking */}
-        {isSpeaking && (
+        {isSpeaking && isRecording && (
           <Animated.View
             style={[
               {
@@ -105,27 +142,21 @@ function PulseMic({
 
         <Animated.View style={micStyle}>
           <LinearGradient
-            colors={
-              isListening
-                ? ['#EC4899', '#8B5CF6']
-                : disabled
-                ? ['#D1D5DB', '#9CA3AF']
-                : ['#8B5CF6', '#6366F1']
-            }
+            colors={getColors()}
             style={{
               width: 140,
               height: 140,
               borderRadius: 70,
               alignItems: 'center',
               justifyContent: 'center',
-              shadowColor: isListening ? '#EC4899' : '#8B5CF6',
+              shadowColor: isRecording ? '#EC4899' : '#8B5CF6',
               shadowOffset: { width: 0, height: 6 },
               shadowOpacity: 0.4,
               shadowRadius: 12,
               elevation: 10,
             }}
           >
-            <Text style={{ fontSize: 56 }}>{isListening ? '🎙️' : '🎤'}</Text>
+            <Text style={{ fontSize: 56 }}>{getEmoji()}</Text>
           </LinearGradient>
         </Animated.View>
       </View>
@@ -137,23 +168,36 @@ export default function NewVoiceStory() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
+  const [voiceState, setVoiceState] = useState<VoiceState>('idle');
   const [transcript, setTranscript] = useState('');
+  const [extractedGoal, setExtractedGoal] = useState('');
+  const [confirmationText, setConfirmationText] = useState('');
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const transcriptRef = useRef('');
+  const isMountedRef = useRef(true);
 
   const createStory = useCreateStory();
+
+  // TTS for speaking confirmation
+  const tts = useTTS({
+    onComplete: () => {
+      console.log('[Voice] TTS confirmation complete');
+    },
+    onError: (err) => {
+      console.error('[Voice] TTS error:', err);
+    },
+  });
 
   // Handle transcript updates
   const handleTranscript = useCallback((data: STTTranscript) => {
     if (data.isFinal) {
-      // Final transcript - append to accumulated text
       const newText = transcriptRef.current
         ? `${transcriptRef.current} ${data.transcript}`
         : data.transcript;
       transcriptRef.current = newText;
       setTranscript(newText);
     } else {
-      // Interim transcript - show current accumulated + interim
       const displayText = transcriptRef.current
         ? `${transcriptRef.current} ${data.transcript}`
         : data.transcript;
@@ -161,80 +205,185 @@ export default function NewVoiceStory() {
     }
   }, []);
 
-  // Handle speech detection
-  const handleSpeechStarted = useCallback(() => {
-    setIsSpeaking(true);
-  }, []);
-
-  const handleUtteranceEnd = useCallback(() => {
-    setIsSpeaking(false);
-  }, []);
-
-  // Handle errors by navigating to text input as fallback
-  const handleError = useCallback((errorMsg: string) => {
-    // Map error to fallback message
-    let fallbackMsg = 'Voice unavailable - connection failed';
-    if (errorMsg.includes('permission')) {
-      fallbackMsg = 'Voice unavailable - microphone permission denied';
-    } else if (errorMsg.includes('timeout')) {
-      fallbackMsg = 'Voice unavailable - connection timeout';
+  // Process transcript through LLM
+  const processTranscript = useCallback(async () => {
+    const text = transcriptRef.current.trim();
+    if (!text) {
+      if (isMountedRef.current) {
+        setError('No speech detected. Please try again.');
+        setVoiceState('idle');
+      }
+      return;
     }
 
-    // Navigate to text input with fallback banner
-    router.replace({
-      pathname: '/new',
-      params: { fallback: fallbackMsg },
-    });
-  }, [router]);
+    if (isMountedRef.current) {
+      setVoiceState('processing');
+      setError(null);
+    }
+
+    try {
+      console.log('[Voice] Summarizing transcript:', text.substring(0, 50) + '...');
+      const result = await api.summarizeTranscript(text);
+
+      if (!isMountedRef.current) return;
+
+      setExtractedGoal(result.goal);
+      setConfirmationText(result.summary);
+      setVoiceState('confirming');
+
+      // Speak the confirmation
+      const ttsText = `${result.summary}. The story prompt will be: ${result.goal}. Tap Create My Story to continue, or tap the microphone to try again.`;
+      await tts.speak(ttsText);
+
+    } catch (err) {
+      console.error('[Voice] Summarization failed:', err);
+      if (isMountedRef.current) {
+        setError('Failed to process your request. Please try again.');
+        setVoiceState('idle');
+      }
+    }
+  }, [tts]);
+
+  // Handle silence timeout - process the transcript
+  const handleSilenceTimeout = useCallback(async () => {
+    console.log('[Voice] Silence timeout triggered');
+    await processTranscript();
+  }, [processTranscript]);
+
+  // Handle errors - fallback to text input
+  const handleError = useCallback((errorMsg: string) => {
+    console.error('[Voice] STT error:', errorMsg);
+    setError(errorMsg);
+    setVoiceState('idle');
+  }, []);
 
   const {
-    status,
+    status: sttStatus,
     startListening,
     stopListening,
     isListening,
-    error,
   } = useSTT({
     onTranscript: handleTranscript,
-    onSpeechStarted: handleSpeechStarted,
-    onUtteranceEnd: handleUtteranceEnd,
+    onSpeechStarted: () => setIsSpeaking(true),
+    onUtteranceEnd: () => setIsSpeaking(false),
+    onSilenceTimeout: handleSilenceTimeout,
+    silenceTimeoutMs: SILENCE_TIMEOUT_MS,
     onError: handleError,
   });
 
-  // Toggle recording
+  // Handle mic button press based on current state
   const handleMicPress = async () => {
-    if (isListening) {
-      await stopListening();
-    } else {
-      // Clear previous transcript when starting fresh
-      transcriptRef.current = '';
-      setTranscript('');
-      await startListening();
+    switch (voiceState) {
+      case 'idle':
+        // Start recording
+        transcriptRef.current = '';
+        setTranscript('');
+        setError(null);
+        setVoiceState('recording');
+        await startListening();
+        break;
+
+      case 'recording':
+        // Stop recording and process
+        await stopListening();
+        await processTranscript();
+        break;
+
+      case 'confirming':
+        // User wants to re-record
+        tts.stop();
+        setExtractedGoal('');
+        setConfirmationText('');
+        transcriptRef.current = '';
+        setTranscript('');
+        setVoiceState('recording');
+        await startListening();
+        break;
+
+      default:
+        break;
     }
   };
 
-  // Create story from transcript
+  // Create story with extracted goal
   const handleCreate = async () => {
-    const goal = transcript.trim();
-    if (!goal) return;
+    if (!extractedGoal) return;
+
+    setVoiceState('creating');
+    tts.stop();
 
     try {
-      await stopListening();
-      const result = await createStory.mutateAsync({ goal });
+      const result = await createStory.mutateAsync({ goal: extractedGoal });
       router.replace(`/creating/${result.id}`);
     } catch (err) {
-      console.error('Failed to create story:', err);
+      console.error('[Voice] Failed to create story:', err);
+      if (isMountedRef.current) {
+        setError('Failed to create story. Please try again.');
+        setVoiceState('confirming');
+      }
     }
   };
 
-  const canCreate = transcript.trim().length > 0 && !isListening;
-  const isConnecting = status === 'connecting';
+  // Store refs for cleanup to avoid re-running effect on function changes
+  const stopListeningRef = useRef(stopListening);
+  const ttsRef = useRef(tts);
+  stopListeningRef.current = stopListening;
+  ttsRef.current = tts;
+
+  // Cleanup on unmount only
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      stopListeningRef.current();
+      ttsRef.current.stop();
+    };
+  }, []);
+
+  const isProcessing = voiceState === 'processing';
+  const isConfirming = voiceState === 'confirming';
+  const isCreating = voiceState === 'creating';
+  const canCreate = isConfirming && extractedGoal.length > 0;
+
+  const getStatusText = () => {
+    switch (voiceState) {
+      case 'idle':
+        return 'Tap the mic and tell me your story idea';
+      case 'recording':
+        return isSpeaking ? '🔴 Listening...' : '⏳ Waiting for speech...';
+      case 'processing':
+        return '🤔 Processing your idea...';
+      case 'confirming':
+        return '✅ Review your story idea';
+      case 'creating':
+        return '✨ Creating your story...';
+      default:
+        return '';
+    }
+  };
+
+  const getInstructionText = () => {
+    switch (voiceState) {
+      case 'idle':
+        return 'For example: "A story about a brave dragon who learns to make friends"';
+      case 'recording':
+        return 'Tap the mic when done, or pause for 3 seconds';
+      case 'processing':
+        return 'Extracting your story idea...';
+      case 'confirming':
+        return 'Tap Create My Story to proceed, or tap the mic to try again';
+      case 'creating':
+        return 'Please wait...';
+      default:
+        return '';
+    }
+  };
 
   return (
     <LinearGradient
       colors={['#E0E7FF', '#FAE8FF', '#FCE7F3']}
       style={{ flex: 1 }}
     >
-      {/* Floating decorations */}
       <FloatingElement delay={0} duration={4} style={{ top: 80, left: 24 }}>
         <Text style={{ fontSize: 24, opacity: 0.3 }}>🎵</Text>
       </FloatingElement>
@@ -254,6 +403,7 @@ export default function NewVoiceStory() {
           <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 24 }}>
             <Pressable
               onPress={() => router.back()}
+              disabled={isCreating}
               style={{
                 backgroundColor: 'rgba(255,255,255,0.7)',
                 padding: 12,
@@ -275,7 +425,7 @@ export default function NewVoiceStory() {
             </Text>
           </View>
 
-          {/* Instructions */}
+          {/* Status Card */}
           <View
             style={{
               backgroundColor: 'rgba(255,255,255,0.8)',
@@ -293,7 +443,7 @@ export default function NewVoiceStory() {
                 textAlign: 'center',
               }}
             >
-              {isListening ? "I'm listening..." : 'Tap the mic and tell me your story idea'}
+              {getStatusText()}
             </Text>
             <Text
               style={{
@@ -303,46 +453,31 @@ export default function NewVoiceStory() {
                 textAlign: 'center',
               }}
             >
-              {isListening
-                ? 'Speak clearly, I\'ll transcribe what you say'
-                : 'For example: "A story about a brave little dragon who learns to make friends"'}
+              {getInstructionText()}
             </Text>
           </View>
 
           {/* Microphone Button */}
           <View style={{ alignItems: 'center', marginVertical: 32 }}>
-            <PulseMic
-              isListening={isListening}
+            <MicButton
+              state={voiceState}
               isSpeaking={isSpeaking}
               onPress={handleMicPress}
-              disabled={isConnecting || createStory.isPending}
+              disabled={isProcessing || isCreating || sttStatus === 'connecting'}
             />
 
-            {/* Status text */}
-            <View style={{ marginTop: 16, minHeight: 24, alignItems: 'center' }}>
-              {isConnecting && (
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <ActivityIndicator size="small" color="#7C3AED" />
-                  <Text style={{ fontFamily: fontFamily.nunito, color: '#7C3AED' }}>
-                    Connecting...
-                  </Text>
-                </View>
-              )}
-              {isListening && (
-                <Text style={{ fontFamily: fontFamily.nunitoBold, color: '#EC4899' }}>
-                  {isSpeaking ? '🔴 Speaking...' : '⏳ Waiting for speech...'}
+            {sttStatus === 'connecting' && (
+              <View style={{ marginTop: 16, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <ActivityIndicator size="small" color="#7C3AED" />
+                <Text style={{ fontFamily: fontFamily.nunito, color: '#7C3AED' }}>
+                  Connecting...
                 </Text>
-              )}
-              {!isListening && !isConnecting && transcript.length === 0 && (
-                <Text style={{ fontFamily: fontFamily.nunito, color: '#9CA3AF' }}>
-                  Tap to start
-                </Text>
-              )}
-            </View>
+              </View>
+            )}
           </View>
 
-          {/* Transcript Display */}
-          {transcript.length > 0 && (
+          {/* Transcript Display (during recording) */}
+          {(voiceState === 'recording' || voiceState === 'processing') && transcript.length > 0 && (
             <View
               style={{
                 backgroundColor: 'rgba(255,255,255,0.9)',
@@ -350,9 +485,20 @@ export default function NewVoiceStory() {
                 padding: 20,
                 marginBottom: 24,
                 borderWidth: 2,
-                borderColor: isListening ? '#EC4899' : '#E5E7EB',
+                borderColor: voiceState === 'recording' ? '#EC4899' : '#F59E0B',
               }}
             >
+              <Text
+                style={{
+                  fontFamily: fontFamily.nunitoBold,
+                  fontSize: 12,
+                  color: '#9CA3AF',
+                  marginBottom: 8,
+                  textTransform: 'uppercase',
+                }}
+              >
+                What I heard:
+              </Text>
               <Text
                 style={{
                   fontFamily: fontFamily.nunito,
@@ -362,6 +508,66 @@ export default function NewVoiceStory() {
                 }}
               >
                 {transcript}
+              </Text>
+            </View>
+          )}
+
+          {/* Confirmation Display */}
+          {isConfirming && (
+            <View
+              style={{
+                backgroundColor: 'rgba(255,255,255,0.95)',
+                borderRadius: 20,
+                padding: 20,
+                marginBottom: 24,
+                borderWidth: 2,
+                borderColor: '#10B981',
+              }}
+            >
+              <Text
+                style={{
+                  fontFamily: fontFamily.nunitoBold,
+                  fontSize: 12,
+                  color: '#059669',
+                  marginBottom: 8,
+                  textTransform: 'uppercase',
+                }}
+              >
+                Story Summary:
+              </Text>
+              <Text
+                style={{
+                  fontFamily: fontFamily.nunito,
+                  fontSize: 16,
+                  color: '#374151',
+                  lineHeight: 24,
+                  marginBottom: 16,
+                }}
+              >
+                {confirmationText}
+              </Text>
+
+              <Text
+                style={{
+                  fontFamily: fontFamily.nunitoBold,
+                  fontSize: 12,
+                  color: '#7C3AED',
+                  marginBottom: 8,
+                  textTransform: 'uppercase',
+                }}
+              >
+                Story Prompt:
+              </Text>
+              <Text
+                style={{
+                  fontFamily: fontFamily.nunito,
+                  fontSize: 14,
+                  color: '#6B7280',
+                  lineHeight: 22,
+                  fontStyle: 'italic',
+                }}
+              >
+                "{extractedGoal}"
               </Text>
             </View>
           )}
@@ -382,94 +588,61 @@ export default function NewVoiceStory() {
             </View>
           )}
 
-          {/* Create Story Error */}
-          {createStory.error && (
-            <View
-              style={{
-                backgroundColor: '#FEE2E2',
-                borderRadius: 16,
-                padding: 16,
-                marginBottom: 20,
-              }}
-            >
-              <Text style={{ fontFamily: fontFamily.nunitoBold, color: '#991B1B' }}>
-                Failed to create story
-              </Text>
-              <Text style={{ fontFamily: fontFamily.nunito, color: '#DC2626' }}>
-                {createStory.error instanceof Error
-                  ? createStory.error.message
-                  : 'Unknown error'}
+          <View style={{ flex: 1 }} />
+
+          {/* Create Button (only in confirming state) */}
+          {isConfirming && (
+            <Pressable onPress={handleCreate} disabled={!canCreate || isCreating}>
+              {({ pressed }) => (
+                <LinearGradient
+                  colors={canCreate ? ['#EC4899', '#8B5CF6', '#6366F1'] : ['#D1D5DB', '#9CA3AF', '#9CA3AF']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={{
+                    paddingVertical: 16,
+                    borderRadius: 16,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 12,
+                    shadowColor: canCreate ? '#8B5CF6' : '#9CA3AF',
+                    shadowOffset: { width: 0, height: 4 },
+                    shadowOpacity: 0.3,
+                    shadowRadius: 8,
+                    elevation: 8,
+                    transform: [{ scale: pressed ? 0.98 : 1 }],
+                    opacity: pressed ? 0.9 : 1,
+                  }}
+                >
+                  <Text style={{ fontSize: 20 }}>🪄</Text>
+                  <Text
+                    style={{
+                      fontFamily: fontFamily.nunitoBold,
+                      fontSize: 18,
+                      color: 'white',
+                    }}
+                  >
+                    Create My Story
+                  </Text>
+                </LinearGradient>
+              )}
+            </Pressable>
+          )}
+
+          {/* Creating indicator */}
+          {isCreating && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
+              <ActivityIndicator size="large" color="#7C3AED" />
+              <Text style={{ fontFamily: fontFamily.nunitoBold, fontSize: 16, color: '#7C3AED' }}>
+                Creating your story...
               </Text>
             </View>
           )}
 
-          {/* Spacer to push button to bottom */}
-          <View style={{ flex: 1 }} />
-
-          {/* Create Button */}
-          <Pressable
-            onPress={handleCreate}
-            disabled={!canCreate || createStory.isPending}
-          >
-            {({ pressed }) => (
-              <LinearGradient
-                colors={
-                  canCreate && !createStory.isPending
-                    ? ['#EC4899', '#8B5CF6', '#6366F1']
-                    : ['#D1D5DB', '#9CA3AF', '#9CA3AF']
-                }
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={{
-                  paddingVertical: 16,
-                  borderRadius: 16,
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 12,
-                  shadowColor: canCreate ? '#8B5CF6' : '#9CA3AF',
-                  shadowOffset: { width: 0, height: 4 },
-                  shadowOpacity: 0.3,
-                  shadowRadius: 8,
-                  elevation: 8,
-                  transform: [{ scale: pressed ? 0.98 : 1 }],
-                  opacity: pressed ? 0.9 : 1,
-                }}
-              >
-                {createStory.isPending ? (
-                  <>
-                    <ActivityIndicator color="white" />
-                    <Text
-                      style={{
-                        fontFamily: fontFamily.nunitoBold,
-                        fontSize: 18,
-                        color: 'white',
-                      }}
-                    >
-                      Creating...
-                    </Text>
-                  </>
-                ) : (
-                  <>
-                    <Text style={{ fontSize: 20 }}>🪄</Text>
-                    <Text
-                      style={{
-                        fontFamily: fontFamily.nunitoBold,
-                        fontSize: 18,
-                        color: 'white',
-                      }}
-                    >
-                      Create My Story
-                    </Text>
-                  </>
-                )}
-              </LinearGradient>
-            )}
-          </Pressable>
-
           {/* Switch to text input link */}
           <Pressable
             onPress={() => router.replace('/new')}
+            disabled={isCreating}
             style={{ marginTop: 16, alignItems: 'center', paddingBottom: insets.bottom }}
           >
             <Text
