@@ -153,4 +153,85 @@ describe('useKaraoke', () => {
       expect(result.current.currentWordIndex).toBe(0);
     });
   });
+
+  describe('addTimestamps (streaming)', () => {
+    it('starts tracking if not already tracking', () => {
+      const { result } = renderHook(() => useKaraoke());
+
+      expect(result.current.isTracking).toBe(false);
+
+      act(() => {
+        result.current.addTimestamps([mockTimestamps[0]]);
+      });
+
+      expect(result.current.isTracking).toBe(true);
+      expect(result.current.timestamps).toEqual([mockTimestamps[0]]);
+      expect(result.current.currentWordIndex).toBe(0);
+    });
+
+    it('accumulates timestamps without resetting timer', () => {
+      const { result } = renderHook(() => useKaraoke({ updateIntervalMs: 50 }));
+
+      // First batch - just first word
+      act(() => {
+        result.current.addTimestamps([mockTimestamps[0]]);
+      });
+
+      expect(result.current.timestamps.length).toBe(1);
+      expect(result.current.currentWordIndex).toBe(0);
+
+      // Advance 200ms into first word
+      act(() => {
+        jest.advanceTimersByTime(200);
+      });
+
+      expect(result.current.currentWordIndex).toBe(0);
+
+      // Add more timestamps - should NOT reset timer
+      act(() => {
+        result.current.addTimestamps([mockTimestamps[1], mockTimestamps[2]]);
+      });
+
+      expect(result.current.timestamps.length).toBe(3);
+      // Should still be on first word since we're at 200ms
+      expect(result.current.currentWordIndex).toBe(0);
+
+      // Advance to second word (350ms from start)
+      act(() => {
+        jest.advanceTimersByTime(200);
+      });
+
+      expect(result.current.currentWordIndex).toBe(1);
+    });
+
+    it('handles rapid streaming of single words', () => {
+      const { result } = renderHook(() => useKaraoke({ updateIntervalMs: 50 }));
+
+      // Simulate Cartesia streaming words one at a time
+      act(() => {
+        result.current.addTimestamps([{ word: 'Hello', start: 0.0, end: 0.3 }]);
+      });
+
+      expect(result.current.timestamps.length).toBe(1);
+
+      act(() => {
+        result.current.addTimestamps([{ word: 'world', start: 0.35, end: 0.7 }]);
+      });
+
+      expect(result.current.timestamps.length).toBe(2);
+
+      act(() => {
+        result.current.addTimestamps([{ word: 'how', start: 0.75, end: 0.9 }]);
+      });
+
+      expect(result.current.timestamps.length).toBe(3);
+
+      // Advance to when "world" should be highlighted
+      act(() => {
+        jest.advanceTimersByTime(400);
+      });
+
+      expect(result.current.currentWordIndex).toBe(1);
+    });
+  });
 });

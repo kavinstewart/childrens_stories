@@ -23,8 +23,10 @@ export interface UseKaraokeResult {
   currentWordIndex: number;
   /** All word timestamps for current utterance */
   timestamps: WordTimestamp[];
-  /** Start tracking with new timestamps */
+  /** Start tracking with new timestamps (resets timer) */
   startTracking: (timestamps: WordTimestamp[]) => void;
+  /** Add more timestamps to current tracking (for streaming) */
+  addTimestamps: (timestamps: WordTimestamp[]) => void;
   /** Stop tracking and reset */
   stopTracking: () => void;
   /** Whether currently tracking */
@@ -89,6 +91,19 @@ export function useKaraoke(options: UseKaraokeOptions = {}): UseKaraokeResult {
     intervalRef.current = setInterval(updateCurrentWord, updateIntervalMs);
   }, [updateCurrentWord, updateIntervalMs]);
 
+  // Add timestamps to existing tracking (for streaming TTS)
+  const addTimestamps = useCallback((newTimestamps: WordTimestamp[]) => {
+    if (!isTracking) {
+      // If not tracking yet, start tracking
+      startTracking(newTimestamps);
+      return;
+    }
+    // Append new timestamps
+    const updated = [...timestampsRef.current, ...newTimestamps];
+    setTimestamps(updated);
+    timestampsRef.current = updated;
+  }, [isTracking, startTracking]);
+
   const stopTracking = useCallback(() => {
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
@@ -112,6 +127,7 @@ export function useKaraoke(options: UseKaraokeOptions = {}): UseKaraokeResult {
     currentWordIndex,
     timestamps,
     startTracking,
+    addTimestamps,
     stopTracking,
     isTracking,
   };

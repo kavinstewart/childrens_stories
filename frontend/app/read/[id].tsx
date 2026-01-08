@@ -43,7 +43,7 @@ export default function StoryReader() {
   const {
     currentWordIndex,
     isTracking: isKaraokeActive,
-    startTracking: startKaraoke,
+    addTimestamps: addKaraokeTimestamps,
     stopTracking: stopKaraoke,
   } = useKaraoke();
 
@@ -53,16 +53,17 @@ export default function StoryReader() {
     autoReadRef.current = isAutoReading;
   }, [currentSpread, isAutoReading]);
 
-  // Handle word timestamps - start karaoke highlighting
+  // Handle word timestamps - accumulate for karaoke highlighting
   const handleTimestamps = useCallback((words: Array<{ word: string; start: number; end: number }>) => {
     console.log('[Reader] Received timestamps:', words.length, 'words');
     if (words.length > 0) {
-      startKaraoke(words as WordTimestamp[]);
+      addKaraokeTimestamps(words as WordTimestamp[]);
     }
-  }, [startKaraoke]);
+  }, [addKaraokeTimestamps]);
 
   // Handle TTS completion - auto-advance immediately (audio already finished)
   const handleTTSDone = useCallback(() => {
+    isSpeakingRef.current = false; // Clear guard - playback finished
     stopKaraoke();
     if (autoReadRef.current && currentSpreadRef.current < totalSpreads - 1) {
       // Advance immediately - onDone fires when audio completes
@@ -98,15 +99,18 @@ export default function StoryReader() {
 
   // Read current spread aloud
   const readCurrentSpread = useCallback(async () => {
-    // Guard against concurrent calls
+    // Guard against concurrent calls - stays true until onDone fires
     if (isSpeakingRef.current) {
+      console.log('[Reader] Skipping speak - already speaking');
       return;
     }
+    isSpeakingRef.current = true;
 
     const spreadData = spreads[currentSpread];
-    if (!spreadData?.text) return;
-
-    isSpeakingRef.current = true;
+    if (!spreadData?.text) {
+      isSpeakingRef.current = false;
+      return;
+    }
 
     try {
       if (ttsStatus !== 'ready' && ttsStatus !== 'speaking') {
@@ -116,7 +120,10 @@ export default function StoryReader() {
       }
 
       await speak(spreadData.text, `spread-${currentSpread}`);
-    } finally {
+      // Note: speak() returns immediately after sending to WebSocket
+      // isSpeakingRef stays true until handleTTSDone clears it
+    } catch (err) {
+      console.error('[Reader] TTS speak error:', err);
       isSpeakingRef.current = false;
     }
   }, [spreads, currentSpread, ttsStatus, connectTTS, speak]);
@@ -126,6 +133,7 @@ export default function StoryReader() {
     if (isAutoReading) {
       // Stop auto-reading
       setIsAutoReading(false);
+      isSpeakingRef.current = false;
       stopKaraoke();
       await stopPlayback();
     } else {
@@ -139,6 +147,7 @@ export default function StoryReader() {
   const stopPlaybackOnTap = useCallback(() => {
     if (isAutoReading) {
       setIsAutoReading(false);
+      isSpeakingRef.current = false;
       stopKaraoke();
       stopPlayback();
     }
