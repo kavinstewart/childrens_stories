@@ -119,18 +119,6 @@ export default function StoryLibrary() {
                 <Text className="text-2xl">{'⚙️'}</Text>
               </Pressable>
 
-              {/* Voice Input Button */}
-              <Pressable
-                onPress={() => router.push('/new-voice')}
-                className="bg-pink-500 py-4 px-4 rounded-2xl"
-                style={({ pressed }) => ({
-                  opacity: pressed ? 0.8 : 1,
-                  transform: [{ scale: pressed ? 0.95 : 1 }],
-                })}
-              >
-                <Text className="text-2xl">🎤</Text>
-              </Pressable>
-
               {/* New Story Button - routes to text input */}
               <Pressable
                 onPress={() => router.push('/new')}
