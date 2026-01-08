@@ -16,7 +16,7 @@ export interface WordTimestamp {
 export interface UseKaraokeOptions {
   /** Update interval in ms (default: 50ms for smooth highlighting) */
   updateIntervalMs?: number;
-  /** Audio latency offset in ms to compensate for buffer delay (default: 150ms) */
+  /** Audio latency offset in ms to compensate for buffer delay (default: 0ms with SoundStarted event) */
   audioLatencyMs?: number;
 }
 
@@ -38,7 +38,7 @@ export interface UseKaraokeResult {
 }
 
 export function useKaraoke(options: UseKaraokeOptions = {}): UseKaraokeResult {
-  const { updateIntervalMs = 50, audioLatencyMs = 150 } = options;
+  const { updateIntervalMs = 50, audioLatencyMs = 0 } = options;
 
   const [currentWordIndex, setCurrentWordIndex] = useState(-1);
   const [timestamps, setTimestamps] = useState<WordTimestamp[]>([]);

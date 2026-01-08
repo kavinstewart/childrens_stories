@@ -8,7 +8,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ExpoPlayAudioStream, EncodingTypes } from '@mykin-ai/expo-audio-stream';
+import { ExpoPlayAudioStream, EncodingTypes, subscribeToEvent } from '@mykin-ai/expo-audio-stream';
 import { authStorage } from '@/lib/auth-storage';
 import { WS_BASE_URL } from '@/lib/api';
 
@@ -73,8 +73,13 @@ export function useTTS(options: UseTTSOptions = {}): UseTTSResult {
     resolve: () => void;
     reject: (error: Error) => void;
   } | null>(null);
-  // Track if onAudioStart has fired for current context
-  const audioStartedRef = useRef<string | null>(null);
+  // Track contexts that have fired onAudioStart
+  const audioStartedContextsRef = useRef<Set<string>>(new Set());
+  // Track contexts waiting for SoundStarted event (queue to handle multiple)
+  const pendingAudioStartRef = useRef<string[]>([]);
+  // Keep onAudioStart callback in ref for event listener
+  const onAudioStartRef = useRef(onAudioStart);
+  onAudioStartRef.current = onAudioStart;
 
   // Update status and notify
   const updateStatus = useCallback((newStatus: TTSStatus) => {
@@ -104,10 +109,13 @@ export function useTTS(options: UseTTSOptions = {}): UseTTSResult {
             const turnId = data.context_id || 'tts-default';
             ExpoPlayAudioStream.playSound(data.data, turnId, EncodingTypes.PCM_S16LE);
             updateStatus('speaking');
-            // Fire onAudioStart on first audio chunk for this context
-            if (audioStartedRef.current !== turnId) {
-              audioStartedRef.current = turnId;
-              onAudioStart?.(turnId);
+            // Queue this context for SoundStarted event (if not already started)
+            // onAudioStart will fire when native player actually starts
+            if (!audioStartedContextsRef.current.has(turnId)) {
+              // Only add if not already in queue
+              if (!pendingAudioStartRef.current.includes(turnId)) {
+                pendingAudioStartRef.current.push(turnId);
+              }
             }
             onAudioChunk?.(data.data, data.context_id);
           }
@@ -151,7 +159,7 @@ export function useTTS(options: UseTTSOptions = {}): UseTTSResult {
     } catch (e) {
       console.error('[TTS] Failed to parse message:', e);
     }
-  }, [onAudioStart, onAudioChunk, onTimestamps, onDone, onError, updateStatus]);
+  }, [onAudioChunk, onTimestamps, onDone, onError, updateStatus]);
 
   // Connect to TTS service - returns Promise that resolves when connected
   const connect = useCallback(async (): Promise<void> => {
@@ -299,6 +307,9 @@ export function useTTS(options: UseTTSOptions = {}): UseTTSResult {
   const stopPlayback = useCallback(async () => {
     try {
       await ExpoPlayAudioStream.stopSound();
+      // Clear tracking state so next playback can fire onAudioStart
+      audioStartedContextsRef.current.clear();
+      pendingAudioStartRef.current = [];
       if (status === 'speaking') {
         updateStatus('ready');
       }
@@ -317,6 +328,28 @@ export function useTTS(options: UseTTSOptions = {}): UseTTSResult {
     ExpoPlayAudioStream.setSoundConfig({
       sampleRate: TTS_SAMPLE_RATE as 16000 | 44100 | 48000,
     });
+  }, []);
+
+  // Subscribe to SoundStarted event - fires when native audio player actually starts
+  // This gives accurate sync timing instead of guessing buffer latency
+  // Note: SoundStarted event has no context ID, so we use FIFO queue to match.
+  // This works correctly when playing one audio stream at a time (normal usage).
+  // Edge case: if multiple streams play concurrently and finish out of order,
+  // the wrong context could be matched. This is acceptable for our use case.
+  useEffect(() => {
+    const subscription = subscribeToEvent('SoundStarted', async () => {
+      // Process next pending context from queue (FIFO order)
+      const pendingContext = pendingAudioStartRef.current.shift();
+      if (pendingContext && !audioStartedContextsRef.current.has(pendingContext)) {
+        console.log('[TTS] SoundStarted event - audio actually playing for:', pendingContext);
+        audioStartedContextsRef.current.add(pendingContext);
+        onAudioStartRef.current?.(pendingContext);
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
   }, []);
 
   // Cleanup on unmount only (empty deps = runs once)

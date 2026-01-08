@@ -342,8 +342,9 @@ describe('useKaraoke', () => {
       expect(result.current.currentWordIndex).toBe(1);
     });
 
-    it('uses default 150ms latency when not specified', () => {
-      // Only specify updateIntervalMs, let audioLatencyMs use default of 150ms
+    it('uses default 0ms latency when not specified (SoundStarted provides accurate timing)', () => {
+      // Only specify updateIntervalMs, let audioLatencyMs use default of 0ms
+      // (With SoundStarted event, no latency compensation needed)
       const { result } = renderHook(() => useKaraoke({ updateIntervalMs: 50 }));
 
       act(() => {
@@ -353,17 +354,16 @@ describe('useKaraoke', () => {
         ]);
       });
 
-      // At 100ms, with default 150ms latency, elapsed is -50ms (negative)
-      // Word should be at index 0 (first word shown during latency window)
+      // At 100ms, with 0ms latency, elapsed is 100ms
+      // First word (0.0-0.2s = 0-200ms) should be highlighted
       act(() => {
         jest.advanceTimersByTime(100);
       });
       expect(result.current.currentWordIndex).toBe(0);
 
-      // At 200ms, with 150ms latency, elapsed is 50ms
-      // First word (0.0-0.2s = 0-200ms) should still be highlighted
+      // At 250ms, first word ends at 200ms, should still show word 0 (gap handling)
       act(() => {
-        jest.advanceTimersByTime(100);
+        jest.advanceTimersByTime(150);
       });
       expect(result.current.currentWordIndex).toBe(0);
     });
