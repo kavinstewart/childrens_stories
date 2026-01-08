@@ -34,6 +34,10 @@ export interface UseSTTOptions {
   onError?: (error: string) => void;
   /** Called when connection status changes */
   onStatusChange?: (status: STTStatus) => void;
+  /** Called after silence persists for silenceTimeoutMs after utterance end */
+  onSilenceTimeout?: () => void;
+  /** Duration of silence (ms) after utterance end before firing onSilenceTimeout. 0 to disable. */
+  silenceTimeoutMs?: number;
 }
 
 export interface UseSTTResult {
@@ -56,6 +60,8 @@ export function useSTT(options: UseSTTOptions = {}): UseSTTResult {
     onUtteranceEnd,
     onError,
     onStatusChange,
+    onSilenceTimeout,
+    silenceTimeoutMs = 0,
   } = options;
 
   const [status, setStatus] = useState<STTStatus>('idle');
@@ -64,6 +70,25 @@ export function useSTT(options: UseSTTOptions = {}): UseSTTResult {
   const wsRef = useRef<WebSocket | null>(null);
   const audioSubscriptionRef = useRef<{ remove: () => void } | null>(null);
   const isListeningRef = useRef(false);
+  const silenceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Clear silence timeout
+  const clearSilenceTimeout = useCallback(() => {
+    if (silenceTimeoutRef.current) {
+      clearTimeout(silenceTimeoutRef.current);
+      silenceTimeoutRef.current = null;
+    }
+  }, []);
+
+  // Start silence timeout
+  const startSilenceTimeout = useCallback(() => {
+    clearSilenceTimeout();
+    if (silenceTimeoutMs > 0 && onSilenceTimeout) {
+      silenceTimeoutRef.current = setTimeout(() => {
+        onSilenceTimeout();
+      }, silenceTimeoutMs);
+    }
+  }, [silenceTimeoutMs, onSilenceTimeout, clearSilenceTimeout]);
 
   // Update status and notify
   const updateStatus = useCallback((newStatus: STTStatus) => {
@@ -92,11 +117,13 @@ export function useSTT(options: UseSTTOptions = {}): UseSTTResult {
           break;
 
         case 'speech_started':
+          clearSilenceTimeout();
           onSpeechStarted?.();
           break;
 
         case 'utterance_end':
           onUtteranceEnd?.();
+          startSilenceTimeout();
           break;
 
         case 'error':
@@ -112,7 +139,7 @@ export function useSTT(options: UseSTTOptions = {}): UseSTTResult {
     } catch (e) {
       console.error('[STT] Failed to parse message:', e);
     }
-  }, [onTranscript, onSpeechStarted, onUtteranceEnd, onError, updateStatus]);
+  }, [onTranscript, onSpeechStarted, onUtteranceEnd, onError, updateStatus, clearSilenceTimeout, startSilenceTimeout]);
 
   // Send audio data to WebSocket
   const sendAudio = useCallback((base64Audio: string) => {
@@ -209,6 +236,9 @@ export function useSTT(options: UseSTTOptions = {}): UseSTTResult {
     console.log('[STT] Stopping...');
     isListeningRef.current = false;
 
+    // Clear any pending silence timeout
+    clearSilenceTimeout();
+
     // Stop audio recording
     try {
       await Audio.stopRecording();
@@ -235,7 +265,7 @@ export function useSTT(options: UseSTTOptions = {}): UseSTTResult {
 
     updateStatus('idle');
     console.log('[STT] Stopped');
-  }, [updateStatus]);
+  }, [updateStatus, clearSilenceTimeout]);
 
   // Cleanup on unmount
   useEffect(() => {

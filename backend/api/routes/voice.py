@@ -109,7 +109,7 @@ class DeepgramSTTProxy:
         try:
             self.deepgram_ws = await ws_connect(
                 url,
-                extra_headers={"Authorization": f"Token {DEEPGRAM_API_KEY}"},
+                additional_headers={"Authorization": f"Token {DEEPGRAM_API_KEY}"},
             )
             self.is_connected = True
             logger.info("Connected to Deepgram STT")
