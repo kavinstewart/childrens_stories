@@ -171,18 +171,19 @@ describe('useTTS', () => {
       const onError = jest.fn();
       const { result } = renderHook(() => useTTS({ onError }));
 
-      let connectError: Error | null = null;
+      let connectError: unknown;
       await act(async () => {
         try {
           await result.current.connect();
         } catch (e) {
-          connectError = e as Error;
+          connectError = e;
         }
         // Allow state updates to flush
         await Promise.resolve();
       });
 
-      expect(connectError?.message).toBe('Not authenticated');
+      expect(connectError).toBeInstanceOf(Error);
+      expect((connectError as Error).message).toBe('Not authenticated');
       expect(result.current.status).toBe('error');
       expect(onError).toHaveBeenCalledWith('Not authenticated');
     });
