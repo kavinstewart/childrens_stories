@@ -12,6 +12,10 @@ jest.mock('@mykin-ai/expo-audio-stream', () => ({
   EncodingTypes: {
     PCM_S16LE: 'pcm_s16le',
   },
+}));
+
+// Mock expo-audio-stream events
+jest.mock('@mykin-ai/expo-audio-stream/build/events', () => ({
   subscribeToEvent: jest.fn(() => ({
     remove: jest.fn(),
   })),

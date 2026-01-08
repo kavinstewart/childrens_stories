@@ -8,7 +8,8 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ExpoPlayAudioStream, EncodingTypes, subscribeToEvent } from '@mykin-ai/expo-audio-stream';
+import { ExpoPlayAudioStream, EncodingTypes } from '@mykin-ai/expo-audio-stream';
+import { subscribeToEvent } from '@mykin-ai/expo-audio-stream/build/events';
 import { authStorage } from '@/lib/auth-storage';
 import { WS_BASE_URL } from '@/lib/api';
 
