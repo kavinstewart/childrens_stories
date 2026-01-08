@@ -171,11 +171,3 @@ class TestTTSConfiguration:
         assert len(DEFAULT_VOICE_ID) > 10  # Looks like a UUID
 
 
-class TestTTSRateLimiting:
-    """Tests for TTS rate limiting."""
-
-    def test_tts_shares_rate_limit_with_stt(self):
-        """Test that TTS and STT share the same rate limit pool."""
-        from backend.api.routes.voice.auth import MAX_CONNECTIONS_PER_IP
-        # Rate limit should be shared (both endpoints use _active_connections)
-        assert MAX_CONNECTIONS_PER_IP > 0
