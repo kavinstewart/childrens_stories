@@ -8,11 +8,18 @@ import { cacheStorage } from '@/lib/cache-storage';
 import { cacheFiles } from '@/lib/cache-files';
 import { api, Story } from '@/lib/api';
 import { CacheSync } from '@/lib/cache-sync';
+import { downloadQueueStorage } from '@/lib/download-queue-storage';
 
 // Mock dependencies
 jest.mock('@/lib/cache-sync', () => ({
   CacheSync: {
     boostPriority: jest.fn(),
+  },
+}));
+
+jest.mock('@/lib/download-queue-storage', () => ({
+  downloadQueueStorage: {
+    clearAllDownloads: jest.fn(),
   },
 }));
 
@@ -47,6 +54,7 @@ jest.mock('@/lib/api', () => ({
 const mockCacheStorage = cacheStorage as jest.Mocked<typeof cacheStorage>;
 const mockCacheFiles = cacheFiles as jest.Mocked<typeof cacheFiles>;
 const mockCacheSync = CacheSync as jest.Mocked<typeof CacheSync>;
+const mockDownloadQueueStorage = downloadQueueStorage as jest.Mocked<typeof downloadQueueStorage>;
 
 // Helper to create mock cache entries with all required fields
 const createMockCacheEntry = (overrides: {
@@ -709,6 +717,15 @@ describe('StoryCacheManager', () => {
       expect(mockCacheFiles.deleteStoryDirectory).toHaveBeenCalledWith('story-2');
       expect(mockCacheStorage.removeStoryEntry).toHaveBeenCalledWith('story-1');
       expect(mockCacheStorage.removeStoryEntry).toHaveBeenCalledWith('story-2');
+    });
+
+    it('clears the download queue after evicting stories', async () => {
+      mockCacheStorage.getIndex.mockResolvedValue({});
+      mockDownloadQueueStorage.clearAllDownloads.mockResolvedValue(undefined);
+
+      await StoryCacheManager.clearAllCache();
+
+      expect(mockDownloadQueueStorage.clearAllDownloads).toHaveBeenCalled();
     });
   });
 

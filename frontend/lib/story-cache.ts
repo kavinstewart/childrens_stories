@@ -351,7 +351,7 @@ export const StoryCacheManager = {
       await StoryCacheManager.evictStory(storyId);
     }
     // Clear download queue to ensure fresh downloads with correct paths
-    await downloadQueueStorage.clearAll();
+    await downloadQueueStorage.clearAllDownloads();
   },
 
   /**
