@@ -33,11 +33,10 @@ export default function StoryReader() {
   const [showEndScreen, setShowEndScreen] = useState(false);
   const isLastSpread = currentSpread === totalSpreads - 1;
 
-  // TTS for reading aloud
-  const [isAutoReading, setIsAutoReading] = useState(false);
-  const autoReadRef = useRef(false);
-  const currentSpreadRef = useRef(currentSpread);
-  const isSpeakingRef = useRef(false); // Guard to prevent concurrent speak calls
+  // TTS for reading aloud - user controls playback, no auto-advance
+  const [isPlaying, setIsPlaying] = useState(false);
+  // Track synthesis complete separately from playback complete
+  const synthesisDoneRef = useRef(false);
 
   // Karaoke word highlighting
   const {
@@ -48,12 +47,6 @@ export default function StoryReader() {
     stopTracking: stopKaraoke,
   } = useKaraoke();
 
-  // Keep ref in sync with state for use in callbacks
-  useEffect(() => {
-    currentSpreadRef.current = currentSpread;
-    autoReadRef.current = isAutoReading;
-  }, [currentSpread, isAutoReading]);
-
   // Handle audio start - start karaoke timer for sync
   const handleAudioStart = useCallback((contextId: string) => {
     console.log('[Reader] Audio started for context:', contextId);
@@ -62,25 +55,25 @@ export default function StoryReader() {
 
   // Handle word timestamps - accumulate for karaoke highlighting
   const handleTimestamps = useCallback((words: Array<{ word: string; start: number; end: number }>) => {
-    console.log('[Reader] Received timestamps:', words.length, 'words');
     if (words.length > 0) {
       addKaraokeTimestamps(words as WordTimestamp[]);
     }
   }, [addKaraokeTimestamps]);
 
-  // Handle TTS completion - auto-advance immediately (audio already finished)
+  // Handle TTS synthesis completion - wait for karaoke to finish before marking done
   const handleTTSDone = useCallback(() => {
-    isSpeakingRef.current = false; // Clear guard - playback finished
-    stopKaraoke();
-    if (autoReadRef.current && currentSpreadRef.current < totalSpreads - 1) {
-      // Advance immediately - onDone fires when audio completes
-      setCurrentSpread(prev => prev + 1);
-    } else if (autoReadRef.current && currentSpreadRef.current === totalSpreads - 1) {
-      // Reached the end
-      setIsAutoReading(false);
-      setShowEndScreen(true);
+    console.log('[Reader] Synthesis complete, waiting for karaoke to finish');
+    synthesisDoneRef.current = true;
+  }, []);
+
+  // When karaoke finishes naturally, mark playback as complete
+  useEffect(() => {
+    if (!isKaraokeActive && synthesisDoneRef.current && isPlaying) {
+      console.log('[Reader] Karaoke finished, marking playback complete');
+      synthesisDoneRef.current = false;
+      setIsPlaying(false);
     }
-  }, [totalSpreads, stopKaraoke]);
+  }, [isKaraokeActive, isPlaying]);
 
   const {
     status: ttsStatus,
@@ -88,88 +81,55 @@ export default function StoryReader() {
     disconnect: disconnectTTS,
     speak,
     stopPlayback,
-    isSpeaking,
-    isPlayingFromCache,
-    error: ttsError,
   } = useCachedTTS({
+    enableCache: false, // Disabled until cache playback issues are fixed
     onAudioStart: handleAudioStart,
     onTimestamps: handleTimestamps,
     onDone: handleTTSDone,
     onError: (err) => {
       console.error('[Reader] TTS error:', err);
-      setIsAutoReading(false);
+      setIsPlaying(false);
       stopKaraoke();
     },
   });
 
-  const isTTSReady = ttsStatus === 'ready' || ttsStatus === 'speaking';
   const isTTSConnecting = ttsStatus === 'connecting';
 
-  // Read current spread aloud
-  const readCurrentSpread = useCallback(async () => {
-    // Guard against concurrent calls - stays true until onDone fires
-    if (isSpeakingRef.current) {
-      console.log('[Reader] Skipping speak - already speaking');
-      return;
-    }
-    isSpeakingRef.current = true;
-
-    const spreadData = spreads[currentSpread];
-    if (!spreadData?.text) {
-      isSpeakingRef.current = false;
-      return;
-    }
-
-    try {
-      if (ttsStatus !== 'ready' && ttsStatus !== 'speaking') {
-        await connectTTS();
-        // Wait a bit for connection
-        await new Promise(resolve => setTimeout(resolve, 500));
-      }
-
-      await speak(spreadData.text, `spread-${currentSpread}`);
-      // Note: speak() returns immediately after sending to WebSocket
-      // isSpeakingRef stays true until handleTTSDone clears it
-    } catch (err) {
-      console.error('[Reader] TTS speak error:', err);
-      isSpeakingRef.current = false;
-    }
-  }, [spreads, currentSpread, ttsStatus, connectTTS, speak]);
-
-  // Toggle auto-read mode
-  const toggleAutoRead = useCallback(async () => {
-    if (isAutoReading) {
-      // Stop auto-reading
-      setIsAutoReading(false);
-      isSpeakingRef.current = false;
+  // Toggle playback for current page
+  const togglePlayback = useCallback(async () => {
+    if (isPlaying) {
+      // Stop playing
+      setIsPlaying(false);
+      synthesisDoneRef.current = false;
       stopKaraoke();
       await stopPlayback();
     } else {
-      // Start auto-reading
-      setIsAutoReading(true);
-      await readCurrentSpread();
-    }
-  }, [isAutoReading, stopPlayback, readCurrentSpread, stopKaraoke]);
+      // Start playing current page
+      const spreadData = spreads[currentSpread];
+      if (!spreadData?.text) return;
 
-  // Stop playback on any tap (but don't block the tap from propagating)
-  // Uses .catch() since event handlers can't truly await - errors are logged not thrown
-  const stopPlaybackOnTap = useCallback(() => {
-    if (isAutoReading) {
-      setIsAutoReading(false);
-      isSpeakingRef.current = false;
-      stopKaraoke();
-      stopPlayback().catch((err) => {
-        console.warn('[Reader] Error stopping playback on tap:', err);
-      });
+      setIsPlaying(true);
+      try {
+        if (ttsStatus !== 'ready' && ttsStatus !== 'speaking') {
+          await connectTTS();
+        }
+        await speak(spreadData.text, `spread-${currentSpread}`);
+      } catch (err) {
+        console.error('[Reader] TTS speak error:', err);
+        setIsPlaying(false);
+      }
     }
-  }, [isAutoReading, stopKaraoke, stopPlayback]);
+  }, [isPlaying, spreads, currentSpread, ttsStatus, connectTTS, speak, stopPlayback, stopKaraoke]);
 
-  // Auto-read when spread changes (if auto-reading is enabled)
+  // Stop playback when page changes
   useEffect(() => {
-    if (isAutoReading && !showEndScreen && spreads[currentSpread]?.text) {
-      readCurrentSpread();
+    if (isPlaying) {
+      setIsPlaying(false);
+      synthesisDoneRef.current = false;
+      stopKaraoke();
+      stopPlayback().catch(() => {});
     }
-  }, [currentSpread, isAutoReading, showEndScreen, spreads, readCurrentSpread]);
+  }, [currentSpread]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Cleanup TTS on unmount
   useEffect(() => {
@@ -287,7 +247,6 @@ export default function StoryReader() {
   return (
     <Pressable
       style={{ flex: 1, backgroundColor: '#1a1a2e' }}
-      onPressIn={stopPlaybackOnTap}
     >
       {/* Full-bleed Illustration */}
       {imageUrl ? (
@@ -458,20 +417,20 @@ export default function StoryReader() {
           {/* Speaker Button - Read aloud */}
           {!showEndScreen && currentSpreadData && (
             <Pressable
-              onPress={toggleAutoRead}
+              onPress={togglePlayback}
               disabled={isTTSConnecting}
               style={{
-                backgroundColor: isAutoReading ? '#F97316' : '#FAF7F2',
+                backgroundColor: isPlaying ? '#F97316' : '#FAF7F2',
                 paddingVertical: 16,
                 paddingHorizontal: 22,
                 borderRadius: 22,
                 borderWidth: 2,
-                borderColor: isAutoReading ? '#EA580C' : '#EDE8E0',
+                borderColor: isPlaying ? '#EA580C' : '#EDE8E0',
                 alignItems: 'center',
                 justifyContent: 'center',
-                shadowColor: isAutoReading ? '#F97316' : '#000',
+                shadowColor: isPlaying ? '#F97316' : '#000',
                 shadowOffset: { width: 0, height: 2 },
-                shadowOpacity: isAutoReading ? 0.3 : 0.15,
+                shadowOpacity: isPlaying ? 0.3 : 0.15,
                 shadowRadius: 6,
                 elevation: 4,
                 opacity: isTTSConnecting ? 0.6 : 1,
@@ -480,7 +439,7 @@ export default function StoryReader() {
               {isTTSConnecting ? (
                 <ActivityIndicator size="small" color="#4A4035" />
               ) : (
-                <Text style={{ fontSize: 32 }}>{isAutoReading ? '🔊' : '🔈'}</Text>
+                <Text style={{ fontSize: 32 }}>{isPlaying ? '🔊' : '🔈'}</Text>
               )}
             </Pressable>
           )}
@@ -610,40 +569,6 @@ export default function StoryReader() {
                 color: '#4A4035',
                 marginTop: 2,
               }}>Again</Text>
-            </Pressable>
-
-            {/* Listen Button - Start auto-read from beginning */}
-            <Pressable
-              onPress={() => {
-                setCurrentSpread(0);
-                setShowEndScreen(false);
-                setIsAutoReading(true);
-              }}
-              disabled={isTTSConnecting}
-              style={{
-                backgroundColor: '#FAF7F2',
-                width: 100,
-                height: 70,
-                borderRadius: 20,
-                borderWidth: 2,
-                borderColor: '#EDE8E0',
-                alignItems: 'center',
-                justifyContent: 'center',
-                shadowColor: '#000',
-                shadowOffset: { width: 0, height: 2 },
-                shadowOpacity: 0.15,
-                shadowRadius: 6,
-                elevation: 4,
-                opacity: isTTSConnecting ? 0.6 : 1,
-              }}
-            >
-              <Text style={{ fontSize: 24 }}>🔊</Text>
-              <Text style={{
-                fontSize: 12,
-                fontFamily: fontFamily.nunitoBold,
-                color: '#4A4035',
-                marginTop: 2,
-              }}>Listen</Text>
             </Pressable>
 
             {/* Library Button */}

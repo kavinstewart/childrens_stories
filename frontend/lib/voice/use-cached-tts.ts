@@ -136,7 +136,7 @@ export function useCachedTTS(options: UseCachedTTSOptions = {}): UseCachedTTSRes
       onAudioStart?.(contextId);
 
       // Play the cached audio
-      ExpoPlayAudioStream.playSound(audioData, contextId, EncodingTypes.PCM_S16LE);
+      await ExpoPlayAudioStream.playSound(audioData, contextId, EncodingTypes.PCM_S16LE);
 
       // Wait for approximate duration then signal done
       // Note: ExpoPlayAudioStream doesn't have a completion callback,
@@ -169,6 +169,8 @@ export function useCachedTTS(options: UseCachedTTSOptions = {}): UseCachedTTSRes
     try {
       playbackCancelledRef.current = true;
       await tts.stopPlayback();
+      // Give native audio player time to fully reset
+      await new Promise(resolve => setTimeout(resolve, 50));
       playbackCancelledRef.current = false;
     } catch (err) {
       console.warn('[CachedTTS] Error stopping previous playback:', err);
