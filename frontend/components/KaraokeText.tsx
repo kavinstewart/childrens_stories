@@ -5,11 +5,6 @@
  */
 
 import { Text, TextStyle, StyleProp } from 'react-native';
-import Animated, {
-  useAnimatedStyle,
-  withTiming,
-  Easing,
-} from 'react-native-reanimated';
 
 interface KaraokeTextProps {
   /** The full text to display */
@@ -23,8 +18,6 @@ interface KaraokeTextProps {
   /** Style for the highlighted word */
   highlightStyle?: StyleProp<TextStyle>;
 }
-
-const AnimatedText = Animated.createAnimatedComponent(Text);
 
 /**
  * Split text into words while preserving whitespace for proper rendering.
