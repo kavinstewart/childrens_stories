@@ -43,6 +43,7 @@ export function useKaraoke(options: UseKaraokeOptions = {}): UseKaraokeResult {
   const startTimeRef = useRef<number>(0);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timestampsRef = useRef<WordTimestamp[]>([]);
+  const isTrackingRef = useRef(false); // Ref for synchronous checks
 
   // Keep ref in sync for interval callback
   useEffect(() => {
@@ -86,14 +87,16 @@ export function useKaraoke(options: UseKaraokeOptions = {}): UseKaraokeResult {
     startTimeRef.current = Date.now();
     setCurrentWordIndex(0);
     setIsTracking(true);
+    isTrackingRef.current = true; // Set ref synchronously
 
     // Start update interval
     intervalRef.current = setInterval(updateCurrentWord, updateIntervalMs);
   }, [updateCurrentWord, updateIntervalMs]);
 
   // Add timestamps to existing tracking (for streaming TTS)
+  // Uses ref for synchronous check to avoid stale closure issues
   const addTimestamps = useCallback((newTimestamps: WordTimestamp[]) => {
-    if (!isTracking) {
+    if (!isTrackingRef.current) {
       // If not tracking yet, start tracking
       startTracking(newTimestamps);
       return;
@@ -102,7 +105,7 @@ export function useKaraoke(options: UseKaraokeOptions = {}): UseKaraokeResult {
     const updated = [...timestampsRef.current, ...newTimestamps];
     setTimestamps(updated);
     timestampsRef.current = updated;
-  }, [isTracking, startTracking]);
+  }, [startTracking]);
 
   const stopTracking = useCallback(() => {
     if (intervalRef.current) {
@@ -110,8 +113,10 @@ export function useKaraoke(options: UseKaraokeOptions = {}): UseKaraokeResult {
       intervalRef.current = null;
     }
     setIsTracking(false);
+    isTrackingRef.current = false; // Clear ref synchronously
     setCurrentWordIndex(-1);
     setTimestamps([]);
+    timestampsRef.current = [];
   }, []);
 
   // Cleanup on unmount

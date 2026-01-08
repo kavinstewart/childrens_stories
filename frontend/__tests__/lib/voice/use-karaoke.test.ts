@@ -233,5 +233,31 @@ describe('useKaraoke', () => {
 
       expect(result.current.currentWordIndex).toBe(1);
     });
+
+    it('handles multiple addTimestamps calls in same event loop tick (stale closure test)', () => {
+      const { result } = renderHook(() => useKaraoke({ updateIntervalMs: 50 }));
+
+      // This is what happens in production - multiple words arrive before React re-renders
+      // All calls use the same function reference, so state-based checks would fail
+      act(() => {
+        result.current.addTimestamps([{ word: 'Hello', start: 0.0, end: 0.3 }]);
+        result.current.addTimestamps([{ word: 'world', start: 0.35, end: 0.7 }]);
+        result.current.addTimestamps([{ word: 'how', start: 0.75, end: 0.9 }]);
+      });
+
+      // All 3 words should be accumulated, not just the last one
+      expect(result.current.timestamps.length).toBe(3);
+      expect(result.current.timestamps[0].word).toBe('Hello');
+      expect(result.current.timestamps[1].word).toBe('world');
+      expect(result.current.timestamps[2].word).toBe('how');
+      expect(result.current.isTracking).toBe(true);
+
+      // Timer should have started from first word, so advancing should work correctly
+      act(() => {
+        jest.advanceTimersByTime(400);
+      });
+
+      expect(result.current.currentWordIndex).toBe(1); // "world"
+    });
   });
 });
