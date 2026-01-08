@@ -16,6 +16,8 @@ export interface WordTimestamp {
 export interface UseKaraokeOptions {
   /** Update interval in ms (default: 50ms for smooth highlighting) */
   updateIntervalMs?: number;
+  /** Audio latency offset in ms to compensate for buffer delay (default: 150ms) */
+  audioLatencyMs?: number;
 }
 
 export interface UseKaraokeResult {
@@ -36,7 +38,7 @@ export interface UseKaraokeResult {
 }
 
 export function useKaraoke(options: UseKaraokeOptions = {}): UseKaraokeResult {
-  const { updateIntervalMs = 50 } = options;
+  const { updateIntervalMs = 50, audioLatencyMs = 150 } = options;
 
   const [currentWordIndex, setCurrentWordIndex] = useState(-1);
   const [timestamps, setTimestamps] = useState<WordTimestamp[]>([]);
@@ -56,6 +58,17 @@ export function useKaraoke(options: UseKaraokeOptions = {}): UseKaraokeResult {
     const elapsed = (Date.now() - startTimeRef.current) / 1000; // Convert to seconds
     const ts = timestampsRef.current;
 
+    // If no timestamps yet, keep current index
+    if (ts.length === 0) {
+      return;
+    }
+
+    // If elapsed is negative (still in audio buffer latency window), show first word
+    if (elapsed < 0) {
+      setCurrentWordIndex(0);
+      return;
+    }
+
     // Find the word that should be highlighted
     let newIndex = -1;
     for (let i = 0; i < ts.length; i++) {
@@ -73,7 +86,7 @@ export function useKaraoke(options: UseKaraokeOptions = {}): UseKaraokeResult {
     setCurrentWordIndex(newIndex);
 
     // Stop tracking if we've passed all words
-    if (ts.length > 0 && elapsed > ts[ts.length - 1].end + 0.5) {
+    if (elapsed > ts[ts.length - 1].end + 0.5) {
       stopTracking();
     }
   }, []);
@@ -86,14 +99,16 @@ export function useKaraoke(options: UseKaraokeOptions = {}): UseKaraokeResult {
 
     setTimestamps(newTimestamps);
     timestampsRef.current = newTimestamps;
-    startTimeRef.current = Date.now();
+    // Add audioLatencyMs to start time to compensate for audio buffer delay
+    // This makes the timer think playback started later, syncing with actual audio output
+    startTimeRef.current = Date.now() + audioLatencyMs;
     setCurrentWordIndex(0);
     setIsTracking(true);
     isTrackingRef.current = true; // Set ref synchronously
 
     // Start update interval
     intervalRef.current = setInterval(updateCurrentWord, updateIntervalMs);
-  }, [updateCurrentWord, updateIntervalMs]);
+  }, [updateCurrentWord, updateIntervalMs, audioLatencyMs]);
 
   // Start timer only (called when audio starts, before timestamps arrive)
   const startTimer = useCallback(() => {
@@ -104,14 +119,16 @@ export function useKaraoke(options: UseKaraokeOptions = {}): UseKaraokeResult {
       clearInterval(intervalRef.current);
     }
 
-    startTimeRef.current = Date.now();
+    // Add audioLatencyMs to start time to compensate for audio buffer delay
+    // This makes the timer think playback started later, syncing with actual audio output
+    startTimeRef.current = Date.now() + audioLatencyMs;
     setCurrentWordIndex(0);
     setIsTracking(true);
     isTrackingRef.current = true;
 
     // Start update interval
     intervalRef.current = setInterval(updateCurrentWord, updateIntervalMs);
-  }, [updateCurrentWord, updateIntervalMs]);
+  }, [updateCurrentWord, updateIntervalMs, audioLatencyMs]);
 
   // Add timestamps to current tracking (for streaming TTS)
   // Just appends timestamps, does NOT start timer

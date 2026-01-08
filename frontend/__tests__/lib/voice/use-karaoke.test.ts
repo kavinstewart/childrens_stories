@@ -46,7 +46,7 @@ describe('useKaraoke', () => {
     });
 
     it('updates current word index over time', () => {
-      const { result } = renderHook(() => useKaraoke({ updateIntervalMs: 50 }));
+      const { result } = renderHook(() => useKaraoke({ updateIntervalMs: 50, audioLatencyMs: 0 }));
 
       act(() => {
         result.current.startTracking(mockTimestamps);
@@ -70,7 +70,7 @@ describe('useKaraoke', () => {
     });
 
     it('handles gap between words', () => {
-      const { result } = renderHook(() => useKaraoke({ updateIntervalMs: 50 }));
+      const { result } = renderHook(() => useKaraoke({ updateIntervalMs: 50, audioLatencyMs: 0 }));
 
       act(() => {
         result.current.startTracking(mockTimestamps);
@@ -108,7 +108,7 @@ describe('useKaraoke', () => {
 
   describe('auto-stop', () => {
     it('auto-stops after all words are spoken', () => {
-      const { result } = renderHook(() => useKaraoke({ updateIntervalMs: 50 }));
+      const { result } = renderHook(() => useKaraoke({ updateIntervalMs: 50, audioLatencyMs: 0 }));
 
       act(() => {
         result.current.startTracking(mockTimestamps);
@@ -203,7 +203,7 @@ describe('useKaraoke', () => {
     });
 
     it('accumulates timestamps without resetting timer', () => {
-      const { result } = renderHook(() => useKaraoke({ updateIntervalMs: 50 }));
+      const { result } = renderHook(() => useKaraoke({ updateIntervalMs: 50, audioLatencyMs: 0 }));
 
       // Start timer first (simulating onAudioStart)
       act(() => {
@@ -239,7 +239,7 @@ describe('useKaraoke', () => {
     });
 
     it('handles rapid streaming of single words', () => {
-      const { result } = renderHook(() => useKaraoke({ updateIntervalMs: 50 }));
+      const { result } = renderHook(() => useKaraoke({ updateIntervalMs: 50, audioLatencyMs: 0 }));
 
       // Start timer first
       act(() => {
@@ -274,7 +274,7 @@ describe('useKaraoke', () => {
     });
 
     it('handles multiple addTimestamps calls in same event loop tick (stale closure test)', () => {
-      const { result } = renderHook(() => useKaraoke({ updateIntervalMs: 50 }));
+      const { result } = renderHook(() => useKaraoke({ updateIntervalMs: 50, audioLatencyMs: 0 }));
 
       // Start timer and add timestamps in same tick (like production)
       act(() => {
@@ -297,6 +297,75 @@ describe('useKaraoke', () => {
       });
 
       expect(result.current.currentWordIndex).toBe(1); // "world"
+    });
+  });
+
+  describe('audioLatencyMs', () => {
+    it('delays word highlighting to compensate for audio buffer', () => {
+      // Use 200ms latency offset
+      const { result } = renderHook(() => useKaraoke({
+        updateIntervalMs: 50,
+        audioLatencyMs: 200
+      }));
+
+      act(() => {
+        result.current.startTimer();
+        result.current.addTimestamps([
+          { word: 'Hello', start: 0.0, end: 0.3 },
+          { word: 'world', start: 0.35, end: 0.7 },
+        ]);
+      });
+
+      // At time 0, with 200ms latency offset, elapsed time is negative
+      // so currentWordIndex should be 0 (initial value from startTimer)
+      expect(result.current.currentWordIndex).toBe(0);
+
+      // Advance 100ms - still within latency buffer, elapsed time is negative
+      act(() => {
+        jest.advanceTimersByTime(100);
+      });
+      // Timer starts word 0 immediately but elapsed calculation is offset
+      expect(result.current.currentWordIndex).toBe(0);
+
+      // Advance to 250ms total - now 50ms of "real" audio time (250-200=50ms)
+      // First word (0.0-0.3s) should be highlighted
+      act(() => {
+        jest.advanceTimersByTime(150);
+      });
+      expect(result.current.currentWordIndex).toBe(0);
+
+      // Advance to 550ms total - 350ms of "real" audio time (550-200=350ms)
+      // Second word starts at 350ms, should now be word 1
+      act(() => {
+        jest.advanceTimersByTime(300);
+      });
+      expect(result.current.currentWordIndex).toBe(1);
+    });
+
+    it('uses default 150ms latency when not specified', () => {
+      // Only specify updateIntervalMs, let audioLatencyMs use default of 150ms
+      const { result } = renderHook(() => useKaraoke({ updateIntervalMs: 50 }));
+
+      act(() => {
+        result.current.startTimer();
+        result.current.addTimestamps([
+          { word: 'Test', start: 0.0, end: 0.2 },
+        ]);
+      });
+
+      // At 100ms, with default 150ms latency, elapsed is -50ms (negative)
+      // Word should be at index 0 (first word shown during latency window)
+      act(() => {
+        jest.advanceTimersByTime(100);
+      });
+      expect(result.current.currentWordIndex).toBe(0);
+
+      // At 200ms, with 150ms latency, elapsed is 50ms
+      // First word (0.0-0.2s = 0-200ms) should still be highlighted
+      act(() => {
+        jest.advanceTimersByTime(100);
+      });
+      expect(result.current.currentWordIndex).toBe(0);
     });
   });
 });
