@@ -104,12 +104,11 @@ export default {
     isMuted = false;
   },
 
-  async addListener(
+  addListener(
     eventName: keyof AudioModuleEvents,
     f: AudioModuleEvents[typeof eventName]
-  ): Promise<void> {
-    emitter.addListener(eventName, f);
-    return;
+  ): { remove: () => void } {
+    return emitter.addListener(eventName, f);
   },
 
   async showMicrophoneModes(): Promise<void> {
