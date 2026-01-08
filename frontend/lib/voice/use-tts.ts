@@ -69,6 +69,11 @@ export function useTTS(options: UseTTSOptions = {}): UseTTSResult {
   const [error, setError] = useState<string | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
+  // Ref to resolve/reject the connection promise
+  const connectResolversRef = useRef<{
+    resolve: () => void;
+    reject: (error: Error) => void;
+  } | null>(null);
 
   // Update status and notify
   const updateStatus = useCallback((newStatus: TTSStatus) => {
@@ -85,6 +90,11 @@ export function useTTS(options: UseTTSOptions = {}): UseTTSResult {
         case 'connected':
           console.log('[TTS] Connected to TTS service');
           updateStatus('ready');
+          // Resolve the connection promise if waiting
+          if (connectResolversRef.current) {
+            connectResolversRef.current.resolve();
+            connectResolversRef.current = null;
+          }
           break;
 
         case 'audio':
@@ -112,6 +122,11 @@ export function useTTS(options: UseTTSOptions = {}): UseTTSResult {
           setError(data.message);
           onError?.(data.message);
           updateStatus('error');
+          // Reject the connection promise if waiting
+          if (connectResolversRef.current) {
+            connectResolversRef.current.reject(new Error(data.message));
+            connectResolversRef.current = null;
+          }
           break;
 
         default:
@@ -122,22 +137,55 @@ export function useTTS(options: UseTTSOptions = {}): UseTTSResult {
     }
   }, [onAudioChunk, onTimestamps, onDone, onError, updateStatus]);
 
-  // Connect to TTS service
-  const connect = useCallback(async () => {
+  // Connect to TTS service - returns Promise that resolves when connected
+  const connect = useCallback(async (): Promise<void> => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       console.log('[TTS] Already connected');
       return;
     }
 
-    try {
-      setError(null);
-      updateStatus('connecting');
+    // Get auth token first (before creating promise)
+    const token = await authStorage.getToken();
+    if (!token) {
+      const errorMsg = 'Not authenticated';
+      setError(errorMsg);
+      onError?.(errorMsg);
+      updateStatus('error');
+      throw new Error(errorMsg);
+    }
 
-      // Get auth token for WebSocket connection
-      const token = await authStorage.getToken();
-      if (!token) {
-        throw new Error('Not authenticated');
-      }
+    setError(null);
+    updateStatus('connecting');
+
+    // Create a promise that resolves when we receive 'connected' from server
+    return new Promise((resolve, reject) => {
+      const CONNECTION_TIMEOUT = 5000;
+
+      // Set up timeout
+      const timeoutId = setTimeout(() => {
+        connectResolversRef.current = null;
+        const errorMsg = 'Connection timeout';
+        setError(errorMsg);
+        onError?.(errorMsg);
+        updateStatus('error');
+        if (wsRef.current) {
+          wsRef.current.close();
+          wsRef.current = null;
+        }
+        reject(new Error(errorMsg));
+      }, CONNECTION_TIMEOUT);
+
+      // Store resolvers so handleMessage can resolve/reject
+      connectResolversRef.current = {
+        resolve: () => {
+          clearTimeout(timeoutId);
+          resolve();
+        },
+        reject: (error: Error) => {
+          clearTimeout(timeoutId);
+          reject(error);
+        },
+      };
 
       // Connect to backend WebSocket
       const wsUrl = `${WS_BASE_URL}/voice/tts`;
@@ -154,25 +202,30 @@ export function useTTS(options: UseTTSOptions = {}): UseTTSResult {
 
       ws.onmessage = handleMessage;
 
-      ws.onerror = (e) => {
-        console.error('[TTS] WebSocket error:', e);
-        setError('Connection error');
-        onError?.('Connection error');
+      ws.onerror = () => {
+        clearTimeout(timeoutId);
+        const errorMsg = 'Connection error';
+        console.error('[TTS] WebSocket error');
+        setError(errorMsg);
+        onError?.(errorMsg);
         updateStatus('error');
+        if (connectResolversRef.current) {
+          connectResolversRef.current = null;
+          reject(new Error(errorMsg));
+        }
       };
 
       ws.onclose = () => {
         console.log('[TTS] WebSocket closed');
         updateStatus('idle');
+        // If we're still waiting for connection, reject
+        if (connectResolversRef.current) {
+          clearTimeout(timeoutId);
+          connectResolversRef.current = null;
+          reject(new Error('Connection closed'));
+        }
       };
-
-    } catch (e) {
-      const errorMsg = e instanceof Error ? e.message : 'Failed to connect to TTS';
-      console.error('[TTS] Connect error:', errorMsg);
-      setError(errorMsg);
-      onError?.(errorMsg);
-      updateStatus('error');
-    }
+    });
   }, [handleMessage, updateStatus, onError]);
 
   // Disconnect from TTS service
@@ -200,20 +253,20 @@ export function useTTS(options: UseTTSOptions = {}): UseTTSResult {
     // Auto-connect if not connected
     if (wsRef.current?.readyState !== WebSocket.OPEN) {
       console.log('[TTS] Not connected, connecting first...');
-      await connect();
-
-      // Wait for connection to be ready (with timeout)
-      const maxWait = 5000;
-      const startTime = Date.now();
-      while (wsRef.current?.readyState !== WebSocket.OPEN && Date.now() - startTime < maxWait) {
-        await new Promise(resolve => setTimeout(resolve, 100));
-      }
-
-      if (wsRef.current?.readyState !== WebSocket.OPEN) {
-        console.error('[TTS] Failed to connect within timeout');
-        setError('Failed to connect to TTS service');
+      try {
+        await connect();
+      } catch (e) {
+        // Error already handled by connect()
+        console.error('[TTS] Failed to connect:', e);
         return;
       }
+    }
+
+    // Double-check connection is ready
+    if (wsRef.current?.readyState !== WebSocket.OPEN) {
+      console.error('[TTS] Connection not ready after connect');
+      setError('Failed to connect to TTS service');
+      return;
     }
 
     console.log('[TTS] Synthesizing:', trimmedText.substring(0, 50) + '...');
