@@ -12,7 +12,7 @@ import { Story, StorySpread, api } from './api';
 import { StoryCacheManager } from './story-cache';
 import { cacheFiles } from './cache-files';
 
-interface UseStoryCacheResult {
+export interface UseStoryCacheResult {
   /** The story to display - cached version if available, otherwise network version */
   story: Story | undefined;
   /** The cached story, if available */

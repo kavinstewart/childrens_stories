@@ -107,12 +107,12 @@ function MicButton({
     transform: [{ scale: interpolate(ring.value, [0, 1], [1, 2]) }],
   }));
 
-  const getColors = () => {
-    if (disabled) return ['#D1D5DB', '#9CA3AF'];
-    if (isRecording) return ['#EC4899', '#8B5CF6'];
-    if (isProcessing) return ['#F59E0B', '#D97706'];
-    if (isConfirming) return ['#10B981', '#059669'];
-    return ['#8B5CF6', '#6366F1'];
+  const getColors = (): readonly [string, string] => {
+    if (disabled) return ['#D1D5DB', '#9CA3AF'] as const;
+    if (isRecording) return ['#EC4899', '#8B5CF6'] as const;
+    if (isProcessing) return ['#F59E0B', '#D97706'] as const;
+    if (isConfirming) return ['#10B981', '#059669'] as const;
+    return ['#8B5CF6', '#6366F1'] as const;
   };
 
   const getEmoji = () => {

@@ -34,7 +34,7 @@ export async function getNetworkState(): Promise<NetInfoState> {
     return {
       type: 'unknown',
       isConnected: false,
-      isInternetReachable: false,
+      isInternetReachable: null,
       details: null,
     } as NetInfoState;
   }

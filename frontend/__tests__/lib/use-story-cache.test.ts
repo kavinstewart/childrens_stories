@@ -3,8 +3,8 @@
  * Tests state transitions and cache behavior
  */
 
-import { renderHook, act, waitFor } from '@testing-library/react-native';
-import { useStoryCache } from '@/lib/use-story-cache';
+import { renderHook, act, waitFor, RenderHookResult } from '@testing-library/react-native';
+import { useStoryCache, UseStoryCacheResult } from '@/lib/use-story-cache';
 import { StoryCacheManager } from '@/lib/story-cache';
 import { cacheFiles } from '@/lib/cache-files';
 import { api, Story } from '@/lib/api';
@@ -230,7 +230,10 @@ describe('useStoryCache', () => {
         .mockResolvedValueOnce(false);
       mockStoryCacheManager.loadCachedStory.mockResolvedValue(story1);
 
-      const { result, rerender } = renderHook(
+      const { result, rerender } = renderHook<
+        UseStoryCacheResult,
+        { id: string; story: Story | undefined }
+      >(
         ({ id, story }) => useStoryCache(id, story),
         { initialProps: { id: 'story-1', story: undefined as Story | undefined } }
       );

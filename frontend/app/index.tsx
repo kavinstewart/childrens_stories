@@ -20,6 +20,7 @@ export default function StoryLibrary() {
   const insets = useSafeAreaInsets();
 
   const { data: networkStories, isLoading, isFetching, error, refetch } = useStories();
+  const handleRetry = () => { refetch(); };
   const { width: screenWidth } = useWindowDimensions();
   const [cachedStories, setCachedStories] = useState<Story[]>([]);
   const [isLoadingCache, setIsLoadingCache] = useState(true); // Start true - always load cache on mount
@@ -175,7 +176,7 @@ export default function StoryLibrary() {
                 No cached stories available for offline reading
               </Text>
               <Pressable
-                onPress={() => refetch()}
+                onPress={handleRetry}
                 className="bg-red-600 px-6 py-3 rounded-xl"
               >
                 <Text className="text-white font-bold">Try Again</Text>

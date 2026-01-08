@@ -48,6 +48,27 @@ const mockCacheStorage = cacheStorage as jest.Mocked<typeof cacheStorage>;
 const mockCacheFiles = cacheFiles as jest.Mocked<typeof cacheFiles>;
 const mockCacheSync = CacheSync as jest.Mocked<typeof CacheSync>;
 
+// Helper to create mock cache entries with all required fields
+const createMockCacheEntry = (overrides: {
+  cachedAt?: number;
+  lastRead?: number;
+  sizeBytes?: number;
+  spreadCount?: number;
+  title?: string;
+  goal?: string;
+  isIllustrated?: boolean;
+  coverSpreadNumber?: number;
+} = {}) => ({
+  cachedAt: overrides.cachedAt ?? Date.now(),
+  lastRead: overrides.lastRead ?? Date.now(),
+  sizeBytes: overrides.sizeBytes ?? 500000,
+  spreadCount: overrides.spreadCount ?? 12,
+  title: overrides.title ?? 'Test',
+  goal: overrides.goal ?? 'Test goal',
+  isIllustrated: overrides.isIllustrated ?? true,
+  coverSpreadNumber: overrides.coverSpreadNumber ?? 1,
+});
+
 const createMockStory = (overrides: Partial<Story> = {}): Story => ({
   id: 'test-story-123',
   status: 'completed',
@@ -298,13 +319,7 @@ describe('StoryCacheManager', () => {
 
     it('returns false when files are missing', async () => {
       mockCacheStorage.getIndex.mockResolvedValue({
-        'test-123': {
-          cachedAt: Date.now(),
-          lastRead: Date.now(),
-          sizeBytes: 500000,
-          spreadCount: 12,
-          title: 'Test',
-        },
+        'test-123': createMockCacheEntry(),
       });
       mockCacheFiles.verifyStoryFiles.mockResolvedValue(false);
 
@@ -316,13 +331,7 @@ describe('StoryCacheManager', () => {
 
     it('returns true when index entry exists and files verified', async () => {
       mockCacheStorage.getIndex.mockResolvedValue({
-        'test-123': {
-          cachedAt: Date.now(),
-          lastRead: Date.now(),
-          sizeBytes: 500000,
-          spreadCount: 12,
-          title: 'Test',
-        },
+        'test-123': createMockCacheEntry(),
       });
       mockCacheFiles.verifyStoryFiles.mockResolvedValue(true);
 
@@ -390,9 +399,9 @@ describe('StoryCacheManager', () => {
 
     it('returns sum of all story sizes', async () => {
       mockCacheStorage.getIndex.mockResolvedValue({
-        'story-1': { cachedAt: 1000, lastRead: 1000, sizeBytes: 500000, spreadCount: 12, title: 'A' },
-        'story-2': { cachedAt: 2000, lastRead: 2000, sizeBytes: 300000, spreadCount: 10, title: 'B' },
-        'story-3': { cachedAt: 3000, lastRead: 3000, sizeBytes: 200000, spreadCount: 8, title: 'C' },
+        'story-1': createMockCacheEntry({ cachedAt: 1000, lastRead: 1000, sizeBytes: 500000, spreadCount: 12, title: 'A' }),
+        'story-2': createMockCacheEntry({ cachedAt: 2000, lastRead: 2000, sizeBytes: 300000, spreadCount: 10, title: 'B' }),
+        'story-3': createMockCacheEntry({ cachedAt: 3000, lastRead: 3000, sizeBytes: 200000, spreadCount: 8, title: 'C' }),
       });
 
       const size = await StoryCacheManager.getCacheSize();
@@ -412,8 +421,8 @@ describe('StoryCacheManager', () => {
 
     it('returns all cached story IDs', async () => {
       mockCacheStorage.getIndex.mockResolvedValue({
-        'story-1': { cachedAt: 1000, lastRead: 1000, sizeBytes: 500000, spreadCount: 12, title: 'A' },
-        'story-2': { cachedAt: 2000, lastRead: 2000, sizeBytes: 300000, spreadCount: 10, title: 'B' },
+        'story-1': createMockCacheEntry({ cachedAt: 1000, lastRead: 1000, sizeBytes: 500000, spreadCount: 12, title: 'A' }),
+        'story-2': createMockCacheEntry({ cachedAt: 2000, lastRead: 2000, sizeBytes: 300000, spreadCount: 10, title: 'B' }),
       });
 
       const ids = await StoryCacheManager.getCachedStoryIds();
@@ -435,8 +444,8 @@ describe('StoryCacheManager', () => {
 
     it('loads and returns all cached stories', async () => {
       mockCacheStorage.getIndex.mockResolvedValue({
-        'story-1': { cachedAt: 1000, lastRead: 1000, sizeBytes: 500000, spreadCount: 12, title: 'A' },
-        'story-2': { cachedAt: 2000, lastRead: 2000, sizeBytes: 300000, spreadCount: 10, title: 'B' },
+        'story-1': createMockCacheEntry({ cachedAt: 1000, lastRead: 1000, sizeBytes: 500000, spreadCount: 12, title: 'A' }),
+        'story-2': createMockCacheEntry({ cachedAt: 2000, lastRead: 2000, sizeBytes: 300000, spreadCount: 10, title: 'B' }),
       });
       mockCacheFiles.loadStoryMetadata
         .mockResolvedValueOnce(createMockStory({ id: 'story-1', title: 'Story A', created_at: '2024-01-01T00:00:00Z' }))
@@ -451,8 +460,8 @@ describe('StoryCacheManager', () => {
 
     it('sorts stories by created_at descending (newest first)', async () => {
       mockCacheStorage.getIndex.mockResolvedValue({
-        'story-old': { cachedAt: 1000, lastRead: 1000, sizeBytes: 500000, spreadCount: 12, title: 'Old' },
-        'story-new': { cachedAt: 2000, lastRead: 2000, sizeBytes: 300000, spreadCount: 10, title: 'New' },
+        'story-old': createMockCacheEntry({ cachedAt: 1000, lastRead: 1000, sizeBytes: 500000, spreadCount: 12, title: 'Old' }),
+        'story-new': createMockCacheEntry({ cachedAt: 2000, lastRead: 2000, sizeBytes: 300000, spreadCount: 10, title: 'New' }),
       });
       mockCacheFiles.loadStoryMetadata
         .mockResolvedValueOnce(createMockStory({ id: 'story-old', title: 'Old Story', created_at: '2024-01-01T00:00:00Z' }))
@@ -467,9 +476,9 @@ describe('StoryCacheManager', () => {
 
     it('filters out stories that fail to load', async () => {
       mockCacheStorage.getIndex.mockResolvedValue({
-        'story-1': { cachedAt: 1000, lastRead: 1000, sizeBytes: 500000, spreadCount: 12, title: 'A' },
-        'story-2': { cachedAt: 2000, lastRead: 2000, sizeBytes: 300000, spreadCount: 10, title: 'B' },
-        'story-3': { cachedAt: 3000, lastRead: 3000, sizeBytes: 400000, spreadCount: 11, title: 'C' },
+        'story-1': createMockCacheEntry({ cachedAt: 1000, lastRead: 1000, sizeBytes: 500000, spreadCount: 12, title: 'A' }),
+        'story-2': createMockCacheEntry({ cachedAt: 2000, lastRead: 2000, sizeBytes: 300000, spreadCount: 10, title: 'B' }),
+        'story-3': createMockCacheEntry({ cachedAt: 3000, lastRead: 3000, sizeBytes: 400000, spreadCount: 11, title: 'C' }),
       });
       mockCacheFiles.loadStoryMetadata
         .mockResolvedValueOnce(createMockStory({ id: 'story-1', title: 'Story A' }))
@@ -487,9 +496,9 @@ describe('StoryCacheManager', () => {
 
     it('loads stories in parallel for better performance', async () => {
       // Create 5 stories to load
-      const index: Record<string, { cachedAt: number; lastRead: number; sizeBytes: number; spreadCount: number; title: string }> = {};
+      const index: Record<string, ReturnType<typeof createMockCacheEntry>> = {};
       for (let i = 0; i < 5; i++) {
-        index[`story-${i}`] = { cachedAt: i * 1000, lastRead: i * 1000, sizeBytes: 500000, spreadCount: 12, title: `Story ${i}` };
+        index[`story-${i}`] = createMockCacheEntry({ cachedAt: i * 1000, lastRead: i * 1000, sizeBytes: 500000, spreadCount: 12, title: `Story ${i}` });
       }
       mockCacheStorage.getIndex.mockResolvedValue(index);
 
@@ -628,7 +637,7 @@ describe('StoryCacheManager', () => {
   describe('ensureCacheSpace', () => {
     it('does nothing when there is enough space', async () => {
       mockCacheStorage.getIndex.mockResolvedValue({
-        'story-1': { cachedAt: 1000, lastRead: 1000, sizeBytes: 100000000, spreadCount: 12, title: 'A' },
+        'story-1': createMockCacheEntry({ cachedAt: 1000, lastRead: 1000, sizeBytes: 100000000, spreadCount: 12, title: 'A' }),
       });
 
       await StoryCacheManager.ensureCacheSpace(50000000); // Need 50MB, have 400MB free
@@ -640,9 +649,9 @@ describe('StoryCacheManager', () => {
       // Setup: 450MB used, need 100MB, so need to free 50MB
       // Story-A (oldest) should be evicted
       mockCacheStorage.getIndex.mockResolvedValue({
-        'story-a': { cachedAt: 1000, lastRead: 1000, sizeBytes: 100000000, spreadCount: 12, title: 'A' }, // oldest
-        'story-b': { cachedAt: 2000, lastRead: 3000, sizeBytes: 150000000, spreadCount: 12, title: 'B' },
-        'story-c': { cachedAt: 3000, lastRead: 2000, sizeBytes: 200000000, spreadCount: 12, title: 'C' },
+        'story-a': createMockCacheEntry({ cachedAt: 1000, lastRead: 1000, sizeBytes: 100000000, spreadCount: 12, title: 'A' }), // oldest
+        'story-b': createMockCacheEntry({ cachedAt: 2000, lastRead: 3000, sizeBytes: 150000000, spreadCount: 12, title: 'B' }),
+        'story-c': createMockCacheEntry({ cachedAt: 3000, lastRead: 2000, sizeBytes: 200000000, spreadCount: 12, title: 'C' }),
       }); // Total: 450MB
       mockCacheFiles.deleteStoryDirectory.mockResolvedValue(undefined);
       mockCacheStorage.removeStoryEntry.mockResolvedValue(undefined);
@@ -658,10 +667,10 @@ describe('StoryCacheManager', () => {
       // Setup: 480MB used, need 100MB, so need to free 80MB
       // Both story-a (50MB) and story-c (60MB) should be evicted (sorted by lastRead)
       mockCacheStorage.getIndex.mockResolvedValue({
-        'story-a': { cachedAt: 1000, lastRead: 1000, sizeBytes: 50000000, spreadCount: 12, title: 'A' }, // oldest
-        'story-b': { cachedAt: 2000, lastRead: 3000, sizeBytes: 200000000, spreadCount: 12, title: 'B' }, // newest
-        'story-c': { cachedAt: 3000, lastRead: 2000, sizeBytes: 60000000, spreadCount: 12, title: 'C' }, // middle
-        'story-d': { cachedAt: 4000, lastRead: 4000, sizeBytes: 170000000, spreadCount: 12, title: 'D' },
+        'story-a': createMockCacheEntry({ cachedAt: 1000, lastRead: 1000, sizeBytes: 50000000, spreadCount: 12, title: 'A' }), // oldest
+        'story-b': createMockCacheEntry({ cachedAt: 2000, lastRead: 3000, sizeBytes: 200000000, spreadCount: 12, title: 'B' }), // newest
+        'story-c': createMockCacheEntry({ cachedAt: 3000, lastRead: 2000, sizeBytes: 60000000, spreadCount: 12, title: 'C' }), // middle
+        'story-d': createMockCacheEntry({ cachedAt: 4000, lastRead: 4000, sizeBytes: 170000000, spreadCount: 12, title: 'D' }),
       }); // Total: 480MB
       mockCacheFiles.deleteStoryDirectory.mockResolvedValue(undefined);
       mockCacheStorage.removeStoryEntry.mockResolvedValue(undefined);
@@ -688,8 +697,8 @@ describe('StoryCacheManager', () => {
 
     it('evicts all cached stories', async () => {
       mockCacheStorage.getIndex.mockResolvedValue({
-        'story-1': { cachedAt: 1000, lastRead: 1000, sizeBytes: 500000, spreadCount: 12, title: 'A' },
-        'story-2': { cachedAt: 2000, lastRead: 2000, sizeBytes: 300000, spreadCount: 10, title: 'B' },
+        'story-1': createMockCacheEntry({ cachedAt: 1000, lastRead: 1000, sizeBytes: 500000, spreadCount: 12, title: 'A' }),
+        'story-2': createMockCacheEntry({ cachedAt: 2000, lastRead: 2000, sizeBytes: 300000, spreadCount: 10, title: 'B' }),
       });
       mockCacheFiles.deleteStoryDirectory.mockResolvedValue(undefined);
       mockCacheStorage.removeStoryEntry.mockResolvedValue(undefined);
@@ -781,8 +790,8 @@ describe('StoryCacheManager', () => {
 
     it('keeps valid cache entries', async () => {
       mockCacheStorage.getIndex.mockResolvedValue({
-        'story-1': { cachedAt: 1000, lastRead: 1000, sizeBytes: 500000, spreadCount: 12, title: 'A' },
-        'story-2': { cachedAt: 2000, lastRead: 2000, sizeBytes: 300000, spreadCount: 10, title: 'B' },
+        'story-1': createMockCacheEntry({ cachedAt: 1000, lastRead: 1000, sizeBytes: 500000, spreadCount: 12, title: 'A' }),
+        'story-2': createMockCacheEntry({ cachedAt: 2000, lastRead: 2000, sizeBytes: 300000, spreadCount: 10, title: 'B' }),
       });
       mockCacheFiles.verifyStoryFiles.mockResolvedValue(true);
 
@@ -796,9 +805,9 @@ describe('StoryCacheManager', () => {
 
     it('removes orphaned cache entries with missing files', async () => {
       mockCacheStorage.getIndex.mockResolvedValue({
-        'story-1': { cachedAt: 1000, lastRead: 1000, sizeBytes: 500000, spreadCount: 12, title: 'A' },
-        'story-2': { cachedAt: 2000, lastRead: 2000, sizeBytes: 300000, spreadCount: 10, title: 'B' },
-        'story-3': { cachedAt: 3000, lastRead: 3000, sizeBytes: 200000, spreadCount: 8, title: 'C' },
+        'story-1': createMockCacheEntry({ cachedAt: 1000, lastRead: 1000, sizeBytes: 500000, spreadCount: 12, title: 'A' }),
+        'story-2': createMockCacheEntry({ cachedAt: 2000, lastRead: 2000, sizeBytes: 300000, spreadCount: 10, title: 'B' }),
+        'story-3': createMockCacheEntry({ cachedAt: 3000, lastRead: 3000, sizeBytes: 200000, spreadCount: 8, title: 'C' }),
       });
       mockCacheFiles.verifyStoryFiles
         .mockResolvedValueOnce(true)   // story-1 valid
@@ -822,7 +831,7 @@ describe('StoryCacheManager', () => {
 
     it('removes all entries when all are orphaned', async () => {
       mockCacheStorage.getIndex.mockResolvedValue({
-        'story-1': { cachedAt: 1000, lastRead: 1000, sizeBytes: 500000, spreadCount: 12, title: 'A' },
+        'story-1': createMockCacheEntry({ cachedAt: 1000, lastRead: 1000, sizeBytes: 500000, spreadCount: 12, title: 'A' }),
       });
       mockCacheFiles.verifyStoryFiles.mockResolvedValue(false);
       mockCacheFiles.deleteStoryDirectory.mockResolvedValue(undefined);
@@ -840,7 +849,7 @@ describe('StoryCacheManager', () => {
       // This mirrors the ordering test for evictStory()
       const callOrder: string[] = [];
       mockCacheStorage.getIndex.mockResolvedValue({
-        'orphaned-story': { cachedAt: 1000, lastRead: 1000, sizeBytes: 500000, spreadCount: 12, title: 'Orphaned' },
+        'orphaned-story': createMockCacheEntry({ cachedAt: 1000, lastRead: 1000, sizeBytes: 500000, spreadCount: 12, title: 'Orphaned' }),
       });
       mockCacheFiles.verifyStoryFiles.mockResolvedValue(false); // Mark as orphaned
       mockCacheStorage.removeStoryEntry.mockImplementation(async () => {

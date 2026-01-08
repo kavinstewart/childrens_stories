@@ -27,9 +27,9 @@ const createNetworkState = (
 ): NetInfoState => ({
   type,
   isConnected,
-  isInternetReachable: isConnected,
+  isInternetReachable: isConnected ? true : null,
   details: null,
-});
+}) as NetInfoState;
 
 describe('network-aware', () => {
   beforeEach(async () => {
