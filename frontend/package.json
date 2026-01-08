@@ -14,7 +14,9 @@
     "test:watch": "jest --watch",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
-    "test:e2e:headed": "playwright test --headed"
+    "test:e2e:headed": "playwright test --headed",
+    "clean:ios": "rm -rf node_modules ios && npm install && npx expo prebuild --platform ios --clean",
+    "clean:android": "rm -rf node_modules android && npm install && npx expo prebuild --platform android --clean"
   },
   "dependencies": {
     "@expo-google-fonts/baloo-2": "^0.4.2",
