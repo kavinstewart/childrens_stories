@@ -9,7 +9,8 @@ import { StoryCard } from '@/components/StoryCard';
 import { StoryCacheManager } from '@/lib/story-cache';
 import { useStoryCache } from '@/lib/use-story-cache';
 import { useAuthStore } from '@/features/auth/store';
-import { useTTS } from '@/lib/voice';
+import { useTTS, useKaraoke, WordTimestamp } from '@/lib/voice';
+import { KaraokeText, defaultHighlightStyle } from '@/components/KaraokeText';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -37,25 +38,39 @@ export default function StoryReader() {
   const autoReadRef = useRef(false);
   const currentSpreadRef = useRef(currentSpread);
 
+  // Karaoke word highlighting
+  const {
+    currentWordIndex,
+    isTracking: isKaraokeActive,
+    startTracking: startKaraoke,
+    stopTracking: stopKaraoke,
+  } = useKaraoke();
+
   // Keep ref in sync with state for use in callbacks
   useEffect(() => {
     currentSpreadRef.current = currentSpread;
     autoReadRef.current = isAutoReading;
   }, [currentSpread, isAutoReading]);
 
-  // Handle TTS completion - auto-advance if auto-reading
+  // Handle word timestamps - start karaoke highlighting
+  const handleTimestamps = useCallback((words: Array<{ word: string; start: number; end: number }>) => {
+    if (words.length > 0) {
+      startKaraoke(words as WordTimestamp[]);
+    }
+  }, [startKaraoke]);
+
+  // Handle TTS completion - auto-advance immediately (audio already finished)
   const handleTTSDone = useCallback(() => {
+    stopKaraoke();
     if (autoReadRef.current && currentSpreadRef.current < totalSpreads - 1) {
-      // Small delay before advancing for natural pacing
-      setTimeout(() => {
-        setCurrentSpread(prev => prev + 1);
-      }, 500);
+      // Advance immediately - onDone fires when audio completes
+      setCurrentSpread(prev => prev + 1);
     } else if (autoReadRef.current && currentSpreadRef.current === totalSpreads - 1) {
       // Reached the end
       setIsAutoReading(false);
       setShowEndScreen(true);
     }
-  }, [totalSpreads]);
+  }, [totalSpreads, stopKaraoke]);
 
   const {
     status: ttsStatus,
@@ -66,10 +81,12 @@ export default function StoryReader() {
     isSpeaking,
     error: ttsError,
   } = useTTS({
+    onTimestamps: handleTimestamps,
     onDone: handleTTSDone,
     onError: (err) => {
       console.error('[Reader] TTS error:', err);
       setIsAutoReading(false);
+      stopKaraoke();
     },
   });
 
@@ -95,13 +112,14 @@ export default function StoryReader() {
     if (isAutoReading) {
       // Stop auto-reading
       setIsAutoReading(false);
+      stopKaraoke();
       await stopPlayback();
     } else {
       // Start auto-reading
       setIsAutoReading(true);
       await readCurrentSpread();
     }
-  }, [isAutoReading, stopPlayback, readCurrentSpread]);
+  }, [isAutoReading, stopPlayback, readCurrentSpread, stopKaraoke]);
 
   // Auto-read when spread changes (if auto-reading is enabled)
   useEffect(() => {
@@ -659,18 +677,25 @@ export default function StoryReader() {
             paddingHorizontal: 32,
           }}>
             {currentSpreadData ? (
-              <Text style={{
-                fontSize: 26,
-                lineHeight: 40,
-                color: 'white',
-                textAlign: 'center',
-                fontFamily: fontFamily.nunitoSemiBold,
-                textShadowColor: 'rgba(0,0,0,0.5)',
-                textShadowOffset: { width: 0, height: 2 },
-                textShadowRadius: 8,
-              }}>
-                {currentSpreadData.text}
-              </Text>
+              <KaraokeText
+                text={currentSpreadData.text}
+                currentWordIndex={currentWordIndex}
+                isActive={isKaraokeActive}
+                style={{
+                  fontSize: 26,
+                  lineHeight: 40,
+                  color: 'white',
+                  textAlign: 'center',
+                  fontFamily: fontFamily.nunitoSemiBold,
+                  textShadowColor: 'rgba(0,0,0,0.5)',
+                  textShadowOffset: { width: 0, height: 2 },
+                  textShadowRadius: 8,
+                }}
+                highlightStyle={{
+                  backgroundColor: 'rgba(251, 191, 36, 0.4)', // Golden highlight
+                  borderRadius: 4,
+                }}
+              />
             ) : (
               <Text style={{
                 fontSize: 20,

@@ -7,3 +7,6 @@ export type { UseSTTOptions, UseSTTResult, STTTranscript, STTStatus } from './us
 
 export { useTTS } from './use-tts';
 export type { UseTTSOptions, UseTTSResult, TTSStatus } from './use-tts';
+
+export { useKaraoke } from './use-karaoke';
+export type { UseKaraokeOptions, UseKaraokeResult, WordTimestamp } from './use-karaoke';
