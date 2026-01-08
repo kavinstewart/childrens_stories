@@ -8,7 +8,7 @@
 import { api } from './api';
 
 // Build identifier - update this when making changes to help debug which version is running
-const BUILD_ID = '2026-01-08-tts-fix-v2';
+const BUILD_ID = '2026-01-08-stop-on-tap';
 
 const BATCH_INTERVAL_MS = 5000; // Send every 5 seconds
 const MAX_BATCH_SIZE = 50; // Or when we hit 50 entries

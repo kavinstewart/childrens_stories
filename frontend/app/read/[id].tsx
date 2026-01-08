@@ -135,6 +135,15 @@ export default function StoryReader() {
     }
   }, [isAutoReading, stopPlayback, readCurrentSpread, stopKaraoke]);
 
+  // Stop playback on any tap (but don't block the tap from propagating)
+  const stopPlaybackOnTap = useCallback(() => {
+    if (isAutoReading) {
+      setIsAutoReading(false);
+      stopKaraoke();
+      stopPlayback();
+    }
+  }, [isAutoReading, stopKaraoke, stopPlayback]);
+
   // Auto-read when spread changes (if auto-reading is enabled)
   useEffect(() => {
     if (isAutoReading && !showEndScreen && spreads[currentSpread]?.text) {
@@ -256,7 +265,10 @@ export default function StoryReader() {
   const cardHeight = cardWidth * 1.1;
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#1a1a2e' }}>
+    <Pressable
+      style={{ flex: 1, backgroundColor: '#1a1a2e' }}
+      onPressIn={stopPlaybackOnTap}
+    >
       {/* Full-bleed Illustration */}
       {imageUrl ? (
         <Image
@@ -772,6 +784,6 @@ export default function StoryReader() {
         </View>
       )}
 
-    </View>
+    </Pressable>
   );
 }
