@@ -3,11 +3,16 @@
  *
  * Connects to the backend WebSocket at /voice/tts and synthesizes
  * text to speech, streaming audio chunks back for playback.
+ *
+ * Uses @mykin-ai/expo-audio-stream for reliable audio streaming playback.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import Audio from '@/modules/audio';
+import { ExpoPlayAudioStream, EncodingTypes } from '@mykin-ai/expo-audio-stream';
 import { authStorage } from '@/lib/auth-storage';
+
+// Sample rate from Cartesia TTS (24kHz PCM S16LE)
+const TTS_SAMPLE_RATE = 24000;
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://dev.exoselfsystems.com';
 
@@ -83,10 +88,13 @@ export function useTTS(options: UseTTSOptions = {}): UseTTSResult {
           break;
 
         case 'audio':
-          // Enqueue audio for playback
-          Audio.enqueueAudio(data.data);
-          updateStatus('speaking');
-          onAudioChunk?.(data.data, data.context_id);
+          // Enqueue audio for playback using expo-audio-stream
+          if (data.data) {
+            const turnId = data.context_id || 'tts-default';
+            ExpoPlayAudioStream.playSound(data.data, turnId, EncodingTypes.PCM_S16LE);
+            updateStatus('speaking');
+            onAudioChunk?.(data.data, data.context_id);
+          }
           break;
 
         case 'timestamps':
@@ -221,7 +229,7 @@ export function useTTS(options: UseTTSOptions = {}): UseTTSResult {
   // Stop playback
   const stopPlayback = useCallback(async () => {
     try {
-      await Audio.stopPlayback();
+      await ExpoPlayAudioStream.stopSound();
       if (status === 'speaking') {
         updateStatus('ready');
       }
@@ -230,12 +238,24 @@ export function useTTS(options: UseTTSOptions = {}): UseTTSResult {
     }
   }, [status, updateStatus]);
 
-  // Cleanup on unmount
+  // Keep ref updated for cleanup
+  const disconnectRef = useRef(disconnect);
+  disconnectRef.current = disconnect;
+
+  // Configure audio player sample rate on mount
+  useEffect(() => {
+    // Configure for 24kHz Cartesia audio (cast to bypass restrictive TS type)
+    ExpoPlayAudioStream.setSoundConfig({
+      sampleRate: TTS_SAMPLE_RATE as 16000 | 44100 | 48000,
+    });
+  }, []);
+
+  // Cleanup on unmount only (empty deps = runs once)
   useEffect(() => {
     return () => {
-      disconnect();
+      disconnectRef.current();
     };
-  }, [disconnect]);
+  }, []);
 
   // Stop everything (alias for common use)
   const stop = useCallback(async () => {

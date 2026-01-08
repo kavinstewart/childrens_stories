@@ -380,8 +380,11 @@ class CartesiaTTSProxy:
 
         try:
             # Stream audio from Cartesia
-            async for output in await self.ws.send(
-                model_id="sonic",
+            logger.info(f"Starting Cartesia synthesis for text: {text[:50]}...")
+            logger.info(f"Using voice_id: {voice}, context_id: {ctx_id}")
+            logger.info(f"WebSocket state: connected={self.is_connected}, ws={self.ws}")
+            output_stream = await self.ws.send(
+                model_id="sonic-3",
                 transcript=text,
                 voice={"mode": "id", "id": voice},
                 context_id=ctx_id,
@@ -391,37 +394,49 @@ class CartesiaTTSProxy:
                     "sample_rate": 24000,
                 },
                 stream=True,
-            ):
-                if output.get("type") == "chunk":
-                    # Send base64-encoded audio chunk to client
-                    audio_data = output.get("data")
-                    if audio_data:
-                        await self.client_ws.send_json({
-                            "type": "audio",
-                            "data": base64.b64encode(audio_data).decode() if isinstance(audio_data, bytes) else audio_data,
-                            "context_id": ctx_id,
-                        })
-                elif output.get("type") == "timestamps":
-                    # Forward word timestamps if available
+            )
+            logger.info(f"Got output_stream: {type(output_stream)}")
+            chunk_count = 0
+            async for output in output_stream:
+                chunk_count += 1
+                # Cartesia SDK output has .audio attribute containing the audio bytes
+                audio_data = getattr(output, "audio", None)
+                if audio_data:
+                    await self.client_ws.send_json({
+                        "type": "audio",
+                        "data": base64.b64encode(audio_data).decode() if isinstance(audio_data, bytes) else audio_data,
+                        "context_id": ctx_id,
+                    })
+
+                # Forward word timestamps if available
+                word_timestamps = getattr(output, "word_timestamps", None)
+                if word_timestamps:
+                    words = getattr(word_timestamps, "words", [])
                     await self.client_ws.send_json({
                         "type": "timestamps",
-                        "words": output.get("word_timestamps", {}).get("words", []),
+                        "words": words,
                         "context_id": ctx_id,
                     })
 
             # Signal synthesis complete
+            logger.info(f"TTS synthesis complete, sent {chunk_count} chunks")
             await self.client_ws.send_json({
                 "type": "done",
                 "context_id": ctx_id,
             })
 
         except Exception as e:
-            logger.error(f"TTS synthesis error: {e}")
-            await self.client_ws.send_json({
-                "type": "error",
-                "message": f"TTS synthesis failed: {str(e)}",
-                "context_id": ctx_id,
-            })
+            import traceback
+            logger.error(f"TTS synthesis error: {type(e).__name__}: {e}")
+            logger.error(f"TTS synthesis traceback: {traceback.format_exc()}")
+            try:
+                await self.client_ws.send_json({
+                    "type": "error",
+                    "message": f"TTS synthesis failed: {type(e).__name__}: {str(e)}",
+                    "context_id": ctx_id,
+                })
+            except Exception as send_err:
+                logger.error(f"Failed to send error to client: {send_err}")
 
     async def close(self):
         """Close the Cartesia connection."""

@@ -24,37 +24,6 @@ function float32ToBase64Int16(float32Array: Float32Array): string {
   return btoa(binary);
 }
 
-// Web Audio API player for TTS playback
-let playbackContext: AudioContext | null = null;
-let audioQueue: AudioBuffer[] = [];
-let isPlaying = false;
-
-async function getPlaybackContext(): Promise<AudioContext> {
-  if (!playbackContext) {
-    playbackContext = new AudioContext({ sampleRate: 24000 });
-  }
-  if (playbackContext.state === 'suspended') {
-    await playbackContext.resume();
-  }
-  return playbackContext;
-}
-
-async function playNextInQueue(): Promise<void> {
-  if (isPlaying || audioQueue.length === 0) return;
-  isPlaying = true;
-
-  const buffer = audioQueue.shift()!;
-  const ctx = await getPlaybackContext();
-  const source = ctx.createBufferSource();
-  source.buffer = buffer;
-  source.connect(ctx.destination);
-  source.onended = () => {
-    isPlaying = false;
-    playNextInQueue();
-  };
-  source.start();
-}
-
 export default {
   sampleRate: 48000,
   isLinear16PCM: true,
@@ -127,42 +96,12 @@ export default {
     console.log('[AudioModule.web] Audio recording stopped.');
   },
 
-  async enqueueAudio(base64EncodedAudio: string): Promise<void> {
-    try {
-      const ctx = await getPlaybackContext();
-
-      // Decode base64 to raw bytes
-      const binaryString = atob(base64EncodedAudio);
-      const bytes = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
-      }
-
-      // Decode audio data (assumes PCM format from TTS service)
-      const audioBuffer = await ctx.decodeAudioData(bytes.buffer);
-      audioQueue.push(audioBuffer);
-      playNextInQueue();
-    } catch (error) {
-      console.error('[AudioModule.web] Error enqueuing audio:', error);
-      emitter.emit('onError', { message: String(error) });
-    }
-  },
-
   async mute(): Promise<void> {
     isMuted = true;
   },
 
   async unmute(): Promise<void> {
     isMuted = false;
-  },
-
-  async stopPlayback(): Promise<void> {
-    audioQueue = [];
-    isPlaying = false;
-    if (playbackContext) {
-      await playbackContext.close();
-      playbackContext = null;
-    }
   },
 
   async addListener(

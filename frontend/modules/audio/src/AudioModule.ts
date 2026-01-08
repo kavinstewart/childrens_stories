@@ -5,8 +5,6 @@ declare class AudioModule extends NativeModule<AudioModuleEvents> {
   getPermissions(): Promise<boolean>;
   startRecording(): Promise<void>;
   stopRecording(): Promise<void>;
-  enqueueAudio(base64EncodedAudio: string): Promise<void>;
-  stopPlayback(): Promise<void>;
   mute(): Promise<void>;
   unmute(): Promise<void>;
   showMicrophoneModes(): Promise<void>;

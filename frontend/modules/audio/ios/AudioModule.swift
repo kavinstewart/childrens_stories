@@ -2,29 +2,20 @@ import AVFoundation
 import ExpoModulesCore
 import Foundation
 
+/// Native audio module for microphone recording (STT).
+/// TTS playback is handled by @mykin-ai/expo-audio-stream.
 public class AudioModule: Module {
-    private var audioEngine: AVAudioEngine?
+    // Recording
+    private var recordingEngine: AVAudioEngine?
     private var inputNode: AVAudioInputNode?
     private var isRecordingActive = false
     private var isMuted = false
-
-    // Audio playback
-    private var audioPlayer: AVAudioPlayerNode?
-    private var playbackQueue: [Data] = []
-    private var isPlaying = false
 
     // Audio format: 16-bit PCM, 48kHz, mono
     private static let sampleRate: Double = 48000
     private static let recordingFormat = AVAudioFormat(
         commonFormat: .pcmFormatInt16,
         sampleRate: sampleRate,
-        channels: 1,
-        interleaved: false
-    )!
-
-    private static let playbackFormat = AVAudioFormat(
-        commonFormat: .pcmFormatInt16,
-        sampleRate: 24000,
         channels: 1,
         interleaved: false
     )!
@@ -65,19 +56,6 @@ public class AudioModule: Module {
 
         AsyncFunction("unmute") {
             self.isMuted = false
-        }
-
-        AsyncFunction("enqueueAudio") { (base64EncodedAudio: String) in
-            guard let audioData = Data(base64Encoded: base64EncodedAudio) else {
-                self.sendEvent("onError", ["message": "Invalid base64 audio data"])
-                return
-            }
-            self.playbackQueue.append(audioData)
-            self.playNextInQueue()
-        }
-
-        AsyncFunction("stopPlayback") {
-            self.stopPlayback()
         }
 
         AsyncFunction("showMicrophoneModes") {
@@ -144,10 +122,10 @@ public class AudioModule: Module {
         try audioSession.setCategory(.playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker, .allowBluetooth])
         try audioSession.setActive(true)
 
-        audioEngine = AVAudioEngine()
-        guard let audioEngine = audioEngine else { return }
+        recordingEngine = AVAudioEngine()
+        guard let recordingEngine = recordingEngine else { return }
 
-        inputNode = audioEngine.inputNode
+        inputNode = recordingEngine.inputNode
         guard let inputNode = inputNode else { return }
 
         let inputFormat = inputNode.outputFormat(forBus: 0)
@@ -164,7 +142,7 @@ public class AudioModule: Module {
             self.sendEvent("onAudioInput", ["base64EncodedAudio": base64Audio])
         }
 
-        try audioEngine.start()
+        try recordingEngine.start()
         isRecordingActive = true
         print("[AudioModule] Recording started")
     }
@@ -173,83 +151,12 @@ public class AudioModule: Module {
         guard isRecordingActive else { return }
 
         inputNode?.removeTap(onBus: 0)
-        audioEngine?.stop()
-        audioEngine = nil
+        recordingEngine?.stop()
+        recordingEngine = nil
         inputNode = nil
         isRecordingActive = false
 
-        do {
-            try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-        } catch {
-            print("[AudioModule] Failed to deactivate audio session: \(error)")
-        }
-
         print("[AudioModule] Recording stopped")
-    }
-
-    private func playNextInQueue() {
-        guard !isPlaying, !playbackQueue.isEmpty else { return }
-        isPlaying = true
-
-        let audioData = playbackQueue.removeFirst()
-
-        do {
-            let audioSession = AVAudioSession.sharedInstance()
-            try audioSession.setCategory(.playback, mode: .default)
-            try audioSession.setActive(true)
-
-            // Create audio player if needed
-            if audioPlayer == nil {
-                audioPlayer = AVAudioPlayerNode()
-                audioEngine = AVAudioEngine()
-                audioEngine?.attach(audioPlayer!)
-                audioEngine?.connect(audioPlayer!, to: audioEngine!.mainMixerNode, format: Self.playbackFormat)
-            }
-
-            guard let audioEngine = audioEngine, let audioPlayer = audioPlayer else {
-                isPlaying = false
-                return
-            }
-
-            // Convert data to audio buffer
-            let frameCount = UInt32(audioData.count / 2) // 16-bit = 2 bytes per sample
-            guard let buffer = AVAudioPCMBuffer(pcmFormat: Self.playbackFormat, frameCapacity: frameCount) else {
-                isPlaying = false
-                return
-            }
-            buffer.frameLength = frameCount
-
-            // Copy data to buffer
-            audioData.withUnsafeBytes { rawPtr in
-                guard let baseAddress = rawPtr.baseAddress else { return }
-                memcpy(buffer.int16ChannelData![0], baseAddress, audioData.count)
-            }
-
-            if !audioEngine.isRunning {
-                try audioEngine.start()
-            }
-
-            audioPlayer.scheduleBuffer(buffer) { [weak self] in
-                DispatchQueue.main.async {
-                    self?.isPlaying = false
-                    self?.playNextInQueue()
-                }
-            }
-
-            if !audioPlayer.isPlaying {
-                audioPlayer.play()
-            }
-        } catch {
-            print("[AudioModule] Playback error: \(error)")
-            sendEvent("onError", ["message": error.localizedDescription])
-            isPlaying = false
-        }
-    }
-
-    private func stopPlayback() {
-        audioPlayer?.stop()
-        playbackQueue.removeAll()
-        isPlaying = false
     }
 
     private func convertToInt16PCM(buffer: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {

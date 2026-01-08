@@ -80,11 +80,16 @@ export function useSTT(options: UseSTTOptions = {}): UseSTTResult {
     }
   }, []);
 
+  // We need a ref to stopListening to avoid circular dependency
+  const stopListeningRef = useRef<() => Promise<void>>(() => Promise.resolve());
+
   // Start silence timeout
   const startSilenceTimeout = useCallback(() => {
     clearSilenceTimeout();
     if (silenceTimeoutMs > 0 && onSilenceTimeout) {
-      silenceTimeoutRef.current = setTimeout(() => {
+      silenceTimeoutRef.current = setTimeout(async () => {
+        // Stop listening before firing callback
+        await stopListeningRef.current();
         onSilenceTimeout();
       }, silenceTimeoutMs);
     }
@@ -267,14 +272,17 @@ export function useSTT(options: UseSTTOptions = {}): UseSTTResult {
     console.log('[STT] Stopped');
   }, [updateStatus, clearSilenceTimeout]);
 
-  // Cleanup on unmount
+  // Keep ref updated for silence timeout callback and cleanup
+  stopListeningRef.current = stopListening;
+
+  // Cleanup on unmount only (empty deps = runs once)
   useEffect(() => {
     return () => {
       if (isListeningRef.current) {
-        stopListening();
+        stopListeningRef.current();
       }
     };
-  }, [stopListening]);
+  }, []);
 
   return {
     status,
