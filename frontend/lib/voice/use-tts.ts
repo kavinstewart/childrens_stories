@@ -10,14 +10,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ExpoPlayAudioStream, EncodingTypes } from '@mykin-ai/expo-audio-stream';
 import { authStorage } from '@/lib/auth-storage';
+import { WS_BASE_URL } from '@/lib/api';
 
 // Sample rate from Cartesia TTS (24kHz PCM S16LE)
 const TTS_SAMPLE_RATE = 24000;
-
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://dev.exoselfsystems.com';
-
-// Convert HTTP URL to WebSocket URL
-const WS_BASE_URL = API_BASE_URL.replace(/^http/, 'ws');
 
 export type TTSStatus = 'idle' | 'connecting' | 'ready' | 'speaking' | 'error';
 

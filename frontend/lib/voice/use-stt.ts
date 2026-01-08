@@ -8,11 +8,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Audio from '@/modules/audio';
 import { authStorage } from '@/lib/auth-storage';
-
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://dev.exoselfsystems.com';
-
-// Convert HTTP URL to WebSocket URL
-const WS_BASE_URL = API_BASE_URL.replace(/^http/, 'ws');
+import { WS_BASE_URL } from '@/lib/api';
 
 export type STTStatus = 'idle' | 'connecting' | 'listening' | 'error';
 

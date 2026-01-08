@@ -2,7 +2,10 @@
 
 import { authStorage } from './auth-storage';
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://dev.exoselfsystems.com';
+export const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://dev.exoselfsystems.com';
+
+// Convert HTTP URL to WebSocket URL
+export const WS_BASE_URL = API_BASE_URL.replace(/^http/, 'ws');
 
 // Story list response cache (1 minute TTL)
 const STORIES_CACHE_TTL_MS = 60_000;
