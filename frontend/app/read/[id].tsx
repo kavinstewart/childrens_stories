@@ -37,6 +37,7 @@ export default function StoryReader() {
   const [isAutoReading, setIsAutoReading] = useState(false);
   const autoReadRef = useRef(false);
   const currentSpreadRef = useRef(currentSpread);
+  const isSpeakingRef = useRef(false); // Guard to prevent concurrent speak calls
 
   // Karaoke word highlighting
   const {
@@ -54,6 +55,7 @@ export default function StoryReader() {
 
   // Handle word timestamps - start karaoke highlighting
   const handleTimestamps = useCallback((words: Array<{ word: string; start: number; end: number }>) => {
+    console.log('[Reader] Received timestamps:', words.length, 'words');
     if (words.length > 0) {
       startKaraoke(words as WordTimestamp[]);
     }
@@ -96,16 +98,27 @@ export default function StoryReader() {
 
   // Read current spread aloud
   const readCurrentSpread = useCallback(async () => {
+    // Guard against concurrent calls
+    if (isSpeakingRef.current) {
+      return;
+    }
+
     const spreadData = spreads[currentSpread];
     if (!spreadData?.text) return;
 
-    if (ttsStatus !== 'ready' && ttsStatus !== 'speaking') {
-      await connectTTS();
-      // Wait a bit for connection
-      await new Promise(resolve => setTimeout(resolve, 500));
-    }
+    isSpeakingRef.current = true;
 
-    await speak(spreadData.text, `spread-${currentSpread}`);
+    try {
+      if (ttsStatus !== 'ready' && ttsStatus !== 'speaking') {
+        await connectTTS();
+        // Wait a bit for connection
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+
+      await speak(spreadData.text, `spread-${currentSpread}`);
+    } finally {
+      isSpeakingRef.current = false;
+    }
   }, [spreads, currentSpread, ttsStatus, connectTTS, speak]);
 
   // Toggle auto-read mode
