@@ -155,6 +155,114 @@ class TestTTSWebSocket:
                     # Connection should close without error
 
 
+class TestTTSTimestamps:
+    """Tests for TTS word timestamps feature."""
+
+    def test_tts_requests_timestamps_from_cartesia(self):
+        """Test that TTS requests word timestamps from Cartesia."""
+        token = create_access_token(subject="test_user")
+        mock_ws = create_mock_cartesia_ws()
+
+        with patch("backend.api.routes.voice.tts.CARTESIA_API_KEY", "test-key"):
+            with patch("backend.api.routes.voice.tts.AsyncCartesia", create_mock_cartesia_client(mock_ws)):
+                client = TestClient(app)
+                with client.websocket_connect("/voice/tts") as websocket:
+                    # Send auth
+                    websocket.send_json({"type": "auth", "token": token})
+                    data = websocket.receive_json()
+                    assert data["type"] == "connected"
+
+                    # Send synthesize request
+                    websocket.send_json({
+                        "type": "synthesize",
+                        "text": "Hello world",
+                        "context_id": "test-ctx"
+                    })
+
+                    # Collect all messages until done
+                    messages = []
+                    while True:
+                        data = websocket.receive_json()
+                        messages.append(data)
+                        if data["type"] == "done":
+                            break
+
+                    # Verify add_timestamps was requested in the Cartesia call
+                    assert len(mock_ws.sent_messages) == 1
+                    sent_kwargs = mock_ws.sent_messages[0]
+                    assert sent_kwargs.get("add_timestamps") is True, \
+                        "add_timestamps=True must be passed to Cartesia ws.send()"
+
+    def test_tts_forwards_timestamps_to_client(self):
+        """Test that TTS forwards word timestamps from Cartesia to client."""
+        token = create_access_token(subject="test_user")
+
+        # Create mock that returns timestamps
+        class MockCartesiaWSWithTimestamps:
+            def __init__(self):
+                self.sent_messages = []
+                self.closed = False
+
+            async def send(self, **kwargs):
+                self.sent_messages.append(kwargs)
+
+                class MockOutput:
+                    def __init__(self, audio=None, word_timestamps=None):
+                        self.audio = audio
+                        self.word_timestamps = word_timestamps
+
+                class MockTimestamps:
+                    words = [
+                        {"word": "Hello", "start": 0.0, "end": 0.3},
+                        {"word": "world", "start": 0.35, "end": 0.7}
+                    ]
+
+                async def generate():
+                    yield MockOutput(audio=b"audio1")
+                    yield MockOutput(word_timestamps=MockTimestamps())
+                    yield MockOutput(audio=b"audio2")
+
+                return generate()
+
+            async def close(self):
+                self.closed = True
+
+        mock_ws = MockCartesiaWSWithTimestamps()
+
+        with patch("backend.api.routes.voice.tts.CARTESIA_API_KEY", "test-key"):
+            with patch("backend.api.routes.voice.tts.AsyncCartesia", create_mock_cartesia_client(mock_ws)):
+                client = TestClient(app)
+                with client.websocket_connect("/voice/tts") as websocket:
+                    # Send auth
+                    websocket.send_json({"type": "auth", "token": token})
+                    data = websocket.receive_json()
+                    assert data["type"] == "connected"
+
+                    # Send synthesize request
+                    websocket.send_json({
+                        "type": "synthesize",
+                        "text": "Hello world",
+                        "context_id": "test-ctx"
+                    })
+
+                    # Collect messages
+                    messages = []
+                    while True:
+                        data = websocket.receive_json()
+                        messages.append(data)
+                        if data["type"] == "done":
+                            break
+
+                    # Should have received timestamps message
+                    timestamp_msgs = [m for m in messages if m["type"] == "timestamps"]
+                    assert len(timestamp_msgs) == 1
+                    assert timestamp_msgs[0]["words"] == [
+                        {"word": "Hello", "start": 0.0, "end": 0.3},
+                        {"word": "world", "start": 0.35, "end": 0.7}
+                    ]
+                    assert timestamp_msgs[0]["context_id"] == "test-ctx"
+
+
 class TestTTSConfiguration:
     """Tests for TTS configuration."""
 

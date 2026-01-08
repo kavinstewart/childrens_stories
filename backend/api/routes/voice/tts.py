@@ -95,6 +95,7 @@ class CartesiaTTSProxy:
                     "sample_rate": 24000,
                 },
                 stream=True,
+                add_timestamps=True,
             )
             chunk_count = 0
             async for output in output_stream:
