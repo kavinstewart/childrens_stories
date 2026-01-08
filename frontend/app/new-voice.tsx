@@ -181,7 +181,7 @@ export default function NewVoiceStory() {
 
   // TTS for speaking confirmation
   const tts = useTTS({
-    onComplete: () => {
+    onDone: () => {
       console.log('[Voice] TTS confirmation complete');
     },
     onError: (err) => {
