@@ -20,6 +20,8 @@ export type TTSStatus = 'idle' | 'connecting' | 'ready' | 'speaking' | 'error';
 export interface UseTTSOptions {
   /** Voice ID to use (optional, uses server default if not provided) */
   voiceId?: string;
+  /** Called when first audio chunk arrives (for sync timing) */
+  onAudioStart?: (contextId: string) => void;
   /** Called when audio chunk is received */
   onAudioChunk?: (data: string, contextId: string) => void;
   /** Called when word timestamps are received */
@@ -54,6 +56,7 @@ export interface UseTTSResult {
 export function useTTS(options: UseTTSOptions = {}): UseTTSResult {
   const {
     voiceId,
+    onAudioStart,
     onAudioChunk,
     onTimestamps,
     onDone,
@@ -70,6 +73,8 @@ export function useTTS(options: UseTTSOptions = {}): UseTTSResult {
     resolve: () => void;
     reject: (error: Error) => void;
   } | null>(null);
+  // Track if onAudioStart has fired for current context
+  const audioStartedRef = useRef<string | null>(null);
 
   // Update status and notify
   const updateStatus = useCallback((newStatus: TTSStatus) => {
@@ -99,6 +104,11 @@ export function useTTS(options: UseTTSOptions = {}): UseTTSResult {
             const turnId = data.context_id || 'tts-default';
             ExpoPlayAudioStream.playSound(data.data, turnId, EncodingTypes.PCM_S16LE);
             updateStatus('speaking');
+            // Fire onAudioStart on first audio chunk for this context
+            if (audioStartedRef.current !== turnId) {
+              audioStartedRef.current = turnId;
+              onAudioStart?.(turnId);
+            }
             onAudioChunk?.(data.data, data.context_id);
           }
           break;
@@ -141,7 +151,7 @@ export function useTTS(options: UseTTSOptions = {}): UseTTSResult {
     } catch (e) {
       console.error('[TTS] Failed to parse message:', e);
     }
-  }, [onAudioChunk, onTimestamps, onDone, onError, updateStatus]);
+  }, [onAudioStart, onAudioChunk, onTimestamps, onDone, onError, updateStatus]);
 
   // Connect to TTS service - returns Promise that resolves when connected
   const connect = useCallback(async (): Promise<void> => {

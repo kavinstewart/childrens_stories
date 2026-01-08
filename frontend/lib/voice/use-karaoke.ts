@@ -27,6 +27,8 @@ export interface UseKaraokeResult {
   startTracking: (timestamps: WordTimestamp[]) => void;
   /** Add more timestamps to current tracking (for streaming) */
   addTimestamps: (timestamps: WordTimestamp[]) => void;
+  /** Start the timer (call when audio starts) - does not reset timestamps */
+  startTimer: () => void;
   /** Stop tracking and reset */
   stopTracking: () => void;
   /** Whether currently tracking */
@@ -93,19 +95,32 @@ export function useKaraoke(options: UseKaraokeOptions = {}): UseKaraokeResult {
     intervalRef.current = setInterval(updateCurrentWord, updateIntervalMs);
   }, [updateCurrentWord, updateIntervalMs]);
 
-  // Add timestamps to existing tracking (for streaming TTS)
-  // Uses ref for synchronous check to avoid stale closure issues
-  const addTimestamps = useCallback((newTimestamps: WordTimestamp[]) => {
-    if (!isTrackingRef.current) {
-      // If not tracking yet, start tracking
-      startTracking(newTimestamps);
-      return;
+  // Start timer only (called when audio starts, before timestamps arrive)
+  const startTimer = useCallback(() => {
+    if (isTrackingRef.current) return; // Already tracking
+
+    // Clear any existing interval
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
     }
-    // Append new timestamps
+
+    startTimeRef.current = Date.now();
+    setCurrentWordIndex(0);
+    setIsTracking(true);
+    isTrackingRef.current = true;
+
+    // Start update interval
+    intervalRef.current = setInterval(updateCurrentWord, updateIntervalMs);
+  }, [updateCurrentWord, updateIntervalMs]);
+
+  // Add timestamps to current tracking (for streaming TTS)
+  // Just appends timestamps, does NOT start timer
+  const addTimestamps = useCallback((newTimestamps: WordTimestamp[]) => {
+    // Append new timestamps (timer should already be started via startTimer)
     const updated = [...timestampsRef.current, ...newTimestamps];
     setTimestamps(updated);
     timestampsRef.current = updated;
-  }, [startTracking]);
+  }, []);
 
   const stopTracking = useCallback(() => {
     if (intervalRef.current) {
@@ -133,6 +148,7 @@ export function useKaraoke(options: UseKaraokeOptions = {}): UseKaraokeResult {
     timestamps,
     startTracking,
     addTimestamps,
+    startTimer,
     stopTracking,
     isTracking,
   };

@@ -14,7 +14,9 @@ import { WordTimestamp } from './use-karaoke';
 // Sample rate for Cartesia audio
 const TTS_SAMPLE_RATE = 24000;
 
-export interface UseCachedTTSOptions extends Omit<UseTTSOptions, 'onAudioChunk' | 'onTimestamps'> {
+export interface UseCachedTTSOptions extends Omit<UseTTSOptions, 'onAudioChunk' | 'onTimestamps' | 'onAudioStart'> {
+  /** Called when audio starts playing (from cache or live) */
+  onAudioStart?: (contextId: string) => void;
   /** Called when timestamps are available (from cache or live) */
   onTimestamps?: (words: WordTimestamp[], contextId: string) => void;
   /** Called when playback completes (from cache or live) */
@@ -34,6 +36,7 @@ export interface UseCachedTTSResult extends Omit<UseTTSResult, 'speak'> {
 
 export function useCachedTTS(options: UseCachedTTSOptions = {}): UseCachedTTSResult {
   const {
+    onAudioStart,
     onTimestamps,
     onDone,
     onError,
@@ -98,6 +101,7 @@ export function useCachedTTS(options: UseCachedTTSOptions = {}): UseCachedTTSRes
   // Wrap useTTS with our handlers
   const tts = useTTS({
     ...ttsOptions,
+    onAudioStart,
     onAudioChunk: handleAudioChunk,
     onTimestamps: handleTimestamps,
     onDone: handleDone,
@@ -128,6 +132,9 @@ export function useCachedTTS(options: UseCachedTTSOptions = {}): UseCachedTTSRes
         sampleRate: TTS_SAMPLE_RATE as 16000 | 44100 | 48000,
       });
 
+      // Fire onAudioStart right before playing
+      onAudioStart?.(contextId);
+
       // Play the cached audio
       ExpoPlayAudioStream.playSound(audioData, contextId, EncodingTypes.PCM_S16LE);
 
@@ -148,7 +155,7 @@ export function useCachedTTS(options: UseCachedTTSOptions = {}): UseCachedTTSRes
     } finally {
       setIsPlayingFromCache(false);
     }
-  }, [onTimestamps, onDone, onError]);
+  }, [onAudioStart, onTimestamps, onDone, onError]);
 
   // Enhanced speak with cache lookup
   const speak = useCallback(async (text: string, contextId?: string) => {

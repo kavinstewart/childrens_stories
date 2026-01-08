@@ -44,6 +44,7 @@ export default function StoryReader() {
     currentWordIndex,
     isTracking: isKaraokeActive,
     addTimestamps: addKaraokeTimestamps,
+    startTimer: startKaraokeTimer,
     stopTracking: stopKaraoke,
   } = useKaraoke();
 
@@ -52,6 +53,12 @@ export default function StoryReader() {
     currentSpreadRef.current = currentSpread;
     autoReadRef.current = isAutoReading;
   }, [currentSpread, isAutoReading]);
+
+  // Handle audio start - start karaoke timer for sync
+  const handleAudioStart = useCallback((contextId: string) => {
+    console.log('[Reader] Audio started for context:', contextId);
+    startKaraokeTimer();
+  }, [startKaraokeTimer]);
 
   // Handle word timestamps - accumulate for karaoke highlighting
   const handleTimestamps = useCallback((words: Array<{ word: string; start: number; end: number }>) => {
@@ -85,6 +92,7 @@ export default function StoryReader() {
     isPlayingFromCache,
     error: ttsError,
   } = useCachedTTS({
+    onAudioStart: handleAudioStart,
     onTimestamps: handleTimestamps,
     onDone: handleTTSDone,
     onError: (err) => {

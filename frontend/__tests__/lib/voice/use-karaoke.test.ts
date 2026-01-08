@@ -154,26 +154,60 @@ describe('useKaraoke', () => {
     });
   });
 
-  describe('addTimestamps (streaming)', () => {
-    it('starts tracking if not already tracking', () => {
+  describe('startTimer', () => {
+    it('starts timer without timestamps', () => {
       const { result } = renderHook(() => useKaraoke());
 
       expect(result.current.isTracking).toBe(false);
 
       act(() => {
-        result.current.addTimestamps([mockTimestamps[0]]);
+        result.current.startTimer();
       });
 
       expect(result.current.isTracking).toBe(true);
-      expect(result.current.timestamps).toEqual([mockTimestamps[0]]);
+      expect(result.current.timestamps).toEqual([]);
       expect(result.current.currentWordIndex).toBe(0);
+    });
+
+    it('does nothing if already tracking', () => {
+      const { result } = renderHook(() => useKaraoke());
+
+      act(() => {
+        result.current.startTracking(mockTimestamps);
+      });
+
+      const startTime = Date.now();
+
+      act(() => {
+        jest.advanceTimersByTime(100);
+        result.current.startTimer(); // Should not reset
+      });
+
+      // Timer should not be reset (currentWordIndex should advance)
+      expect(result.current.isTracking).toBe(true);
+    });
+  });
+
+  describe('addTimestamps (streaming)', () => {
+    it('accumulates timestamps without starting timer', () => {
+      const { result } = renderHook(() => useKaraoke());
+
+      // Add timestamps before starting timer
+      act(() => {
+        result.current.addTimestamps([mockTimestamps[0]]);
+      });
+
+      // Should have timestamps but not be tracking (timer not started)
+      expect(result.current.timestamps).toEqual([mockTimestamps[0]]);
+      expect(result.current.isTracking).toBe(false);
     });
 
     it('accumulates timestamps without resetting timer', () => {
       const { result } = renderHook(() => useKaraoke({ updateIntervalMs: 50 }));
 
-      // First batch - just first word
+      // Start timer first (simulating onAudioStart)
       act(() => {
+        result.current.startTimer();
         result.current.addTimestamps([mockTimestamps[0]]);
       });
 
@@ -207,6 +241,11 @@ describe('useKaraoke', () => {
     it('handles rapid streaming of single words', () => {
       const { result } = renderHook(() => useKaraoke({ updateIntervalMs: 50 }));
 
+      // Start timer first
+      act(() => {
+        result.current.startTimer();
+      });
+
       // Simulate Cartesia streaming words one at a time
       act(() => {
         result.current.addTimestamps([{ word: 'Hello', start: 0.0, end: 0.3 }]);
@@ -237,9 +276,9 @@ describe('useKaraoke', () => {
     it('handles multiple addTimestamps calls in same event loop tick (stale closure test)', () => {
       const { result } = renderHook(() => useKaraoke({ updateIntervalMs: 50 }));
 
-      // This is what happens in production - multiple words arrive before React re-renders
-      // All calls use the same function reference, so state-based checks would fail
+      // Start timer and add timestamps in same tick (like production)
       act(() => {
+        result.current.startTimer();
         result.current.addTimestamps([{ word: 'Hello', start: 0.0, end: 0.3 }]);
         result.current.addTimestamps([{ word: 'world', start: 0.35, end: 0.7 }]);
         result.current.addTimestamps([{ word: 'how', start: 0.75, end: 0.9 }]);
