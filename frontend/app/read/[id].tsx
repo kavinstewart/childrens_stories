@@ -152,12 +152,15 @@ export default function StoryReader() {
   }, [isAutoReading, stopPlayback, readCurrentSpread, stopKaraoke]);
 
   // Stop playback on any tap (but don't block the tap from propagating)
+  // Uses .catch() since event handlers can't truly await - errors are logged not thrown
   const stopPlaybackOnTap = useCallback(() => {
     if (isAutoReading) {
       setIsAutoReading(false);
       isSpeakingRef.current = false;
       stopKaraoke();
-      stopPlayback();
+      stopPlayback().catch((err) => {
+        console.warn('[Reader] Error stopping playback on tap:', err);
+      });
     }
   }, [isAutoReading, stopKaraoke, stopPlayback]);
 
