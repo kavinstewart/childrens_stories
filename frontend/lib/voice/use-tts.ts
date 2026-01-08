@@ -38,9 +38,11 @@ export interface UseTTSResult {
   connect: () => Promise<void>;
   /** Disconnect from TTS service */
   disconnect: () => void;
-  /** Synthesize text to speech */
+  /** Synthesize text to speech (auto-connects if needed) */
   speak: (text: string, contextId?: string) => Promise<void>;
-  /** Stop playback */
+  /** Stop playback and disconnect */
+  stop: () => Promise<void>;
+  /** Stop playback only (keeps connection) */
   stopPlayback: () => Promise<void>;
   /** Whether currently speaking */
   isSpeaking: boolean;
@@ -179,18 +181,31 @@ export function useTTS(options: UseTTSOptions = {}): UseTTSResult {
     updateStatus('idle');
   }, [updateStatus]);
 
-  // Synthesize text to speech
+  // Synthesize text to speech (auto-connects if needed)
   const speak = useCallback(async (text: string, contextId?: string) => {
-    if (wsRef.current?.readyState !== WebSocket.OPEN) {
-      console.error('[TTS] Not connected');
-      setError('Not connected to TTS service');
-      return;
-    }
-
     const trimmedText = text.trim();
     if (!trimmedText) {
       console.warn('[TTS] Empty text, skipping');
       return;
+    }
+
+    // Auto-connect if not connected
+    if (wsRef.current?.readyState !== WebSocket.OPEN) {
+      console.log('[TTS] Not connected, connecting first...');
+      await connect();
+
+      // Wait for connection to be ready (with timeout)
+      const maxWait = 5000;
+      const startTime = Date.now();
+      while (wsRef.current?.readyState !== WebSocket.OPEN && Date.now() - startTime < maxWait) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+
+      if (wsRef.current?.readyState !== WebSocket.OPEN) {
+        console.error('[TTS] Failed to connect within timeout');
+        setError('Failed to connect to TTS service');
+        return;
+      }
     }
 
     console.log('[TTS] Synthesizing:', trimmedText.substring(0, 50) + '...');
@@ -201,7 +216,7 @@ export function useTTS(options: UseTTSOptions = {}): UseTTSResult {
       voice_id: voiceId,
       context_id: contextId,
     }));
-  }, [voiceId]);
+  }, [voiceId, connect]);
 
   // Stop playback
   const stopPlayback = useCallback(async () => {
@@ -222,11 +237,18 @@ export function useTTS(options: UseTTSOptions = {}): UseTTSResult {
     };
   }, [disconnect]);
 
+  // Stop everything (alias for common use)
+  const stop = useCallback(async () => {
+    await stopPlayback();
+    disconnect();
+  }, [stopPlayback, disconnect]);
+
   return {
     status,
     connect,
     disconnect,
     speak,
+    stop,
     stopPlayback,
     isSpeaking: status === 'speaking',
     error,
