@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import uuid
+from contextlib import asynccontextmanager
 from typing import Optional
 
 import dspy
@@ -62,6 +63,65 @@ async def authenticate_websocket(websocket: WebSocket) -> bool:
         logger.warning(f"WebSocket auth error: {e}")
 
     return False
+
+
+class WebSocketSessionError(Exception):
+    """Raised when WebSocket session setup fails."""
+    pass
+
+
+@asynccontextmanager
+async def authenticated_websocket_session(websocket: WebSocket, endpoint_name: str):
+    """Context manager for authenticated, rate-limited WebSocket sessions.
+
+    Handles:
+    - Connection acceptance and logging
+    - Authentication
+    - Rate limiting per IP
+    - Connection count cleanup
+
+    Yields the client IP on success, raises WebSocketSessionError on failure.
+    """
+    client_ip = websocket.client.host if websocket.client else "unknown"
+
+    await websocket.accept()
+    logger.info(f"{endpoint_name} WebSocket connection accepted from {client_ip}")
+
+    # Authenticate BEFORE counting against rate limit
+    if not await authenticate_websocket(websocket):
+        try:
+            await websocket.send_json({
+                "type": "error",
+                "message": "Authentication required"
+            })
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        except Exception:
+            pass  # Connection already closed
+        raise WebSocketSessionError("Authentication failed")
+
+    # Check rate limit only after successful auth
+    current_connections = _active_connections.get(client_ip, 0)
+    if current_connections >= MAX_CONNECTIONS_PER_IP:
+        try:
+            await websocket.send_json({
+                "type": "error",
+                "message": "Too many connections"
+            })
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        except Exception:
+            pass  # Connection already closed
+        logger.warning(f"Rate limit exceeded for {client_ip}")
+        raise WebSocketSessionError("Rate limit exceeded")
+
+    _active_connections[client_ip] = current_connections + 1
+
+    try:
+        yield client_ip
+    finally:
+        # Decrement connection count
+        _active_connections[client_ip] = max(0, _active_connections.get(client_ip, 1) - 1)
+        logger.info(f"{endpoint_name} WebSocket session ended")
+
 
 # Deepgram configuration
 DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY", "")
@@ -238,93 +298,59 @@ async def stt_websocket(websocket: WebSocket):
     - Server sends: {"type": "utterance_end"}
     - Server sends: {"type": "error", "message": "..."}
     """
-    # Get client IP for rate limiting
-    client_ip = websocket.client.host if websocket.client else "unknown"
-
-    await websocket.accept()
-    logger.info(f"STT WebSocket connection accepted from {client_ip}")
-
-    # Authenticate BEFORE counting against rate limit
-    if not await authenticate_websocket(websocket):
-        try:
-            await websocket.send_json({
-                "type": "error",
-                "message": "Authentication required"
-            })
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-        except Exception:
-            pass  # Connection already closed
-        return
-
-    # Check rate limit only after successful auth
-    current_connections = _active_connections.get(client_ip, 0)
-    if current_connections >= MAX_CONNECTIONS_PER_IP:
-        try:
-            await websocket.send_json({
-                "type": "error",
-                "message": "Too many connections"
-            })
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-        except Exception:
-            pass  # Connection already closed
-        logger.warning(f"Rate limit exceeded for {client_ip}")
-        return
-
-    _active_connections[client_ip] = current_connections + 1
-
-    proxy = None
     try:
-        proxy = DeepgramSTTProxy(websocket)
+        async with authenticated_websocket_session(websocket, "STT"):
+            proxy = DeepgramSTTProxy(websocket)
 
-        # Connect to Deepgram
-        if not await proxy.connect():
-            await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
-            return
+            # Connect to Deepgram
+            if not await proxy.connect():
+                await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
+                return
 
-        # Process messages from client
-        while True:
             try:
-                message = await websocket.receive_json()
-                msg_type = message.get("type")
+                # Process messages from client
+                while True:
+                    try:
+                        message = await websocket.receive_json()
+                        msg_type = message.get("type")
 
-                if msg_type == "audio":
-                    # Decode base64 audio and forward to Deepgram
-                    audio_b64 = message.get("data", "")
-                    if audio_b64:
-                        # Validate size before decoding
-                        if len(audio_b64) > MAX_AUDIO_CHUNK_SIZE * 4 // 3:  # Base64 is ~4/3 larger
-                            logger.warning("Audio chunk too large, skipping")
-                            continue
-                        try:
-                            audio_bytes = base64.b64decode(audio_b64)
-                            if len(audio_bytes) > MAX_AUDIO_CHUNK_SIZE:
-                                logger.warning("Decoded audio too large, skipping")
-                                continue
-                            await proxy.send_audio(audio_bytes)
-                        except Exception as e:
-                            logger.warning(f"Invalid base64 audio data: {e}")
+                        if msg_type == "audio":
+                            # Decode base64 audio and forward to Deepgram
+                            audio_b64 = message.get("data", "")
+                            if audio_b64:
+                                # Validate size before decoding
+                                if len(audio_b64) > MAX_AUDIO_CHUNK_SIZE * 4 // 3:  # Base64 is ~4/3 larger
+                                    logger.warning("Audio chunk too large, skipping")
+                                    continue
+                                try:
+                                    audio_bytes = base64.b64decode(audio_b64)
+                                    if len(audio_bytes) > MAX_AUDIO_CHUNK_SIZE:
+                                        logger.warning("Decoded audio too large, skipping")
+                                        continue
+                                    await proxy.send_audio(audio_bytes)
+                                except Exception as e:
+                                    logger.warning(f"Invalid base64 audio data: {e}")
 
-                elif msg_type == "stop":
-                    logger.info("Client requested stop")
-                    break
+                        elif msg_type == "stop":
+                            logger.info("Client requested stop")
+                            break
 
-                elif msg_type == "keepalive":
-                    # Send keepalive to Deepgram
-                    if proxy.deepgram_ws:
-                        await proxy.deepgram_ws.send(json.dumps({"type": "KeepAlive"}))
+                        elif msg_type == "keepalive":
+                            # Send keepalive to Deepgram
+                            if proxy.deepgram_ws:
+                                await proxy.deepgram_ws.send(json.dumps({"type": "KeepAlive"}))
 
-            except WebSocketDisconnect:
-                logger.info("Client disconnected")
-                break
+                    except WebSocketDisconnect:
+                        logger.info("Client disconnected")
+                        break
 
-    except Exception as e:
-        logger.error(f"STT WebSocket error: {e}")
-    finally:
-        if proxy:
-            await proxy.close()
-        logger.info("STT WebSocket session ended")
-        # Decrement connection count
-        _active_connections[client_ip] = max(0, _active_connections.get(client_ip, 1) - 1)
+            except Exception as e:
+                logger.error(f"STT WebSocket error: {e}")
+            finally:
+                await proxy.close()
+
+    except WebSocketSessionError:
+        return  # Auth/rate-limit failure already handled
 
 
 # TTS configuration
@@ -473,100 +499,66 @@ async def tts_websocket(websocket: WebSocket):
     - Server sends: {"type": "done", "context_id": "..."}
     - Server sends: {"type": "error", "message": "..."}
     """
-    # Get client IP for rate limiting
-    client_ip = websocket.client.host if websocket.client else "unknown"
-
-    await websocket.accept()
-    logger.info(f"TTS WebSocket connection accepted from {client_ip}")
-
-    # Authenticate BEFORE counting against rate limit
-    if not await authenticate_websocket(websocket):
-        try:
-            await websocket.send_json({
-                "type": "error",
-                "message": "Authentication required"
-            })
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-        except Exception:
-            pass  # Connection already closed
-        return
-
-    # Check rate limit only after successful auth
-    current_connections = _active_connections.get(client_ip, 0)
-    if current_connections >= MAX_CONNECTIONS_PER_IP:
-        try:
-            await websocket.send_json({
-                "type": "error",
-                "message": "Too many connections"
-            })
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-        except Exception:
-            pass  # Connection already closed
-        logger.warning(f"Rate limit exceeded for {client_ip}")
-        return
-
-    _active_connections[client_ip] = current_connections + 1
-
-    proxy = None
     try:
-        proxy = CartesiaTTSProxy(websocket)
+        async with authenticated_websocket_session(websocket, "TTS"):
+            proxy = CartesiaTTSProxy(websocket)
 
-        # Connect to Cartesia
-        if not await proxy.connect():
-            await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
-            return
+            # Connect to Cartesia
+            if not await proxy.connect():
+                await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
+                return
 
-        # Process messages from client
-        while True:
             try:
-                message = await websocket.receive_json()
-                msg_type = message.get("type")
+                # Process messages from client
+                while True:
+                    try:
+                        message = await websocket.receive_json()
+                        msg_type = message.get("type")
 
-                if msg_type == "synthesize":
-                    text = message.get("text", "")
-                    if not text:
-                        await websocket.send_json({
-                            "type": "error",
-                            "message": "No text provided"
-                        })
-                        continue
+                        if msg_type == "synthesize":
+                            text = message.get("text", "")
+                            if not text:
+                                await websocket.send_json({
+                                    "type": "error",
+                                    "message": "No text provided"
+                                })
+                                continue
 
-                    # Validate text length
-                    if len(text) > MAX_TEXT_LENGTH:
-                        await websocket.send_json({
-                            "type": "error",
-                            "message": f"Text too long (max {MAX_TEXT_LENGTH} chars)"
-                        })
-                        continue
+                            # Validate text length
+                            if len(text) > MAX_TEXT_LENGTH:
+                                await websocket.send_json({
+                                    "type": "error",
+                                    "message": f"Text too long (max {MAX_TEXT_LENGTH} chars)"
+                                })
+                                continue
 
-                    voice_id = message.get("voice_id")
-                    # Validate voice_id if provided
-                    if voice_id and not is_valid_uuid(voice_id):
-                        await websocket.send_json({
-                            "type": "error",
-                            "message": "Invalid voice_id format (must be UUID)"
-                        })
-                        continue
+                            voice_id = message.get("voice_id")
+                            # Validate voice_id if provided
+                            if voice_id and not is_valid_uuid(voice_id):
+                                await websocket.send_json({
+                                    "type": "error",
+                                    "message": "Invalid voice_id format (must be UUID)"
+                                })
+                                continue
 
-                    context_id = message.get("context_id")
-                    await proxy.synthesize(text, voice_id, context_id)
+                            context_id = message.get("context_id")
+                            await proxy.synthesize(text, voice_id, context_id)
 
-                elif msg_type == "stop":
-                    logger.info("Client requested stop")
-                    break
+                        elif msg_type == "stop":
+                            logger.info("Client requested stop")
+                            break
 
-            except WebSocketDisconnect:
-                logger.info("Client disconnected")
-                break
+                    except WebSocketDisconnect:
+                        logger.info("Client disconnected")
+                        break
 
-    except Exception as e:
-        logger.error(f"TTS WebSocket error: {e}")
-    finally:
-        if proxy:
-            await proxy.close()
-        logger.info("TTS WebSocket session ended")
-        # Decrement connection count
-        _active_connections[client_ip] = max(0, _active_connections.get(client_ip, 1) - 1)
+            except Exception as e:
+                logger.error(f"TTS WebSocket error: {e}")
+            finally:
+                await proxy.close()
+
+    except WebSocketSessionError:
+        return  # Auth/rate-limit failure already handled
 
 
 # =============================================================================
