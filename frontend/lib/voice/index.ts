@@ -8,5 +8,11 @@ export type { UseSTTOptions, UseSTTResult, STTTranscript, STTStatus } from './us
 export { useTTS } from './use-tts';
 export type { UseTTSOptions, UseTTSResult, TTSStatus } from './use-tts';
 
+export { useCachedTTS } from './use-cached-tts';
+export type { UseCachedTTSOptions, UseCachedTTSResult } from './use-cached-tts';
+
 export { useKaraoke } from './use-karaoke';
 export type { UseKaraokeOptions, UseKaraokeResult, WordTimestamp } from './use-karaoke';
+
+export { TTSCache } from './tts-cache';
+export type { TTSCacheEntry } from './tts-cache';

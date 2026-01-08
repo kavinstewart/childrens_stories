@@ -9,7 +9,7 @@ import { StoryCard } from '@/components/StoryCard';
 import { StoryCacheManager } from '@/lib/story-cache';
 import { useStoryCache } from '@/lib/use-story-cache';
 import { useAuthStore } from '@/features/auth/store';
-import { useTTS, useKaraoke, WordTimestamp } from '@/lib/voice';
+import { useCachedTTS, useKaraoke, WordTimestamp } from '@/lib/voice';
 import { KaraokeText, defaultHighlightStyle } from '@/components/KaraokeText';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -79,8 +79,9 @@ export default function StoryReader() {
     speak,
     stopPlayback,
     isSpeaking,
+    isPlayingFromCache,
     error: ttsError,
-  } = useTTS({
+  } = useCachedTTS({
     onTimestamps: handleTimestamps,
     onDone: handleTTSDone,
     onError: (err) => {
