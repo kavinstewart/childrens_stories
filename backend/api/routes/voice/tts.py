@@ -112,10 +112,24 @@ class CartesiaTTSProxy:
                 # Forward word timestamps if available
                 word_timestamps = getattr(output, "word_timestamps", None)
                 if word_timestamps:
-                    words = getattr(word_timestamps, "words", [])
+                    # Cartesia sends: words=["Hello","world"], start=[0.0,0.5], end=[0.3,0.8]
+                    # We need to combine into: [{word:"Hello",start:0.0,end:0.3}, ...]
+                    words_list = getattr(word_timestamps, "words", [])
+                    start_list = getattr(word_timestamps, "start", [])
+                    end_list = getattr(word_timestamps, "end", [])
+
+                    # Combine into array of {word, start, end} objects
+                    combined = []
+                    for i, word in enumerate(words_list):
+                        combined.append({
+                            "word": word,
+                            "start": start_list[i] if i < len(start_list) else 0,
+                            "end": end_list[i] if i < len(end_list) else 0,
+                        })
+
                     await self.client_ws.send_json({
                         "type": "timestamps",
-                        "words": words,
+                        "words": combined,
                         "context_id": ctx_id,
                     })
 
