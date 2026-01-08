@@ -7,7 +7,6 @@ import {
   shouldSync,
   shouldSyncWithSettings,
   getNetworkState,
-  subscribeToNetworkChanges,
   getSyncSettings,
   setSyncSettings,
   SyncSettings,
@@ -17,7 +16,6 @@ import {
 // Mock NetInfo
 jest.mock('@react-native-community/netinfo', () => ({
   fetch: jest.fn(),
-  addEventListener: jest.fn(() => jest.fn()), // Returns unsubscribe function
 }));
 
 const mockNetInfo = NetInfo as jest.Mocked<typeof NetInfo>;
@@ -179,45 +177,6 @@ describe('network-aware', () => {
         const result = await shouldSync();
         expect(result).toBe(true);
       });
-    });
-  });
-
-  describe('subscribeToNetworkChanges', () => {
-    it('registers listener with NetInfo', () => {
-      const callback = jest.fn();
-
-      subscribeToNetworkChanges(callback);
-
-      expect(mockNetInfo.addEventListener).toHaveBeenCalledWith(
-        expect.any(Function)
-      );
-    });
-
-    it('returns unsubscribe function', () => {
-      const mockUnsubscribe = jest.fn();
-      mockNetInfo.addEventListener.mockReturnValue(mockUnsubscribe);
-
-      const unsubscribe = subscribeToNetworkChanges(jest.fn());
-      unsubscribe();
-
-      expect(mockUnsubscribe).toHaveBeenCalled();
-    });
-
-    it('calls callback when network state changes', () => {
-      let capturedListener: ((state: NetInfoState) => void) | null = null;
-      mockNetInfo.addEventListener.mockImplementation((listener) => {
-        capturedListener = listener;
-        return jest.fn();
-      });
-
-      const callback = jest.fn();
-      subscribeToNetworkChanges(callback);
-
-      // Simulate network change
-      const newState = createNetworkState('wifi' as NetInfoStateType, true);
-      capturedListener?.(newState);
-
-      expect(callback).toHaveBeenCalledWith(newState);
     });
   });
 

@@ -31,7 +31,6 @@ jest.mock('../../lib/network-aware', () => ({
     autoDownloadEnabled: true,
     allowCellular: false,
   }),
-  subscribeToNetworkChanges: jest.fn().mockReturnValue(jest.fn()),
 }));
 
 jest.mock('../../lib/api', () => ({
