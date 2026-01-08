@@ -29,8 +29,8 @@ class TestVoiceSummarize:
 
     def test_summarize_extracts_goal_from_transcript(self, client, auth_headers, mock_lm_result):
         """Should extract a clean story goal from rambling transcript."""
-        with patch('backend.api.routes.voice.get_inference_lm'), \
-             patch('backend.api.routes.voice.dspy.Predict') as mock_predict:
+        with patch('backend.api.routes.voice.summarize.get_inference_lm'), \
+             patch('backend.api.routes.voice.summarize.dspy.Predict') as mock_predict:
             # Setup mocks
             mock_predict.return_value.return_value = mock_lm_result
 

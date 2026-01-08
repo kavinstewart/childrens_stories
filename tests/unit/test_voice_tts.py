@@ -70,7 +70,7 @@ class TestTTSWebSocket:
     def test_tts_rejects_without_cartesia_key(self):
         """Test that TTS returns error when CARTESIA_API_KEY is not set."""
         token = create_access_token(subject="test_user")
-        with patch("backend.api.routes.voice.CARTESIA_API_KEY", ""):
+        with patch("backend.api.routes.voice.tts.CARTESIA_API_KEY", ""):
             client = TestClient(app)
             with client.websocket_connect("/voice/tts") as websocket:
                 # Send auth
@@ -85,8 +85,8 @@ class TestTTSWebSocket:
         token = create_access_token(subject="test_user")
         mock_ws = create_mock_cartesia_ws()
 
-        with patch("backend.api.routes.voice.CARTESIA_API_KEY", "test-key"):
-            with patch("backend.api.routes.voice.AsyncCartesia", create_mock_cartesia_client(mock_ws)):
+        with patch("backend.api.routes.voice.tts.CARTESIA_API_KEY", "test-key"):
+            with patch("backend.api.routes.voice.tts.AsyncCartesia", create_mock_cartesia_client(mock_ws)):
                 client = TestClient(app)
                 with client.websocket_connect("/voice/tts") as websocket:
                     # Send auth
@@ -101,8 +101,8 @@ class TestTTSWebSocket:
         token = create_access_token(subject="test_user")
         mock_ws = create_mock_cartesia_ws()
 
-        with patch("backend.api.routes.voice.CARTESIA_API_KEY", "test-key"):
-            with patch("backend.api.routes.voice.AsyncCartesia", create_mock_cartesia_client(mock_ws)):
+        with patch("backend.api.routes.voice.tts.CARTESIA_API_KEY", "test-key"):
+            with patch("backend.api.routes.voice.tts.AsyncCartesia", create_mock_cartesia_client(mock_ws)):
                 client = TestClient(app)
                 with client.websocket_connect("/voice/tts") as websocket:
                     # Send auth
@@ -121,8 +121,8 @@ class TestTTSWebSocket:
         token = create_access_token(subject="test_user")
         mock_ws = create_mock_cartesia_ws()
 
-        with patch("backend.api.routes.voice.CARTESIA_API_KEY", "test-key"):
-            with patch("backend.api.routes.voice.AsyncCartesia", create_mock_cartesia_client(mock_ws)):
+        with patch("backend.api.routes.voice.tts.CARTESIA_API_KEY", "test-key"):
+            with patch("backend.api.routes.voice.tts.AsyncCartesia", create_mock_cartesia_client(mock_ws)):
                 client = TestClient(app)
                 with client.websocket_connect("/voice/tts") as websocket:
                     # Send auth
@@ -141,8 +141,8 @@ class TestTTSWebSocket:
         token = create_access_token(subject="test_user")
         mock_ws = create_mock_cartesia_ws()
 
-        with patch("backend.api.routes.voice.CARTESIA_API_KEY", "test-key"):
-            with patch("backend.api.routes.voice.AsyncCartesia", create_mock_cartesia_client(mock_ws)):
+        with patch("backend.api.routes.voice.tts.CARTESIA_API_KEY", "test-key"):
+            with patch("backend.api.routes.voice.tts.AsyncCartesia", create_mock_cartesia_client(mock_ws)):
                 client = TestClient(app)
                 with client.websocket_connect("/voice/tts") as websocket:
                     # Send auth
@@ -160,13 +160,13 @@ class TestTTSConfiguration:
 
     def test_max_text_length_is_reasonable(self):
         """Test that max text length is set to a reasonable value."""
-        from backend.api.routes.voice import MAX_TEXT_LENGTH
+        from backend.api.routes.voice.tts import MAX_TEXT_LENGTH
         assert MAX_TEXT_LENGTH >= 1000
         assert MAX_TEXT_LENGTH <= 10000
 
     def test_default_voice_id_is_set(self):
         """Test that a default voice ID is configured."""
-        from backend.api.routes.voice import DEFAULT_VOICE_ID
+        from backend.api.routes.voice.tts import DEFAULT_VOICE_ID
         assert DEFAULT_VOICE_ID  # Not empty
         assert len(DEFAULT_VOICE_ID) > 10  # Looks like a UUID
 
@@ -176,6 +176,6 @@ class TestTTSRateLimiting:
 
     def test_tts_shares_rate_limit_with_stt(self):
         """Test that TTS and STT share the same rate limit pool."""
-        from backend.api.routes.voice import MAX_CONNECTIONS_PER_IP
+        from backend.api.routes.voice.auth import MAX_CONNECTIONS_PER_IP
         # Rate limit should be shared (both endpoints use _active_connections)
         assert MAX_CONNECTIONS_PER_IP > 0

@@ -71,7 +71,7 @@ class TestSTTWebSocket:
     def test_stt_rejects_without_deepgram_key(self):
         """Test that STT returns error when DEEPGRAM_API_KEY is not set."""
         token = create_access_token(subject="test_user")
-        with patch("backend.api.routes.voice.DEEPGRAM_API_KEY", ""):
+        with patch("backend.api.routes.voice.stt.DEEPGRAM_API_KEY", ""):
             client = TestClient(app)
             with client.websocket_connect("/voice/stt") as websocket:
                 # Send auth
@@ -89,8 +89,8 @@ class TestSTTWebSocket:
         async def mock_connect(*args, **kwargs):
             return mock_ws
 
-        with patch("backend.api.routes.voice.DEEPGRAM_API_KEY", "test-key"):
-            with patch("backend.api.routes.voice.ws_connect", mock_connect):
+        with patch("backend.api.routes.voice.stt.DEEPGRAM_API_KEY", "test-key"):
+            with patch("backend.api.routes.voice.stt.ws_connect", mock_connect):
                 client = TestClient(app)
                 with client.websocket_connect("/voice/stt") as websocket:
                     # Send auth
@@ -108,8 +108,8 @@ class TestSTTWebSocket:
         async def mock_connect(*args, **kwargs):
             return mock_ws
 
-        with patch("backend.api.routes.voice.DEEPGRAM_API_KEY", "test-key"):
-            with patch("backend.api.routes.voice.ws_connect", mock_connect):
+        with patch("backend.api.routes.voice.stt.DEEPGRAM_API_KEY", "test-key"):
+            with patch("backend.api.routes.voice.stt.ws_connect", mock_connect):
                 client = TestClient(app)
                 with client.websocket_connect("/voice/stt") as websocket:
                     # Send auth
@@ -150,8 +150,8 @@ class TestSTTWebSocket:
         async def mock_connect(*args, **kwargs):
             return mock_ws
 
-        with patch("backend.api.routes.voice.DEEPGRAM_API_KEY", "test-key"):
-            with patch("backend.api.routes.voice.ws_connect", mock_connect):
+        with patch("backend.api.routes.voice.stt.DEEPGRAM_API_KEY", "test-key"):
+            with patch("backend.api.routes.voice.stt.ws_connect", mock_connect):
                 client = TestClient(app)
                 with client.websocket_connect("/voice/stt") as websocket:
                     # Send auth
@@ -181,8 +181,8 @@ class TestSTTWebSocket:
         async def mock_connect(*args, **kwargs):
             return mock_ws
 
-        with patch("backend.api.routes.voice.DEEPGRAM_API_KEY", "test-key"):
-            with patch("backend.api.routes.voice.ws_connect", mock_connect):
+        with patch("backend.api.routes.voice.stt.DEEPGRAM_API_KEY", "test-key"):
+            with patch("backend.api.routes.voice.stt.ws_connect", mock_connect):
                 client = TestClient(app)
                 with client.websocket_connect("/voice/stt") as websocket:
                     # Send auth
@@ -207,8 +207,8 @@ class TestSTTWebSocket:
         async def mock_connect(*args, **kwargs):
             return mock_ws
 
-        with patch("backend.api.routes.voice.DEEPGRAM_API_KEY", "test-key"):
-            with patch("backend.api.routes.voice.ws_connect", mock_connect):
+        with patch("backend.api.routes.voice.stt.DEEPGRAM_API_KEY", "test-key"):
+            with patch("backend.api.routes.voice.stt.ws_connect", mock_connect):
                 client = TestClient(app)
                 with client.websocket_connect("/voice/stt") as websocket:
                     # Send auth
@@ -233,8 +233,8 @@ class TestSTTWebSocket:
         async def mock_connect(*args, **kwargs):
             return mock_ws
 
-        with patch("backend.api.routes.voice.DEEPGRAM_API_KEY", "test-key"):
-            with patch("backend.api.routes.voice.ws_connect", mock_connect):
+        with patch("backend.api.routes.voice.stt.DEEPGRAM_API_KEY", "test-key"):
+            with patch("backend.api.routes.voice.stt.ws_connect", mock_connect):
                 client = TestClient(app)
                 with client.websocket_connect("/voice/stt") as websocket:
                     # Send auth
@@ -254,8 +254,8 @@ class TestSTTWebSocket:
         async def mock_connect(*args, **kwargs):
             return mock_ws
 
-        with patch("backend.api.routes.voice.DEEPGRAM_API_KEY", "test-key"):
-            with patch("backend.api.routes.voice.ws_connect", mock_connect):
+        with patch("backend.api.routes.voice.stt.DEEPGRAM_API_KEY", "test-key"):
+            with patch("backend.api.routes.voice.stt.ws_connect", mock_connect):
                 client = TestClient(app)
                 with client.websocket_connect("/voice/stt") as websocket:
                     # Send auth
@@ -303,8 +303,8 @@ class TestSTTWebSocket:
         async def mock_connect(*args, **kwargs):
             return mock_ws
 
-        with patch("backend.api.routes.voice.DEEPGRAM_API_KEY", "test-key"):
-            with patch("backend.api.routes.voice.ws_connect", mock_connect):
+        with patch("backend.api.routes.voice.stt.DEEPGRAM_API_KEY", "test-key"):
+            with patch("backend.api.routes.voice.stt.ws_connect", mock_connect):
                 client = TestClient(app)
                 with client.websocket_connect("/voice/stt") as websocket:
                     # Send auth
@@ -323,31 +323,31 @@ class TestSTTParameters:
 
     def test_default_params_include_nova2_model(self):
         """Test that default params use nova-2 model."""
-        from backend.api.routes.voice import DEFAULT_STT_PARAMS
+        from backend.api.routes.voice.stt import DEFAULT_STT_PARAMS
         assert DEFAULT_STT_PARAMS["model"] == "nova-2"
 
     def test_default_params_use_linear16_encoding(self):
         """Test that default params use linear16 encoding."""
-        from backend.api.routes.voice import DEFAULT_STT_PARAMS
+        from backend.api.routes.voice.stt import DEFAULT_STT_PARAMS
         assert DEFAULT_STT_PARAMS["encoding"] == "linear16"
 
     def test_default_params_use_48khz_sample_rate(self):
         """Test that default params use 48kHz sample rate."""
-        from backend.api.routes.voice import DEFAULT_STT_PARAMS
+        from backend.api.routes.voice.stt import DEFAULT_STT_PARAMS
         assert DEFAULT_STT_PARAMS["sample_rate"] == "48000"
 
     def test_default_params_enable_interim_results(self):
         """Test that default params enable interim results."""
-        from backend.api.routes.voice import DEFAULT_STT_PARAMS
+        from backend.api.routes.voice.stt import DEFAULT_STT_PARAMS
         assert DEFAULT_STT_PARAMS["interim_results"] == "true"
 
     def test_default_params_enable_vad_events(self):
         """Test that default params enable VAD events."""
-        from backend.api.routes.voice import DEFAULT_STT_PARAMS
+        from backend.api.routes.voice.stt import DEFAULT_STT_PARAMS
         assert DEFAULT_STT_PARAMS["vad_events"] == "true"
 
     def test_default_params_set_endpointing(self):
         """Test that default params configure endpointing."""
-        from backend.api.routes.voice import DEFAULT_STT_PARAMS
+        from backend.api.routes.voice.stt import DEFAULT_STT_PARAMS
         assert "endpointing" in DEFAULT_STT_PARAMS
         assert int(DEFAULT_STT_PARAMS["endpointing"]) > 0
