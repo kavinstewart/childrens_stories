@@ -70,6 +70,15 @@ For task-specific guidance, see:
 - `docs/agent/frontend-development.md` - Frontend dev, ports, E2E tests
 - `docs/agent/story-standards.md` - Children's book requirements
 
+## Proactive Issue Tracking
+
+When you notice bugs, type errors, or issues while working on other tasks, you MUST:
+1. Create a bead for each issue using `bd create --type=bug --title="..."`
+2. Call out the issue to the user in your response
+3. Do NOT ignore issues just because they're "unrelated" or "pre-existing"
+
+This applies to: TypeScript errors, broken tests, missing dependencies, dead code, security issues, or anything that would break the build or degrade quality.
+
 ## Prohibited
 - Reading `.env` directly (use `load_dotenv()`)
 - Hardcoding API keys
