@@ -380,9 +380,8 @@ class CartesiaTTSProxy:
 
         try:
             # Stream audio from Cartesia
-            logger.info(f"Starting Cartesia synthesis for text: {text[:50]}...")
-            logger.info(f"Using voice_id: {voice}, context_id: {ctx_id}")
-            logger.info(f"WebSocket state: connected={self.is_connected}, ws={self.ws}")
+            logger.info(f"Starting TTS synthesis: {text[:50]}... (voice={voice})")
+            logger.debug(f"TTS context_id: {ctx_id}")
             output_stream = await self.ws.send(
                 model_id="sonic-3",
                 transcript=text,
@@ -395,7 +394,6 @@ class CartesiaTTSProxy:
                 },
                 stream=True,
             )
-            logger.info(f"Got output_stream: {type(output_stream)}")
             chunk_count = 0
             async for output in output_stream:
                 chunk_count += 1
@@ -419,16 +417,14 @@ class CartesiaTTSProxy:
                     })
 
             # Signal synthesis complete
-            logger.info(f"TTS synthesis complete, sent {chunk_count} chunks")
+            logger.debug(f"TTS synthesis complete, sent {chunk_count} chunks")
             await self.client_ws.send_json({
                 "type": "done",
                 "context_id": ctx_id,
             })
 
         except Exception as e:
-            import traceback
-            logger.error(f"TTS synthesis error: {type(e).__name__}: {e}")
-            logger.error(f"TTS synthesis traceback: {traceback.format_exc()}")
+            logger.exception(f"TTS synthesis error: {type(e).__name__}: {e}")
             try:
                 await self.client_ws.send_json({
                     "type": "error",
