@@ -6,13 +6,16 @@
  */
 
 import { useCallback, useRef, useState } from 'react';
-import { ExpoPlayAudioStream, EncodingTypes } from '@mykin-ai/expo-audio-stream';
+import { ExpoPlayAudioStream } from '@mykin-ai/expo-audio-stream';
 import { useTTS, UseTTSOptions, UseTTSResult, TTSStatus } from './use-tts';
 import { TTSCache, TTSCacheEntry } from './tts-cache';
 import { WordTimestamp } from './use-karaoke';
+import { createWavFromPcm, base64ToUint8Array, uint8ArrayToBase64 } from './wav-utils';
 
-// Sample rate for Cartesia audio
+// Audio format constants for Cartesia TTS
 const TTS_SAMPLE_RATE = 24000;
+const TTS_BIT_DEPTH = 16;
+const TTS_NUM_CHANNELS = 1;
 
 export interface UseCachedTTSOptions extends Omit<UseTTSOptions, 'onAudioChunk' | 'onTimestamps' | 'onAudioStart'> {
   /** Called when audio starts playing (from cache or live) */
@@ -108,7 +111,7 @@ export function useCachedTTS(options: UseCachedTTSOptions = {}): UseCachedTTSRes
     onError,
   });
 
-  // Play from cache
+  // Play from cache using playWav (direct playback without streaming queue)
   const playFromCache = useCallback(async (entry: TTSCacheEntry, contextId: string) => {
     setIsPlayingFromCache(true);
     playbackCancelledRef.current = false;
@@ -119,27 +122,28 @@ export function useCachedTTS(options: UseCachedTTSOptions = {}): UseCachedTTSRes
         onTimestamps?.(entry.timestamps, contextId);
       }
 
-      // Read and play audio
-      const audioData = await TTSCache.readAudio(entry);
+      // Read cached PCM audio (returned as base64)
+      const pcmBase64 = await TTSCache.readAudio(entry);
 
       // Check if cancelled while reading
       if (playbackCancelledRef.current) {
         return;
       }
 
-      // Configure audio player
-      ExpoPlayAudioStream.setSoundConfig({
-        sampleRate: TTS_SAMPLE_RATE as 16000 | 44100 | 48000,
-      });
+      // Convert PCM to WAV format for playWav()
+      // playWav() plays directly without the streaming queue, avoiding race conditions
+      const pcmData = base64ToUint8Array(pcmBase64);
+      const wavData = createWavFromPcm(pcmData, TTS_SAMPLE_RATE, TTS_BIT_DEPTH, TTS_NUM_CHANNELS);
+      const wavBase64 = uint8ArrayToBase64(wavData);
 
       // Fire onAudioStart right before playing
       onAudioStart?.(contextId);
 
-      // Play the cached audio
-      await ExpoPlayAudioStream.playSound(audioData, contextId, EncodingTypes.PCM_S16LE);
+      // Play using playWav (direct playback, bypasses streaming queue)
+      await ExpoPlayAudioStream.playWav(wavBase64);
 
       // Wait for approximate duration then signal done
-      // Note: ExpoPlayAudioStream doesn't have a completion callback,
+      // Note: playWav doesn't have a completion callback,
       // so we estimate based on cached duration
       await new Promise(resolve => setTimeout(resolve, entry.durationMs + 100));
 
