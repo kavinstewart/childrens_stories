@@ -82,7 +82,7 @@ export default function StoryReader() {
     speak,
     stopPlayback,
   } = useCachedTTS({
-    enableCache: false, // Disabled until cache playback issues are fixed
+    enableCache: true, // Cache TTS audio for offline playback
     onAudioStart: handleAudioStart,
     onTimestamps: handleTimestamps,
     onDone: handleTTSDone,
