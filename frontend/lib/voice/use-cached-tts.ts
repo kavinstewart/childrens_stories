@@ -75,13 +75,13 @@ export function useCachedTTS(options: UseCachedTTSOptions = {}): UseCachedTTSRes
   const handleDone = useCallback(async (contextId: string) => {
     // Cache the audio if we have chunks
     if (enableCache && audioChunksRef.current.length > 0 && currentTextRef.current) {
-      const combinedAudio = audioChunksRef.current.join('');
       const durationMs = Date.now() - playbackStartRef.current;
 
       try {
+        // Pass chunks array directly - TTSCache handles binary concatenation
         await TTSCache.set(
           currentTextRef.current,
-          combinedAudio,
+          audioChunksRef.current,
           timestampsRef.current,
           durationMs
         );

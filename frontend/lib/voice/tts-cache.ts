@@ -51,6 +51,43 @@ function hashText(text: string): string {
 }
 
 /**
+ * Decode a base64 string to Uint8Array.
+ */
+function base64ToUint8Array(base64: string): Uint8Array {
+  const binaryString = atob(base64);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes;
+}
+
+/**
+ * Encode Uint8Array to base64 string.
+ */
+function uint8ArrayToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
+/**
+ * Concatenate multiple Uint8Arrays into one.
+ */
+function concatUint8Arrays(arrays: Uint8Array[]): Uint8Array {
+  const totalLength = arrays.reduce((sum, arr) => sum + arr.length, 0);
+  const result = new Uint8Array(totalLength);
+  let offset = 0;
+  for (const arr of arrays) {
+    result.set(arr, offset);
+    offset += arr.length;
+  }
+  return result;
+}
+
+/**
  * TTS Cache Manager - handles caching of TTS audio and timestamps.
  */
 export const TTSCache = {
@@ -98,10 +135,14 @@ export const TTSCache = {
 
   /**
    * Cache TTS audio and timestamps for text.
+   * @param text - The text that was synthesized
+   * @param audioChunks - Array of base64-encoded audio chunks from TTS
+   * @param timestamps - Word timing data
+   * @param durationMs - Total audio duration in milliseconds
    */
   async set(
     text: string,
-    audioBase64: string,
+    audioChunks: string[],
     timestamps: WordTimestamp[],
     durationMs: number
   ): Promise<TTSCacheEntry> {
@@ -111,8 +152,12 @@ export const TTSCache = {
     const dir = getTTSCacheDir();
     const audioFile = new File(dir, `${textHash}.pcm`);
 
-    // Write audio file (base64 encoded)
-    audioFile.write(audioBase64);
+    // Decode each base64 chunk to binary and concatenate
+    const binaryChunks = audioChunks.map(base64ToUint8Array);
+    const combinedBinary = concatUint8Arrays(binaryChunks);
+
+    // Write binary audio data directly to file
+    audioFile.write(combinedBinary);
 
     const entry: TTSCacheEntry = {
       textHash,
@@ -156,10 +201,12 @@ export const TTSCache = {
 
   /**
    * Read cached audio data as base64.
+   * Reads binary PCM data from file and encodes to base64 for playback.
    */
   async readAudio(entry: TTSCacheEntry): Promise<string> {
     const file = new File(entry.audioPath);
-    return file.text();
+    const binaryData = await file.bytes();
+    return uint8ArrayToBase64(binaryData);
   },
 
   /**
