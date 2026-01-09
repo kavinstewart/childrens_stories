@@ -3,6 +3,7 @@ import { View, Text, Alert, ActivityIndicator, Switch, Pressable } from 'react-n
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StoryCacheManager } from '@/lib/story-cache';
+import { TTSCache } from '@/lib/voice/tts-cache';
 import { fontFamily } from '@/lib/fonts';
 import { getSyncSettings, setSyncSettings, SyncSettings, DEFAULT_SYNC_SETTINGS } from '@/lib/network-aware';
 
@@ -82,7 +83,11 @@ export default function Settings() {
           onPress: async () => {
             setIsClearing(true);
             try {
-              await StoryCacheManager.clearAllCache();
+              // Clear both story cache and TTS cache in parallel
+              await Promise.all([
+                StoryCacheManager.clearAllCache(),
+                TTSCache.clearAll(),
+              ]);
               await loadCacheInfo();
             } catch (error) {
               console.error('Failed to clear cache:', error);

@@ -156,12 +156,6 @@ export const TTSCache = {
     const binaryChunks = audioChunks.map(base64ToUint8Array);
     const combinedBinary = concatUint8Arrays(binaryChunks);
 
-    console.log('[TTSCache] Storing audio:', {
-      numChunks: audioChunks.length,
-      totalBytes: combinedBinary.length,
-      first20Bytes: Array.from(combinedBinary.slice(0, 20)),
-    });
-
     // Write binary audio data directly to file
     audioFile.write(combinedBinary);
 
@@ -212,11 +206,6 @@ export const TTSCache = {
   async readAudio(entry: TTSCacheEntry): Promise<string> {
     const file = new File(entry.audioPath);
     const binaryData = await file.bytes();
-    console.log('[TTSCache] Reading audio:', {
-      path: entry.audioPath,
-      bytesRead: binaryData.length,
-      first20Bytes: Array.from(binaryData.slice(0, 20)),
-    });
     return uint8ArrayToBase64(binaryData);
   },
 

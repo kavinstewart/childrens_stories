@@ -134,15 +134,8 @@ export function useCachedTTS(options: UseCachedTTSOptions = {}): UseCachedTTSRes
       // Convert PCM to WAV format for playWav()
       // playWav() plays directly without the streaming queue, avoiding race conditions
       const pcmData = base64ToUint8Array(pcmBase64);
-      console.log('[CachedTTS] PCM data size:', pcmData.length, 'bytes');
-      console.log('[CachedTTS] PCM first 20 bytes:', Array.from(pcmData.slice(0, 20)));
-
       const wavData = createWavFromPcm(pcmData, TTS_SAMPLE_RATE, TTS_BIT_DEPTH, TTS_NUM_CHANNELS);
-      console.log('[CachedTTS] WAV data size:', wavData.length, 'bytes (header + PCM)');
-      console.log('[CachedTTS] WAV header:', Array.from(wavData.slice(0, 44)));
-
       const wavBase64 = uint8ArrayToBase64(wavData);
-      console.log('[CachedTTS] WAV base64 length:', wavBase64.length);
 
       // Fire onAudioStart right before playing
       onAudioStart?.(contextId);
