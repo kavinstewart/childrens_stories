@@ -69,7 +69,8 @@ export function useCachedTTS(options: UseCachedTTSOptions = {}): UseCachedTTSRes
   const handleTimestamps = useCallback((words: Array<{ word: string; start: number; end: number }>, contextId: string) => {
     const typedWords = words as WordTimestamp[];
     if (enableCache) {
-      timestampsRef.current = typedWords;
+      // Accumulate timestamps (they arrive in multiple batches during synthesis)
+      timestampsRef.current.push(...typedWords);
     }
     onTimestamps?.(typedWords, contextId);
   }, [enableCache, onTimestamps]);
