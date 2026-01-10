@@ -18,5 +18,4 @@ export {
   createWavFromPcm,
   uint8ArrayToBase64,
   base64ToUint8Array,
-  extractAudioSlice,
 } from './wav-utils';
