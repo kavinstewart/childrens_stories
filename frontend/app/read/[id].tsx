@@ -1,7 +1,7 @@
 import { View, Text, Image, ActivityIndicator, Dimensions, Pressable } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useStory, useRecommendations } from '@/features/stories/hooks';
 import { Story } from '@/lib/api';
 import { fontFamily } from '@/lib/fonts';
@@ -31,15 +31,22 @@ export default function StoryReader() {
   // Word-level TTS for tap-to-speak functionality
   const { playWord, loadingWordIndex, stop: stopTTS } = useWordTTS();
 
+  // Keep a ref to stop function to avoid effect re-runs
+  const stopTTSRef = useRef(stopTTS);
+  stopTTSRef.current = stopTTS;
+
   // Handle word tap - play the word's TTS
   const handleWordPress = useCallback((word: string, wordIndex: number, context: WordContext) => {
     playWord(word, wordIndex, context);
   }, [playWord]);
 
-  // Stop TTS when changing spreads
+  // Stop TTS when changing spreads (use ref to avoid dependency on stopTTS)
   useEffect(() => {
-    stopTTS();
-  }, [currentSpread, stopTTS]);
+    // Only stop when spread changes (not on initial mount)
+    return () => {
+      stopTTSRef.current();
+    };
+  }, [currentSpread]);
 
   const spreads = story?.spreads || [];
   const totalSpreads = spreads.length;
