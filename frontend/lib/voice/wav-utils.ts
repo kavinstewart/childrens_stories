@@ -85,3 +85,45 @@ export function base64ToUint8Array(base64: string): Uint8Array {
   }
   return bytes;
 }
+
+/**
+ * Extract a slice of audio from PCM data based on time offsets.
+ *
+ * This is used to extract individual word audio from full sentence synthesis.
+ * The timestamps from TTS provide word boundaries in seconds.
+ *
+ * @param pcmData - Raw PCM audio data
+ * @param startTimeSec - Start time in seconds
+ * @param endTimeSec - End time in seconds
+ * @param sampleRate - Sample rate in Hz (e.g., 24000 for Cartesia)
+ * @param bitDepth - Bits per sample (e.g., 16)
+ * @returns Extracted PCM audio slice
+ */
+export function extractAudioSlice(
+  pcmData: Uint8Array,
+  startTimeSec: number,
+  endTimeSec: number,
+  sampleRate: number,
+  bitDepth: number
+): Uint8Array {
+  const bytesPerSample = bitDepth / 8;
+
+  // Convert time to sample index, then to byte offset
+  const startSample = Math.floor(startTimeSec * sampleRate);
+  const endSample = Math.floor(endTimeSec * sampleRate);
+
+  // Calculate byte offsets (aligned to sample boundaries)
+  const startByte = startSample * bytesPerSample;
+  const maxBytes = pcmData.length;
+
+  // Clamp end to actual data length
+  const endByte = Math.min(endSample * bytesPerSample, maxBytes);
+
+  // Handle edge cases
+  if (startByte >= maxBytes || startByte >= endByte) {
+    return new Uint8Array(0);
+  }
+
+  // Extract the slice
+  return pcmData.slice(startByte, endByte);
+}
