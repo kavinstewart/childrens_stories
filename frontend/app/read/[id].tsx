@@ -1,7 +1,7 @@
 import { View, Text, Image, ActivityIndicator, Dimensions, Pressable } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useStory, useRecommendations } from '@/features/stories/hooks';
 import { Story } from '@/lib/api';
 import { fontFamily } from '@/lib/fonts';
@@ -9,6 +9,8 @@ import { StoryCard } from '@/components/StoryCard';
 import { StoryCacheManager } from '@/lib/story-cache';
 import { useStoryCache } from '@/lib/use-story-cache';
 import { useAuthStore } from '@/features/auth/store';
+import { TappableText, WordContext, defaultTapHighlightStyle, defaultLoadingStyle } from '@/components/TappableText';
+import { useWordTTS } from '@/lib/voice';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -25,6 +27,19 @@ export default function StoryReader() {
 
   // Cache management - handles loading cached story and background caching
   const { story, cachedStory, isCached, cacheCheckComplete, isCaching, getImageUrl } = useStoryCache(id, networkStory);
+
+  // Word-level TTS for tap-to-speak functionality
+  const { playWord, loadingWordIndex, stop: stopTTS } = useWordTTS();
+
+  // Handle word tap - play the word's TTS
+  const handleWordPress = useCallback((word: string, wordIndex: number, context: WordContext) => {
+    playWord(word, wordIndex, context);
+  }, [playWord]);
+
+  // Stop TTS when changing spreads
+  useEffect(() => {
+    stopTTS();
+  }, [currentSpread, stopTTS]);
 
   const spreads = story?.spreads || [];
   const totalSpreads = spreads.length;
@@ -505,24 +520,29 @@ export default function StoryReader() {
             <Text style={{ fontSize: 28 }}>👈</Text>
           </Pressable>
 
-          {/* Story Text - plain text for now, will be replaced with TappableText */}
+          {/* Story Text - tappable words for TTS */}
           <View style={{
             flex: 1,
             paddingHorizontal: 32,
           }}>
             {currentSpreadData ? (
-              <Text style={{
-                fontSize: 26,
-                lineHeight: 40,
-                color: 'white',
-                textAlign: 'center',
-                fontFamily: fontFamily.nunitoSemiBold,
-                textShadowColor: 'rgba(0,0,0,0.5)',
-                textShadowOffset: { width: 0, height: 2 },
-                textShadowRadius: 8,
-              }}>
-                {currentSpreadData.text}
-              </Text>
+              <TappableText
+                text={currentSpreadData.text}
+                style={{
+                  fontSize: 26,
+                  lineHeight: 40,
+                  color: 'white',
+                  textAlign: 'center',
+                  fontFamily: fontFamily.nunitoSemiBold,
+                  textShadowColor: 'rgba(0,0,0,0.5)',
+                  textShadowOffset: { width: 0, height: 2 },
+                  textShadowRadius: 8,
+                }}
+                highlightStyle={defaultTapHighlightStyle}
+                loadingStyle={defaultLoadingStyle}
+                loadingWordIndex={loadingWordIndex}
+                onWordPress={handleWordPress}
+              />
             ) : (
               <Text style={{
                 fontSize: 20,
