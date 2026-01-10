@@ -92,7 +92,11 @@ export function useWordTTS(): UseWordTTSResult {
   // Handle synthesis completion
   const handleDone = useCallback((contextId: string) => {
     const pending = pendingSynthesisRef.current;
-    if (!pending || pending.contextId !== contextId) return;
+    console.log(`[WordTTS] handleDone called for ${contextId}, hasPending: ${!!pending}, pendingContextId: ${pending?.contextId}`);
+    if (!pending || pending.contextId !== contextId) {
+      console.log('[WordTTS] handleDone skipped - no matching pending synthesis');
+      return;
+    }
 
     try {
       // Combine all audio chunks
@@ -103,6 +107,7 @@ export function useWordTTS(): UseWordTTSResult {
         fullAudio.set(chunk, offset);
         offset += chunk.length;
       }
+      console.log(`[WordTTS] Combined ${pending.audioChunks.length} chunks into ${totalLength} bytes`);
 
       // Cache sentence audio in memory
       sentenceCacheRef.current = {
@@ -114,6 +119,7 @@ export function useWordTTS(): UseWordTTSResult {
 
       // Extract and play the target word's audio
       const targetTimestamp = pending.timestamps[pending.targetWordIndex];
+      console.log(`[WordTTS] Target word index: ${pending.targetWordIndex}, timestamp: ${JSON.stringify(targetTimestamp)}, total timestamps: ${pending.timestamps.length}`);
       if (targetTimestamp) {
         const wordAudio = extractAudioSlice(
           fullAudio,
@@ -122,11 +128,13 @@ export function useWordTTS(): UseWordTTSResult {
           TTS_SAMPLE_RATE,
           TTS_BIT_DEPTH
         );
+        console.log(`[WordTTS] Extracted word audio: ${wordAudio.length} bytes`);
 
         if (wordAudio.length > 0) {
           // Play the extracted audio
           const wavAudio = createWavFromPcm(wordAudio, TTS_SAMPLE_RATE, TTS_BIT_DEPTH, 1);
           const base64Audio = uint8ArrayToBase64(wavAudio);
+          console.log(`[WordTTS] Playing extracted word audio (${wavAudio.length} bytes WAV)`);
           ExpoPlayAudioStream.playSound(base64Audio, `word-play-${pending.wordIndex}`, EncodingTypes.PCM_S16LE);
 
           // Calculate duration from timestamps
@@ -143,11 +151,17 @@ export function useWordTTS(): UseWordTTSResult {
             wordAudio,
             durationMs
           );
+        } else {
+          console.warn('[WordTTS] Extracted word audio is empty!');
         }
+      } else {
+        console.warn(`[WordTTS] No timestamp found for target word index ${pending.targetWordIndex}`);
       }
 
+      console.log('[WordTTS] Resolving pending promise');
       pending.resolve();
     } catch (err) {
+      console.error('[WordTTS] Error in handleDone:', err);
       pending.reject(err instanceof Error ? err : new Error(String(err)));
     } finally {
       pendingSynthesisRef.current = null;
@@ -174,9 +188,11 @@ export function useWordTTS(): UseWordTTSResult {
 
   // Stop playback and clean up
   const stop = useCallback(async () => {
+    console.log('[WordTTS] stop() called, hasPending:', !!pendingSynthesisRef.current);
     await stopPlayback();
     setLoadingWordIndex(-1);
     if (pendingSynthesisRef.current) {
+      console.log('[WordTTS] Rejecting pending synthesis promise');
       pendingSynthesisRef.current.reject(new Error('Playback stopped'));
       pendingSynthesisRef.current = null;
     }
@@ -188,8 +204,11 @@ export function useWordTTS(): UseWordTTSResult {
     wordIndex: number,
     context: WordContext
   ): Promise<void> => {
+    console.log(`[WordTTS] playWord called: "${word}" index=${wordIndex} sentenceWordIndex=${context.sentenceWordIndex}`);
+
     // Cancel any pending synthesis
     if (pendingSynthesisRef.current) {
+      console.log('[WordTTS] Cancelling previous pending synthesis');
       await stopPlayback();
       pendingSynthesisRef.current.reject(new Error('Cancelled'));
       pendingSynthesisRef.current = null;
@@ -213,6 +232,7 @@ export function useWordTTS(): UseWordTTSResult {
         const audioData = await WordTTSCache.getAudioData(cachedEntry);
         if (audioData && audioData.length > 0) {
           // Play cached audio
+          console.log(`[WordTTS] Playing from word cache (${audioData.length} bytes)`);
           const wavAudio = createWavFromPcm(audioData, TTS_SAMPLE_RATE, TTS_BIT_DEPTH, 1);
           const base64Audio = uint8ArrayToBase64(wavAudio);
           ExpoPlayAudioStream.playSound(base64Audio, `word-cached-${wordIndex}`, EncodingTypes.PCM_S16LE);
@@ -240,6 +260,7 @@ export function useWordTTS(): UseWordTTSResult {
           );
 
           if (wordAudio.length > 0) {
+            console.log(`[WordTTS] Playing from sentence memory cache (${wordAudio.length} bytes)`);
             const wavAudio = createWavFromPcm(wordAudio, TTS_SAMPLE_RATE, TTS_BIT_DEPTH, 1);
             const base64Audio = uint8ArrayToBase64(wavAudio);
             ExpoPlayAudioStream.playSound(base64Audio, `word-memory-${wordIndex}`, EncodingTypes.PCM_S16LE);
@@ -255,6 +276,7 @@ export function useWordTTS(): UseWordTTSResult {
       }
 
       // Cache miss - need to synthesize sentence
+      console.log(`[WordTTS] Cache miss - synthesizing sentence: "${context.sentence.substring(0, 50)}..."`);
       const contextId = `word-${wordIndex}`;
 
       return new Promise<void>((resolve, reject) => {
@@ -266,10 +288,12 @@ export function useWordTTS(): UseWordTTSResult {
           audioChunks: [],
           timestamps: [],
           resolve: () => {
+            console.log(`[WordTTS] Synthesis promise resolved for ${contextId}`);
             setLoadingWordIndex(-1);
             resolve();
           },
           reject: (err) => {
+            console.log(`[WordTTS] Synthesis promise rejected for ${contextId}: ${err.message}`);
             setError(err.message);
             setLoadingWordIndex(-1);
             reject(err);
@@ -277,7 +301,9 @@ export function useWordTTS(): UseWordTTSResult {
         };
 
         // Start synthesis of the full sentence
+        console.log(`[WordTTS] Starting speak() for contextId=${contextId}`);
         speak(context.sentence, contextId).catch((err) => {
+          console.error(`[WordTTS] speak() threw error: ${err.message}`);
           setError(err.message);
           setLoadingWordIndex(-1);
           pendingSynthesisRef.current = null;

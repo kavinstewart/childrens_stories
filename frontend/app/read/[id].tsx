@@ -37,13 +37,18 @@ export default function StoryReader() {
 
   // Handle word tap - play the word's TTS
   const handleWordPress = useCallback((word: string, wordIndex: number, context: WordContext) => {
-    playWord(word, wordIndex, context);
-  }, [playWord]);
+    console.log(`[Reader] Word tapped: "${word}" at index ${wordIndex}, spread ${currentSpread}`);
+    playWord(word, wordIndex, context).catch((err) => {
+      // Log but don't re-throw - this handles expected cancellations (e.g., spread change)
+      console.log(`[Reader] playWord rejected: ${err.message}`);
+    });
+  }, [playWord, currentSpread]);
 
   // Stop TTS when changing spreads (use ref to avoid dependency on stopTTS)
   useEffect(() => {
-    // Only stop when spread changes (not on initial mount)
+    console.log(`[Reader] Spread effect running, currentSpread=${currentSpread}`);
     return () => {
+      console.log(`[Reader] Spread cleanup - stopping TTS (was spread ${currentSpread})`);
       stopTTSRef.current();
     };
   }, [currentSpread]);

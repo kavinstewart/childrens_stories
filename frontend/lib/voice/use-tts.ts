@@ -236,25 +236,28 @@ export function useTTS(options: UseTTSOptions = {}): UseTTSResult {
 
       ws.onmessage = handleMessage;
 
-      ws.onerror = () => {
+      ws.onerror = (event) => {
         clearTimeout(timeoutId);
         const errorMsg = 'Connection error';
-        console.error('[TTS] WebSocket error');
+        console.error('[TTS] WebSocket error event:', event);
+        console.error('[TTS] WebSocket readyState:', ws.readyState);
         setError(errorMsg);
         onError?.(errorMsg);
         updateStatus('error');
         if (connectResolversRef.current) {
+          console.log('[TTS] Rejecting connection promise due to error');
           connectResolversRef.current = null;
           reject(new Error(errorMsg));
         }
       };
 
-      ws.onclose = () => {
-        console.log('[TTS] WebSocket closed');
+      ws.onclose = (event) => {
+        console.log('[TTS] WebSocket closed, code:', event.code, 'reason:', event.reason, 'wasClean:', event.wasClean);
         updateStatus('idle');
         // If we're still waiting for connection, reject
         if (connectResolversRef.current) {
           clearTimeout(timeoutId);
+          console.log('[TTS] Rejecting connection promise due to close');
           connectResolversRef.current = null;
           reject(new Error('Connection closed'));
         }
@@ -264,8 +267,10 @@ export function useTTS(options: UseTTSOptions = {}): UseTTSResult {
 
   // Disconnect from TTS service
   const disconnect = useCallback(() => {
+    console.log('[TTS] disconnect() called, wsRef exists:', !!wsRef.current);
     if (wsRef.current) {
       try {
+        console.log('[TTS] Sending stop message and closing WebSocket');
         wsRef.current.send(JSON.stringify({ type: 'stop' }));
         wsRef.current.close();
       } catch (e) {
@@ -315,8 +320,10 @@ export function useTTS(options: UseTTSOptions = {}): UseTTSResult {
 
   // Stop playback
   const stopPlayback = useCallback(async () => {
+    console.log('[TTS] stopPlayback() called, hasPlayedAudio:', hasPlayedAudioRef.current);
     // Only call stopSound if we've actually played audio (prevents native crash on first call)
     if (!hasPlayedAudioRef.current) {
+      console.log('[TTS] stopPlayback() skipped - no audio played yet');
       return;
     }
     try {
@@ -328,6 +335,7 @@ export function useTTS(options: UseTTSOptions = {}): UseTTSResult {
       if (status === 'speaking') {
         updateStatus('ready');
       }
+      console.log('[TTS] stopPlayback() completed');
     } catch (e) {
       console.error('[TTS] Error stopping playback:', e);
     }
