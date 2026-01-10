@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StoryCacheManager } from '@/lib/story-cache';
 import { fontFamily } from '@/lib/fonts';
 import { getSyncSettings, setSyncSettings, SyncSettings, DEFAULT_SYNC_SETTINGS } from '@/lib/network-aware';
+import { WordTTSCache } from '@/lib/voice';
 
 // Format bytes to human readable
 const formatSize = (bytes: number): string => {
@@ -82,8 +83,11 @@ export default function Settings() {
           onPress: async () => {
             setIsClearing(true);
             try {
-              // Clear story cache (TTS word cache will be added in story-l6oj)
-              await StoryCacheManager.clearAllCache();
+              // Clear story cache and word TTS cache in parallel
+              await Promise.all([
+                StoryCacheManager.clearAllCache(),
+                WordTTSCache.clearAll(),
+              ]);
               await loadCacheInfo();
             } catch (error) {
               console.error('Failed to clear cache:', error);
