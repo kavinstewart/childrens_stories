@@ -81,6 +81,8 @@ export function useTTS(options: UseTTSOptions = {}): UseTTSResult {
   // Keep onAudioStart callback in ref for event listener
   const onAudioStartRef = useRef(onAudioStart);
   onAudioStartRef.current = onAudioStart;
+  // Track if playSound has ever been called (to avoid calling stopSound before init)
+  const hasPlayedAudioRef = useRef(false);
 
   // Update status and notify
   const updateStatus = useCallback((newStatus: TTSStatus) => {
@@ -109,6 +111,7 @@ export function useTTS(options: UseTTSOptions = {}): UseTTSResult {
           if (data.data) {
             const turnId = data.context_id || 'tts-default';
             ExpoPlayAudioStream.playSound(data.data, turnId, EncodingTypes.PCM_S16LE);
+            hasPlayedAudioRef.current = true;
             updateStatus('speaking');
             // Queue this context for SoundStarted event (if not already started)
             // onAudioStart will fire when native player actually starts
@@ -306,11 +309,16 @@ export function useTTS(options: UseTTSOptions = {}): UseTTSResult {
 
   // Stop playback
   const stopPlayback = useCallback(async () => {
+    // Only call stopSound if we've actually played audio (prevents native crash on first call)
+    if (!hasPlayedAudioRef.current) {
+      return;
+    }
     try {
       await ExpoPlayAudioStream.stopSound();
       // Clear tracking state so next playback can fire onAudioStart
       audioStartedContextsRef.current.clear();
       pendingAudioStartRef.current = [];
+      hasPlayedAudioRef.current = false;
       if (status === 'speaking') {
         updateStatus('ready');
       }

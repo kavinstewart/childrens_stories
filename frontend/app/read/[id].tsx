@@ -1,7 +1,7 @@
 import { View, Text, Image, ActivityIndicator, Dimensions, Pressable } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useStory, useRecommendations } from '@/features/stories/hooks';
 import { Story } from '@/lib/api';
 import { fontFamily } from '@/lib/fonts';
@@ -9,8 +9,6 @@ import { StoryCard } from '@/components/StoryCard';
 import { StoryCacheManager } from '@/lib/story-cache';
 import { useStoryCache } from '@/lib/use-story-cache';
 import { useAuthStore } from '@/features/auth/store';
-import { useCachedTTS, useKaraoke, WordTimestamp } from '@/lib/voice';
-import { KaraokeText, defaultHighlightStyle } from '@/components/KaraokeText';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -32,111 +30,6 @@ export default function StoryReader() {
   const totalSpreads = spreads.length;
   const [showEndScreen, setShowEndScreen] = useState(false);
   const isLastSpread = currentSpread === totalSpreads - 1;
-
-  // TTS for reading aloud - user controls playback, no auto-advance
-  const [isPlaying, setIsPlaying] = useState(false);
-  // Track synthesis complete separately from playback complete
-  const synthesisDoneRef = useRef(false);
-
-  // Karaoke word highlighting
-  const {
-    currentWordIndex,
-    isTracking: isKaraokeActive,
-    addTimestamps: addKaraokeTimestamps,
-    startTimer: startKaraokeTimer,
-    stopTracking: stopKaraoke,
-  } = useKaraoke();
-
-  // Handle audio start - start karaoke timer for sync
-  const handleAudioStart = useCallback((contextId: string) => {
-    console.log('[Reader] Audio started for context:', contextId);
-    startKaraokeTimer();
-  }, [startKaraokeTimer]);
-
-  // Handle word timestamps - accumulate for karaoke highlighting
-  const handleTimestamps = useCallback((words: Array<{ word: string; start: number; end: number }>) => {
-    if (words.length > 0) {
-      addKaraokeTimestamps(words as WordTimestamp[]);
-    }
-  }, [addKaraokeTimestamps]);
-
-  // Handle TTS synthesis completion - wait for karaoke to finish before marking done
-  const handleTTSDone = useCallback(() => {
-    console.log('[Reader] Synthesis complete, waiting for karaoke to finish');
-    synthesisDoneRef.current = true;
-  }, []);
-
-  // When karaoke finishes naturally, mark playback as complete
-  useEffect(() => {
-    if (!isKaraokeActive && synthesisDoneRef.current && isPlaying) {
-      console.log('[Reader] Karaoke finished, marking playback complete');
-      synthesisDoneRef.current = false;
-      setIsPlaying(false);
-    }
-  }, [isKaraokeActive, isPlaying]);
-
-  const {
-    status: ttsStatus,
-    connect: connectTTS,
-    disconnect: disconnectTTS,
-    speak,
-    stopPlayback,
-  } = useCachedTTS({
-    enableCache: true, // Cache TTS audio for offline playback
-    onAudioStart: handleAudioStart,
-    onTimestamps: handleTimestamps,
-    onDone: handleTTSDone,
-    onError: (err) => {
-      console.error('[Reader] TTS error:', err);
-      setIsPlaying(false);
-      stopKaraoke();
-    },
-  });
-
-  const isTTSConnecting = ttsStatus === 'connecting';
-
-  // Toggle playback for current page
-  const togglePlayback = useCallback(async () => {
-    if (isPlaying) {
-      // Stop playing
-      setIsPlaying(false);
-      synthesisDoneRef.current = false;
-      stopKaraoke();
-      await stopPlayback();
-    } else {
-      // Start playing current page
-      const spreadData = spreads[currentSpread];
-      if (!spreadData?.text) return;
-
-      setIsPlaying(true);
-      try {
-        if (ttsStatus !== 'ready' && ttsStatus !== 'speaking') {
-          await connectTTS();
-        }
-        await speak(spreadData.text, `spread-${currentSpread}`);
-      } catch (err) {
-        console.error('[Reader] TTS speak error:', err);
-        setIsPlaying(false);
-      }
-    }
-  }, [isPlaying, spreads, currentSpread, ttsStatus, connectTTS, speak, stopPlayback, stopKaraoke]);
-
-  // Stop playback when page changes
-  useEffect(() => {
-    if (isPlaying) {
-      setIsPlaying(false);
-      synthesisDoneRef.current = false;
-      stopKaraoke();
-      stopPlayback().catch(() => {});
-    }
-  }, [currentSpread]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Cleanup TTS on unmount
-  useEffect(() => {
-    return () => {
-      disconnectTTS();
-    };
-  }, [disconnectTTS]);
 
   // Fetch recommendations (only used on last page, but hook must be called unconditionally)
   const { data: networkRecommendations } = useRecommendations(id, CARD_COUNT);
@@ -412,38 +305,8 @@ export default function StoryReader() {
           </Text>
         </View>
 
-        {/* Right side buttons - Speaker and Edit */}
+        {/* Right side buttons - Edit only (TTS removed) */}
         <View style={{ flexDirection: 'row', gap: 12 }}>
-          {/* Speaker Button - Read aloud */}
-          {!showEndScreen && currentSpreadData && (
-            <Pressable
-              onPress={togglePlayback}
-              disabled={isTTSConnecting}
-              style={{
-                backgroundColor: isPlaying ? '#F97316' : '#FAF7F2',
-                paddingVertical: 16,
-                paddingHorizontal: 22,
-                borderRadius: 22,
-                borderWidth: 2,
-                borderColor: isPlaying ? '#EA580C' : '#EDE8E0',
-                alignItems: 'center',
-                justifyContent: 'center',
-                shadowColor: isPlaying ? '#F97316' : '#000',
-                shadowOffset: { width: 0, height: 2 },
-                shadowOpacity: isPlaying ? 0.3 : 0.15,
-                shadowRadius: 6,
-                elevation: 4,
-                opacity: isTTSConnecting ? 0.6 : 1,
-              }}
-            >
-              {isTTSConnecting ? (
-                <ActivityIndicator size="small" color="#4A4035" />
-              ) : (
-                <Text style={{ fontSize: 32 }}>{isPlaying ? '🔊' : '🔈'}</Text>
-              )}
-            </Pressable>
-          )}
-
           {/* Edit Button - only show when on a spread (not end screen) and story is illustrated */}
           {!showEndScreen && story.is_illustrated && currentSpreadData && (
             <Pressable
@@ -642,31 +505,24 @@ export default function StoryReader() {
             <Text style={{ fontSize: 28 }}>👈</Text>
           </Pressable>
 
-          {/* Story Text */}
+          {/* Story Text - plain text for now, will be replaced with TappableText */}
           <View style={{
             flex: 1,
             paddingHorizontal: 32,
           }}>
             {currentSpreadData ? (
-              <KaraokeText
-                text={currentSpreadData.text}
-                currentWordIndex={currentWordIndex}
-                isActive={isKaraokeActive}
-                style={{
-                  fontSize: 26,
-                  lineHeight: 40,
-                  color: 'white',
-                  textAlign: 'center',
-                  fontFamily: fontFamily.nunitoSemiBold,
-                  textShadowColor: 'rgba(0,0,0,0.5)',
-                  textShadowOffset: { width: 0, height: 2 },
-                  textShadowRadius: 8,
-                }}
-                highlightStyle={{
-                  backgroundColor: 'rgba(251, 191, 36, 0.4)', // Golden highlight
-                  borderRadius: 4,
-                }}
-              />
+              <Text style={{
+                fontSize: 26,
+                lineHeight: 40,
+                color: 'white',
+                textAlign: 'center',
+                fontFamily: fontFamily.nunitoSemiBold,
+                textShadowColor: 'rgba(0,0,0,0.5)',
+                textShadowOffset: { width: 0, height: 2 },
+                textShadowRadius: 8,
+              }}>
+                {currentSpreadData.text}
+              </Text>
             ) : (
               <Text style={{
                 fontSize: 20,
