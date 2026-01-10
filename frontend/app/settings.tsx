@@ -2,10 +2,25 @@ import { useState, useEffect, useCallback } from 'react';
 import { View, Text, Alert, ActivityIndicator, Switch, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Directory, Paths } from 'expo-file-system/next';
 import { StoryCacheManager } from '@/lib/story-cache';
 import { fontFamily } from '@/lib/fonts';
 import { getSyncSettings, setSyncSettings, SyncSettings, DEFAULT_SYNC_SETTINGS } from '@/lib/network-aware';
 import { WordTTSCache } from '@/lib/voice';
+
+// Clean up legacy TTS cache (page-level cache removed in favor of word-level)
+const clearLegacyTTSCache = async () => {
+  try {
+    await AsyncStorage.removeItem('@tts_cache_index');
+    const legacyDir = new Directory(Paths.cache, 'tts');
+    if (legacyDir.exists) {
+      await legacyDir.delete();
+    }
+  } catch (error) {
+    // Ignore errors - legacy cache may not exist
+  }
+};
 
 // Format bytes to human readable
 const formatSize = (bytes: number): string => {
@@ -83,10 +98,11 @@ export default function Settings() {
           onPress: async () => {
             setIsClearing(true);
             try {
-              // Clear story cache and word TTS cache in parallel
+              // Clear all caches in parallel (story, word TTS, and legacy TTS)
               await Promise.all([
                 StoryCacheManager.clearAllCache(),
                 WordTTSCache.clearAll(),
+                clearLegacyTTSCache(),
               ]);
               await loadCacheInfo();
             } catch (error) {
