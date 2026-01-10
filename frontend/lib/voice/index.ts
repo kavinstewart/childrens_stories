@@ -19,3 +19,13 @@ export {
   uint8ArrayToBase64,
   base64ToUint8Array,
 } from './wav-utils';
+
+export {
+  HOMOGRAPHS,
+  isHomograph,
+  getHomographEntry,
+  formatPhonemes,
+  getDisambiguationPrompt,
+  getPhonemes,
+} from './homographs';
+export type { HomographEntry } from './homographs';
