@@ -75,6 +75,7 @@ export function useWordTTS(): UseWordTTSResult {
     if (pending && pending.contextId === contextId) {
       const audioBytes = base64ToUint8Array(data);
       pending.audioChunks.push(audioBytes);
+      console.log(`[WordTTS] Audio chunk received: ${audioBytes.length} bytes, total chunks: ${pending.audioChunks.length}`);
     }
   }, []);
 
@@ -84,6 +85,7 @@ export function useWordTTS(): UseWordTTSResult {
     if (pending && pending.contextId === contextId) {
       // Accumulate timestamps
       pending.timestamps.push(...words);
+      console.log(`[WordTTS] Timestamps received: ${words.length} words, total: ${pending.timestamps.length}, target index: ${pending.targetWordIndex}`);
     }
   }, []);
 
@@ -154,7 +156,9 @@ export function useWordTTS(): UseWordTTSResult {
   }, []);
 
   // Initialize useTTS with callbacks
+  // suppressPlayback=true: we collect audio chunks without auto-playing, then play only the extracted word
   const { speak, stopPlayback, disconnect } = useTTS({
+    suppressPlayback: true,
     onAudioChunk: handleAudioChunk,
     onTimestamps: handleTimestamps,
     onDone: handleDone,

@@ -21,6 +21,8 @@ export type TTSStatus = 'idle' | 'connecting' | 'ready' | 'speaking' | 'error';
 export interface UseTTSOptions {
   /** Voice ID to use (optional, uses server default if not provided) */
   voiceId?: string;
+  /** Suppress automatic audio playback - only fire callbacks (for collecting audio) */
+  suppressPlayback?: boolean;
   /** Called when first audio chunk arrives (for sync timing) */
   onAudioStart?: (contextId: string) => void;
   /** Called when audio chunk is received */
@@ -57,6 +59,7 @@ export interface UseTTSResult {
 export function useTTS(options: UseTTSOptions = {}): UseTTSResult {
   const {
     voiceId,
+    suppressPlayback = false,
     onAudioStart,
     onAudioChunk,
     onTimestamps,
@@ -109,16 +112,19 @@ export function useTTS(options: UseTTSOptions = {}): UseTTSResult {
         case 'audio':
           // Enqueue audio for playback using expo-audio-stream
           if (data.data) {
-            const turnId = data.context_id || 'tts-default';
-            ExpoPlayAudioStream.playSound(data.data, turnId, EncodingTypes.PCM_S16LE);
-            hasPlayedAudioRef.current = true;
-            updateStatus('speaking');
-            // Queue this context for SoundStarted event (if not already started)
-            // onAudioStart will fire when native player actually starts
-            if (!audioStartedContextsRef.current.has(turnId)) {
-              // Only add if not already in queue
-              if (!pendingAudioStartRef.current.includes(turnId)) {
-                pendingAudioStartRef.current.push(turnId);
+            // Only play audio if not suppressed (suppressPlayback used for collecting audio without playing)
+            if (!suppressPlayback) {
+              const turnId = data.context_id || 'tts-default';
+              ExpoPlayAudioStream.playSound(data.data, turnId, EncodingTypes.PCM_S16LE);
+              hasPlayedAudioRef.current = true;
+              updateStatus('speaking');
+              // Queue this context for SoundStarted event (if not already started)
+              // onAudioStart will fire when native player actually starts
+              if (!audioStartedContextsRef.current.has(turnId)) {
+                // Only add if not already in queue
+                if (!pendingAudioStartRef.current.includes(turnId)) {
+                  pendingAudioStartRef.current.push(turnId);
+                }
               }
             }
             onAudioChunk?.(data.data, data.context_id);
@@ -163,7 +169,7 @@ export function useTTS(options: UseTTSOptions = {}): UseTTSResult {
     } catch (e) {
       console.error('[TTS] Failed to parse message:', e);
     }
-  }, [onAudioChunk, onTimestamps, onDone, onError, updateStatus]);
+  }, [suppressPlayback, onAudioChunk, onTimestamps, onDone, onError, updateStatus]);
 
   // Connect to TTS service - returns Promise that resolves when connected
   const connect = useCallback(async (): Promise<void> => {
