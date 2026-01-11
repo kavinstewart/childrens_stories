@@ -76,6 +76,22 @@ class SpreadRegenJobRepository:
         )
         return dict(row) if row else None
 
+    async def get_latest_job(
+        self, story_id: str, spread_number: int
+    ) -> Optional[dict]:
+        """Get the most recent regeneration job for a spread (any status)."""
+        row = await self.conn.fetchrow(
+            """
+            SELECT * FROM spread_regen_jobs
+            WHERE story_id = $1 AND spread_number = $2
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            story_id,
+            spread_number,
+        )
+        return dict(row) if row else None
+
     async def cleanup_stale_jobs(self) -> int:
         """Mark stale pending/running jobs as failed.
 

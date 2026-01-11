@@ -153,3 +153,14 @@ class RegenerateSpreadResponse(BaseModel):
     message: str = Field(
         default="Spread regeneration started. Poll GET /stories/{story_id} for updated illustration."
     )
+
+
+class RegenerateStatusResponse(BaseModel):
+    """Response for regeneration job status."""
+
+    job_id: str
+    status: str  # pending, running, completed, failed
+    created_at: datetime
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    error_message: Optional[str] = None

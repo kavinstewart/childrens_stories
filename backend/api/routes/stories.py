@@ -15,6 +15,7 @@ from ..models.responses import (
     CreateStoryResponse,
     StoryRecommendationsResponse,
     RegenerateSpreadResponse,
+    RegenerateStatusResponse,
     JobStatus,
 )
 from ..dependencies import Repository, SpreadRegenRepository, Service, CurrentUser
@@ -241,6 +242,37 @@ async def regenerate_spread(
         story_id=story_id,
         spread_number=spread_number,
         status=JobStatus.PENDING,
+    )
+
+
+@router.get(
+    "/{story_id}/spreads/{spread_number}/regenerate/status",
+    response_model=RegenerateStatusResponse,
+    summary="Get regeneration job status",
+    description="Get the status of the most recent regeneration job for a spread.",
+)
+async def get_regenerate_status(
+    story_id: str,
+    spread_number: int,
+    regen_repo: SpreadRegenRepository,
+    user: CurrentUser,
+):
+    """Get regeneration job status for a spread."""
+    job = await regen_repo.get_latest_job(story_id, spread_number)
+
+    if not job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No regeneration job found for spread {spread_number}",
+        )
+
+    return RegenerateStatusResponse(
+        job_id=job["id"],
+        status=job["status"],
+        created_at=job["created_at"],
+        started_at=job.get("started_at"),
+        completed_at=job.get("completed_at"),
+        error_message=job.get("error_message"),
     )
 
 

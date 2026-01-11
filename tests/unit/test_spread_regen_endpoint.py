@@ -140,3 +140,99 @@ class TestRegenerateSpreadEndpoint:
             spread_number=5,
             custom_prompt=None,
         )
+
+
+class TestRegenerateStatusEndpoint:
+    """Tests for GET /stories/{id}/spreads/{num}/regenerate/status endpoint."""
+
+    def test_status_returns_pending_job(self, client_with_mocks):
+        """GET returns pending job status."""
+        client, mock_repo, mock_regen_repo, _ = client_with_mocks
+
+        mock_regen_repo.get_latest_job = AsyncMock(return_value={
+            "id": TEST_JOB_ID,
+            "status": "pending",
+            "created_at": datetime(2026, 1, 11, 18, 0, 0),
+            "started_at": None,
+            "completed_at": None,
+            "error_message": None,
+        })
+
+        response = client.get(f"/stories/{TEST_UUID_STR}/spreads/3/regenerate/status")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["job_id"] == TEST_JOB_ID
+        assert data["status"] == "pending"
+        assert data["error_message"] is None
+
+    def test_status_returns_running_job(self, client_with_mocks):
+        """GET returns running job status with started_at."""
+        client, mock_repo, mock_regen_repo, _ = client_with_mocks
+
+        mock_regen_repo.get_latest_job = AsyncMock(return_value={
+            "id": TEST_JOB_ID,
+            "status": "running",
+            "created_at": datetime(2026, 1, 11, 18, 0, 0),
+            "started_at": datetime(2026, 1, 11, 18, 0, 5),
+            "completed_at": None,
+            "error_message": None,
+        })
+
+        response = client.get(f"/stories/{TEST_UUID_STR}/spreads/3/regenerate/status")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "running"
+        assert data["started_at"] is not None
+
+    def test_status_returns_completed_job(self, client_with_mocks):
+        """GET returns completed job status."""
+        client, mock_repo, mock_regen_repo, _ = client_with_mocks
+
+        mock_regen_repo.get_latest_job = AsyncMock(return_value={
+            "id": TEST_JOB_ID,
+            "status": "completed",
+            "created_at": datetime(2026, 1, 11, 18, 0, 0),
+            "started_at": datetime(2026, 1, 11, 18, 0, 5),
+            "completed_at": datetime(2026, 1, 11, 18, 0, 20),
+            "error_message": None,
+        })
+
+        response = client.get(f"/stories/{TEST_UUID_STR}/spreads/3/regenerate/status")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "completed"
+        assert data["completed_at"] is not None
+
+    def test_status_returns_failed_job_with_error(self, client_with_mocks):
+        """GET returns failed job status with error message."""
+        client, mock_repo, mock_regen_repo, _ = client_with_mocks
+
+        mock_regen_repo.get_latest_job = AsyncMock(return_value={
+            "id": TEST_JOB_ID,
+            "status": "failed",
+            "created_at": datetime(2026, 1, 11, 18, 0, 0),
+            "started_at": datetime(2026, 1, 11, 18, 0, 5),
+            "completed_at": datetime(2026, 1, 11, 18, 0, 10),
+            "error_message": "503 UNAVAILABLE: Model overloaded",
+        })
+
+        response = client.get(f"/stories/{TEST_UUID_STR}/spreads/3/regenerate/status")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "failed"
+        assert data["error_message"] == "503 UNAVAILABLE: Model overloaded"
+
+    def test_status_returns_404_when_no_job(self, client_with_mocks):
+        """GET returns 404 when no regeneration job exists."""
+        client, mock_repo, mock_regen_repo, _ = client_with_mocks
+
+        mock_regen_repo.get_latest_job = AsyncMock(return_value=None)
+
+        response = client.get(f"/stories/{TEST_UUID_STR}/spreads/3/regenerate/status")
+
+        assert response.status_code == 404
+        assert "no regeneration job" in response.json()["detail"].lower()
