@@ -8,6 +8,7 @@ import { useStoryCache, UseStoryCacheResult } from '@/lib/use-story-cache';
 import { StoryCacheManager } from '@/lib/story-cache';
 import { cacheFiles } from '@/lib/cache-files';
 import { api, Story } from '@/lib/api';
+import { cacheEvents } from '@/lib/cache-events';
 
 // Mock dependencies
 jest.mock('@/lib/story-cache', () => ({
@@ -33,6 +34,8 @@ jest.mock('@/lib/api', () => ({
     ),
   },
 }));
+
+// Use real cache-events implementation (simple event emitter, no need to mock)
 
 const mockStoryCacheManager = StoryCacheManager as jest.Mocked<typeof StoryCacheManager>;
 const mockCacheFiles = cacheFiles as jest.Mocked<typeof cacheFiles>;
@@ -250,6 +253,70 @@ describe('useStoryCache', () => {
       });
 
       expect(result.current.story).toEqual(story2);
+    });
+  });
+
+  describe('cache invalidation', () => {
+    it('re-checks cache status when invalidation event is emitted', async () => {
+      const cachedStory = createMockStory({ isCached: true });
+      // Use undefined networkStory to avoid triggering background caching
+      // when state transitions to uncached
+
+      // Initially cached
+      mockStoryCacheManager.isStoryCached.mockResolvedValue(true);
+      mockStoryCacheManager.loadCachedStory.mockResolvedValue(cachedStory);
+
+      const { result } = renderHook(() => useStoryCache('test-story-123', undefined));
+
+      await waitFor(() => {
+        expect(result.current.isCached).toBe(true);
+      });
+
+      // Verify initial cache check was made
+      const initialCallCount = mockStoryCacheManager.isStoryCached.mock.calls.length;
+
+      // Simulate cache invalidation by changing mock return value
+      mockStoryCacheManager.isStoryCached.mockResolvedValue(false);
+
+      // Emit invalidation event - this triggers re-check
+      cacheEvents.emit('test-story-123');
+
+      // Wait for the async re-check to complete and update state
+      await waitFor(() => {
+        // Verify isStoryCached was called again after the event
+        expect(mockStoryCacheManager.isStoryCached.mock.calls.length).toBeGreaterThan(initialCallCount);
+      });
+
+      // Should re-check and update to uncached
+      await waitFor(() => {
+        expect(result.current.isCached).toBe(false);
+      });
+
+      // After invalidation, getImageUrl should use server URL
+      const spread = cachedStory.spreads![0];
+      const url = result.current.getImageUrl('test-story-123', spread);
+      expect(url).toContain('https://');
+    });
+
+    it('ignores invalidation events for other stories', async () => {
+      const cachedStory = createMockStory({ id: 'story-1', isCached: true });
+
+      mockStoryCacheManager.isStoryCached.mockResolvedValue(true);
+      mockStoryCacheManager.loadCachedStory.mockResolvedValue(cachedStory);
+
+      const { result } = renderHook(() => useStoryCache('story-1', undefined));
+
+      await waitFor(() => {
+        expect(result.current.isCached).toBe(true);
+      });
+
+      // Emit invalidation for different story
+      await act(async () => {
+        cacheEvents.emit('story-2');
+      });
+
+      // Should still be cached (event was for different story)
+      expect(result.current.isCached).toBe(true);
     });
   });
 });

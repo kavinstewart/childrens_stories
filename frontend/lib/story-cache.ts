@@ -10,6 +10,7 @@ import { Story, api } from './api';
 import { cacheStorage, CacheEntry } from './cache-storage';
 import { cacheFiles } from './cache-files';
 import { downloadQueueStorage } from './download-queue-storage';
+import { cacheEvents } from './cache-events';
 // NOTE: Do NOT import CacheSync here - it creates a require cycle that can freeze the JS thread
 
 // Debug logging for story cache - set to false in production
@@ -234,10 +235,12 @@ export const StoryCacheManager = {
 
   /**
    * Invalidate a cached story (forces re-download on next read).
-   * Currently same as evict.
+   * Evicts the story and emits an event so subscribers can re-check cache status.
    */
   invalidateStory: async (storyId: string): Promise<void> => {
     await StoryCacheManager.evictStory(storyId);
+    // Emit event so components using useStoryCache can re-check and update
+    cacheEvents.emit(storyId);
   },
 
   /**

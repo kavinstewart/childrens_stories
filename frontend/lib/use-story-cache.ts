@@ -11,6 +11,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Story, StorySpread, api } from './api';
 import { StoryCacheManager } from './story-cache';
 import { cacheFiles } from './cache-files';
+import { cacheEvents } from './cache-events';
 
 export interface UseStoryCacheResult {
   /** The story to display - cached version if available, otherwise network version */
@@ -68,25 +69,41 @@ export function useStoryCache(
     [isCached]
   );
 
+  // Function to check cache status (extracted for reuse)
+  const checkCacheStatus = useCallback(async (id: string) => {
+    const cached = await StoryCacheManager.isStoryCached(id);
+    if (cached) {
+      const loaded = await StoryCacheManager.loadCachedStory(id);
+      if (loaded) {
+        setState({ status: 'cached', story: loaded });
+        return;
+      }
+    }
+    // Not cached or load failed
+    setState({ status: 'uncached' });
+  }, []);
+
   // Check if story is already cached on mount and load it
   useEffect(() => {
     if (!storyId) return;
 
     // Reset to checking state for new story
     setState({ status: 'checking' });
+    checkCacheStatus(storyId);
+  }, [storyId, checkCacheStatus]);
 
-    StoryCacheManager.isStoryCached(storyId).then(async (cached) => {
-      if (cached) {
-        const loaded = await StoryCacheManager.loadCachedStory(storyId);
-        if (loaded) {
-          setState({ status: 'cached', story: loaded });
-          return;
-        }
-      }
-      // Not cached or load failed
-      setState({ status: 'uncached' });
+  // Subscribe to cache invalidation events
+  // When cache is invalidated (e.g., after regeneration), re-check status
+  useEffect(() => {
+    if (!storyId) return;
+
+    const unsubscribe = cacheEvents.subscribe(storyId, () => {
+      // Re-check cache status when invalidated
+      checkCacheStatus(storyId);
     });
-  }, [storyId]);
+
+    return unsubscribe;
+  }, [storyId, checkCacheStatus]);
 
   // Trigger background caching when story loads (if eligible)
   // Only runs after cache check completes to avoid race condition
