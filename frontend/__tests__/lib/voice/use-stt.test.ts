@@ -111,9 +111,9 @@ describe('useSTT silence timeout', () => {
     expect(onUtteranceEnd).toHaveBeenCalled();
     expect(onSilenceTimeout).not.toHaveBeenCalled();
 
-    // Advance time past timeout
-    act(() => {
-      jest.advanceTimersByTime(3000);
+    // Advance time past timeout (use async version to flush microtasks from async callback)
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(3000);
     });
 
     expect(onSilenceTimeout).toHaveBeenCalledTimes(1);
@@ -149,8 +149,8 @@ describe('useSTT silence timeout', () => {
     });
 
     // Wait 1.5s
-    act(() => {
-      jest.advanceTimersByTime(1500);
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(1500);
     });
 
     // Speech restarts - cancels timeout
@@ -159,8 +159,8 @@ describe('useSTT silence timeout', () => {
     });
 
     // Wait past original timeout
-    act(() => {
-      jest.advanceTimersByTime(2000);
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(2000);
     });
 
     expect(onSilenceTimeout).not.toHaveBeenCalled();
@@ -195,8 +195,8 @@ describe('useSTT silence timeout', () => {
       mockWsInstance?.simulateMessage({ type: 'utterance_end' });
     });
 
-    act(() => {
-      jest.advanceTimersByTime(10000);
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(10000);
     });
 
     expect(onSilenceTimeout).not.toHaveBeenCalled();
