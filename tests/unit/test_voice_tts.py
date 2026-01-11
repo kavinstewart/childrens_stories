@@ -212,10 +212,9 @@ class TestTTSTimestamps:
                         self.word_timestamps = word_timestamps
 
                 class MockTimestamps:
-                    words = [
-                        {"word": "Hello", "start": 0.0, "end": 0.3},
-                        {"word": "world", "start": 0.35, "end": 0.7}
-                    ]
+                    words = ["Hello", "world"]
+                    start = [0.0, 0.35]
+                    end = [0.3, 0.7]
 
                 async def generate():
                     yield MockOutput(audio=b"audio1")
