@@ -320,6 +320,27 @@ export default function EditPromptScreen() {
                 >
                   {error}
                 </Text>
+                <Pressable
+                  onPress={handleRegenerate}
+                  style={({ pressed }) => ({
+                    backgroundColor: pressed ? 'rgba(239, 68, 68, 0.4)' : 'rgba(239, 68, 68, 0.3)',
+                    borderRadius: 8,
+                    paddingVertical: 10,
+                    paddingHorizontal: 20,
+                    marginTop: 12,
+                    alignSelf: 'center',
+                  })}
+                >
+                  <Text
+                    style={{
+                      color: '#FCA5A5',
+                      fontSize: 14,
+                      fontFamily: fontFamily.nunitoSemiBold,
+                    }}
+                  >
+                    Retry
+                  </Text>
+                </Pressable>
               </View>
             )}
           </KeyboardAwareScrollView>
