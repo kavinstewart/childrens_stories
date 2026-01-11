@@ -1,13 +1,12 @@
 /**
- * Word-level TTS cache with context-aware keys.
+ * Word-level TTS cache for isolated word synthesis.
  *
- * Caches individual word audio using keys that include prosodic context:
- * - word position (start/mid/end of sentence)
- * - punctuation following the word
- * - sentence type (statement/question/exclamation)
+ * Caches individual word audio using simple keys:
+ * - normalized word
+ * - pronunciation index (for homographs only)
  *
- * This allows the same word to have different cached pronunciations
- * based on context, enabling natural-sounding cross-story sharing.
+ * For teaching kids to read, prosodic context (position, punctuation,
+ * sentence type) doesn't affect how isolated words should be pronounced.
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -18,13 +17,10 @@ const CACHE_DIR_NAME = 'tts-words';
 const CACHE_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 /**
- * Context information used to build cache keys.
+ * Cache key components for word audio.
  */
 export interface WordCacheKey {
   word: string;
-  position: 'start' | 'mid' | 'end';
-  punctuation: string;
-  sentenceType: 'statement' | 'question' | 'exclamation';
   /** For homographs: which pronunciation variant (0 or 1) */
   pronunciationIndex?: number;
 }
@@ -60,17 +56,15 @@ export function normalizeWord(word: string): string {
 }
 
 /**
- * Build a cache key string from word context.
- * Format: "normalizedWord|position|punctuation|sentenceType" or
- *         "normalizedWord|position|punctuation|sentenceType|pN" for homographs
+ * Build a cache key string from word.
+ * Format: "normalizedWord" or "normalizedWord|pN" for homographs
  */
 export function buildCacheKey(key: WordCacheKey): string {
   const normalized = normalizeWord(key.word);
-  let cacheKey = `${normalized}|${key.position}|${key.punctuation}|${key.sentenceType}`;
   if (key.pronunciationIndex !== undefined) {
-    cacheKey += `|p${key.pronunciationIndex}`;
+    return `${normalized}|p${key.pronunciationIndex}`;
   }
-  return cacheKey;
+  return normalized;
 }
 
 /**

@@ -41,7 +41,7 @@ jest.mock('../../../lib/voice/word-tts-cache', () => ({
     set: (...args: unknown[]) => mockCacheSet(...args),
     getAudioData: (...args: unknown[]) => mockCacheGetAudioData(...args),
   },
-  buildCacheKey: jest.fn((key) => `${key.word}|${key.sentenceType}`),
+  buildCacheKey: jest.fn((key) => key.pronunciationIndex !== undefined ? `${key.word}|p${key.pronunciationIndex}` : key.word),
 }));
 
 jest.mock('../../../lib/voice/homographs', () => ({
@@ -276,13 +276,11 @@ describe('useWordTTS', () => {
         await new Promise(resolve => setTimeout(resolve, 10));
       });
 
-      // Verify cache.get was called with pronunciationIndex
-      expect(mockCacheGet).toHaveBeenCalledWith(
-        expect.objectContaining({
-          word: 'read',
-          pronunciationIndex: 1,
-        })
-      );
+      // Verify cache.get was called with simplified key (word + pronunciationIndex only)
+      expect(mockCacheGet).toHaveBeenCalledWith({
+        word: 'read',
+        pronunciationIndex: 1,
+      });
     });
   });
 

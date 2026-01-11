@@ -61,9 +61,6 @@ interface PendingSynthesis {
   audioChunks: Uint8Array[];
   cacheKey: {
     word: string;
-    position: 'start' | 'mid' | 'end';
-    punctuation: string;
-    sentenceType: 'statement' | 'question' | 'exclamation';
     pronunciationIndex?: number;
   };
   resolve: () => void;
@@ -212,9 +209,6 @@ export function useWordTTS(): UseWordTTSResult {
       // Build cache key (includes pronunciationIndex for homographs)
       const cacheKey = {
         word: word.toLowerCase(),
-        position: context.position,
-        punctuation: context.punctuation,
-        sentenceType: context.sentenceType,
         pronunciationIndex,
       };
 

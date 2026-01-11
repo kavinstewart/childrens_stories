@@ -64,34 +64,25 @@ describe('word-tts-cache', () => {
   });
 
   describe('buildCacheKey', () => {
-    it('builds key with all components', () => {
-      const key = buildCacheKey({
-        word: 'Hello',
-        position: 'start',
-        punctuation: ',',
-        sentenceType: 'statement',
-      });
-      expect(key).toBe('hello|start|,|statement');
-    });
-
-    it('handles empty punctuation', () => {
-      const key = buildCacheKey({
-        word: 'world',
-        position: 'mid',
-        punctuation: '',
-        sentenceType: 'question',
-      });
-      expect(key).toBe('world|mid||question');
+    it('builds key from normalized word', () => {
+      const key = buildCacheKey({ word: 'Hello' });
+      expect(key).toBe('hello');
     });
 
     it('normalizes the word', () => {
-      const key = buildCacheKey({
-        word: 'HELLO!',
-        position: 'end',
-        punctuation: '!',
-        sentenceType: 'exclamation',
-      });
-      expect(key).toBe('hello|end|!|exclamation');
+      const key = buildCacheKey({ word: 'HELLO!' });
+      expect(key).toBe('hello');
+    });
+
+    it('includes pronunciationIndex when provided', () => {
+      const key = buildCacheKey({ word: 'read', pronunciationIndex: 1 });
+      expect(key).toBe('read|p1');
+    });
+
+    it('omits pronunciationIndex when not provided', () => {
+      const key = buildCacheKey({ word: 'hello' });
+      expect(key).toBe('hello');
+      expect(key).not.toContain('|p');
     });
   });
 
@@ -99,57 +90,42 @@ describe('word-tts-cache', () => {
     it('returns null for cache miss', async () => {
       (AsyncStorage.getItem as jest.Mock).mockResolvedValue(JSON.stringify({ entries: {} }));
 
-      const result = await WordTTSCache.get({
-        word: 'hello',
-        position: 'start',
-        punctuation: '',
-        sentenceType: 'statement',
-      });
+      const result = await WordTTSCache.get({ word: 'hello' });
 
       expect(result).toBeNull();
     });
 
     it('returns entry for cache hit', async () => {
       const mockEntry = {
-        cacheKey: 'hello|start||statement',
-        audioPath: 'file://cache/tts-words/hello_start_statement.pcm',
+        cacheKey: 'hello',
+        audioPath: 'file://cache/tts-words/hello.pcm',
         cachedAt: Date.now(),
         durationMs: 250,
       };
 
       (AsyncStorage.getItem as jest.Mock).mockResolvedValue(
-        JSON.stringify({ entries: { 'hello|start||statement': mockEntry } })
+        JSON.stringify({ entries: { 'hello': mockEntry } })
       );
 
-      const result = await WordTTSCache.get({
-        word: 'hello',
-        position: 'start',
-        punctuation: '',
-        sentenceType: 'statement',
-      });
+      const result = await WordTTSCache.get({ word: 'hello' });
 
       expect(result).not.toBeNull();
-      expect(result?.cacheKey).toBe('hello|start||statement');
+      expect(result?.cacheKey).toBe('hello');
     });
 
     it('returns null for expired entry', async () => {
       const expiredEntry = {
-        cacheKey: 'hello|start||statement',
+        cacheKey: 'hello',
         audioPath: 'file://cache/tts-words/hello.pcm',
         cachedAt: Date.now() - (8 * 24 * 60 * 60 * 1000), // 8 days ago
         durationMs: 250,
       };
 
       (AsyncStorage.getItem as jest.Mock).mockResolvedValue(
-        JSON.stringify({ entries: { 'hello|start||statement': expiredEntry } })
+        JSON.stringify({ entries: { 'hello': expiredEntry } })
       );
 
-      const result = await WordTTSCache.get({
-        word: 'hello',
-        position: 'start',
-        punctuation: '',
-        sentenceType: 'statement',
-      });
+      const result = await WordTTSCache.get({ word: 'hello' });
 
       expect(result).toBeNull();
     });
@@ -160,22 +136,26 @@ describe('word-tts-cache', () => {
       (AsyncStorage.getItem as jest.Mock).mockResolvedValue(JSON.stringify({ entries: {} }));
 
       const audioData = new Uint8Array([1, 2, 3, 4]);
-      await WordTTSCache.set(
-        {
-          word: 'hello',
-          position: 'start',
-          punctuation: '',
-          sentenceType: 'statement',
-        },
-        audioData,
-        250
-      );
+      await WordTTSCache.set({ word: 'hello' }, audioData, 250);
 
       expect(AsyncStorage.setItem).toHaveBeenCalled();
       const setItemCall = (AsyncStorage.setItem as jest.Mock).mock.calls[0];
       const savedIndex = JSON.parse(setItemCall[1]);
-      expect(savedIndex.entries['hello|start||statement']).toBeDefined();
-      expect(savedIndex.entries['hello|start||statement'].durationMs).toBe(250);
+      expect(savedIndex.entries['hello']).toBeDefined();
+      expect(savedIndex.entries['hello'].durationMs).toBe(250);
+    });
+
+    it('stores homograph with pronunciationIndex in key', async () => {
+      (AsyncStorage.getItem as jest.Mock).mockResolvedValue(JSON.stringify({ entries: {} }));
+
+      const audioData = new Uint8Array([1, 2, 3, 4]);
+      await WordTTSCache.set({ word: 'read', pronunciationIndex: 1 }, audioData, 300);
+
+      expect(AsyncStorage.setItem).toHaveBeenCalled();
+      const setItemCall = (AsyncStorage.setItem as jest.Mock).mock.calls[0];
+      const savedIndex = JSON.parse(setItemCall[1]);
+      expect(savedIndex.entries['read|p1']).toBeDefined();
+      expect(savedIndex.entries['read|p1'].durationMs).toBe(300);
     });
   });
 
@@ -186,107 +166,29 @@ describe('word-tts-cache', () => {
     });
   });
 
-  describe('context-aware caching scenarios', () => {
-    it('differentiates same word in different positions', async () => {
-      const keyStart = buildCacheKey({
-        word: 'cat',
-        position: 'start',
-        punctuation: '',
-        sentenceType: 'statement',
-      });
-      const keyMid = buildCacheKey({
-        word: 'cat',
-        position: 'mid',
-        punctuation: '',
-        sentenceType: 'statement',
-      });
-      const keyEnd = buildCacheKey({
-        word: 'cat',
-        position: 'end',
-        punctuation: '.',
-        sentenceType: 'statement',
-      });
-
-      expect(keyStart).not.toBe(keyMid);
-      expect(keyMid).not.toBe(keyEnd);
-      expect(keyStart).not.toBe(keyEnd);
-    });
-
-    it('differentiates same word in different sentence types', async () => {
-      const keyStatement = buildCacheKey({
-        word: 'why',
-        position: 'start',
-        punctuation: '',
-        sentenceType: 'statement',
-      });
-      const keyQuestion = buildCacheKey({
-        word: 'why',
-        position: 'start',
-        punctuation: '',
-        sentenceType: 'question',
-      });
-
-      expect(keyStatement).not.toBe(keyQuestion);
-    });
-
-    it('differentiates same word with different punctuation', async () => {
-      const keyComma = buildCacheKey({
-        word: 'hello',
-        position: 'mid',
-        punctuation: ',',
-        sentenceType: 'statement',
-      });
-      const keyNone = buildCacheKey({
-        word: 'hello',
-        position: 'mid',
-        punctuation: '',
-        sentenceType: 'statement',
-      });
-
-      expect(keyComma).not.toBe(keyNone);
-    });
-
-    it('differentiates homographs with different pronunciations', async () => {
+  describe('homograph caching', () => {
+    it('differentiates homographs with different pronunciations', () => {
       const keyPresent = buildCacheKey({
         word: 'read',
-        position: 'mid',
-        punctuation: '',
-        sentenceType: 'statement',
         pronunciationIndex: 0, // present tense "reed"
       });
       const keyPast = buildCacheKey({
         word: 'read',
-        position: 'mid',
-        punctuation: '',
-        sentenceType: 'statement',
         pronunciationIndex: 1, // past tense "red"
       });
 
+      expect(keyPresent).toBe('read|p0');
+      expect(keyPast).toBe('read|p1');
       expect(keyPresent).not.toBe(keyPast);
     });
 
-    it('includes pronunciationIndex in key when provided', () => {
-      const key = buildCacheKey({
-        word: 'read',
-        position: 'mid',
-        punctuation: '',
-        sentenceType: 'statement',
-        pronunciationIndex: 1,
-      });
+    it('same word without pronunciationIndex produces same key', () => {
+      // Without prosodic context, same word always gets same key
+      const key1 = buildCacheKey({ word: 'cat' });
+      const key2 = buildCacheKey({ word: 'cat' });
 
-      expect(key).toBe('read|mid||statement|p1');
-    });
-
-    it('omits pronunciationIndex from key when not provided', () => {
-      const key = buildCacheKey({
-        word: 'hello',
-        position: 'mid',
-        punctuation: '',
-        sentenceType: 'statement',
-      });
-
-      expect(key).toBe('hello|mid||statement');
-      expect(key).not.toContain('|p');
+      expect(key1).toBe(key2);
+      expect(key1).toBe('cat');
     });
   });
 });
