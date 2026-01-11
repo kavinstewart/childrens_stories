@@ -59,6 +59,13 @@ interface PendingSynthesis {
   contextId: string;
   wordIndex: number;
   audioChunks: Uint8Array[];
+  cacheKey: {
+    word: string;
+    position: 'start' | 'mid' | 'end';
+    punctuation: string;
+    sentenceType: 'statement' | 'question' | 'exclamation';
+    pronunciationIndex?: number;
+  };
   resolve: () => void;
   reject: (error: Error) => void;
 }
@@ -117,6 +124,12 @@ export function useWordTTS(): UseWordTTSResult {
         const base64Audio = uint8ArrayToBase64(wavAudio);
         ExpoPlayAudioStream.playSound(base64Audio, `word-${pending.wordIndex}`, EncodingTypes.PCM_S16LE);
         hasPlayedAudioRef.current = true;
+
+        // Save to cache (don't await - fire and forget)
+        const durationMs = (fullAudio.length / (TTS_SAMPLE_RATE * (TTS_BIT_DEPTH / 8))) * 1000;
+        WordTTSCache.set(pending.cacheKey, fullAudio, durationMs).catch(() => {
+          // Ignore cache write errors
+        });
       }
 
       pending.resolve();
@@ -172,14 +185,40 @@ export function useWordTTS(): UseWordTTSResult {
     try {
       const emotion = getEmotionForSentenceType(context.sentenceType);
 
-      // Check cache first
+      // Determine phonemes and pronunciation index for homographs
+      let phonemes: string | null = null;
+      let pronunciationIndex: number | undefined;
+
+      if (isHomograph(word)) {
+        const entry = getHomographEntry(word);
+        if (entry) {
+          try {
+            // Call backend to disambiguate based on sentence context
+            const result = await api.disambiguateHomograph(
+              word,
+              context.sentence,
+              1 // occurrence (TODO: track if word appears multiple times)
+            );
+            phonemes = result.phonemes;
+            pronunciationIndex = result.pronunciation_index;
+          } catch {
+            // Fall back to first pronunciation if disambiguation fails
+            phonemes = entry.pronunciations[0];
+            pronunciationIndex = 0;
+          }
+        }
+      }
+
+      // Build cache key (includes pronunciationIndex for homographs)
       const cacheKey = {
         word: word.toLowerCase(),
         position: context.position,
         punctuation: context.punctuation,
         sentenceType: context.sentenceType,
+        pronunciationIndex,
       };
 
+      // Check cache first
       const cachedEntry = await WordTTSCache.get(cacheKey);
       if (cachedEntry) {
         const audioData = await WordTTSCache.getAudioData(cachedEntry);
@@ -194,26 +233,6 @@ export function useWordTTS(): UseWordTTSResult {
         }
       }
 
-      // Determine phonemes for homographs via LLM disambiguation
-      let phonemes: string | null = null;
-      if (isHomograph(word)) {
-        const entry = getHomographEntry(word);
-        if (entry) {
-          try {
-            // Call backend to disambiguate based on sentence context
-            const result = await api.disambiguateHomograph(
-              word,
-              context.sentence,
-              1 // occurrence (TODO: track if word appears multiple times)
-            );
-            phonemes = result.phonemes;
-          } catch {
-            // Fall back to first pronunciation if disambiguation fails
-            phonemes = entry.pronunciations[0];
-          }
-        }
-      }
-
       // Build synthesis text
       const synthesisText = buildSynthesisText(word, phonemes, emotion);
       const contextId = `word-${wordIndex}-${Date.now()}`;
@@ -223,6 +242,7 @@ export function useWordTTS(): UseWordTTSResult {
           contextId,
           wordIndex,
           audioChunks: [],
+          cacheKey,
           resolve: () => {
             setLoadingWordIndex(-1);
             resolve();

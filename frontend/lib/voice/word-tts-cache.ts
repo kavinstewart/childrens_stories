@@ -25,6 +25,8 @@ export interface WordCacheKey {
   position: 'start' | 'mid' | 'end';
   punctuation: string;
   sentenceType: 'statement' | 'question' | 'exclamation';
+  /** For homographs: which pronunciation variant (0 or 1) */
+  pronunciationIndex?: number;
 }
 
 /**
@@ -59,11 +61,16 @@ export function normalizeWord(word: string): string {
 
 /**
  * Build a cache key string from word context.
- * Format: "normalizedWord|position|punctuation|sentenceType"
+ * Format: "normalizedWord|position|punctuation|sentenceType" or
+ *         "normalizedWord|position|punctuation|sentenceType|pN" for homographs
  */
 export function buildCacheKey(key: WordCacheKey): string {
   const normalized = normalizeWord(key.word);
-  return `${normalized}|${key.position}|${key.punctuation}|${key.sentenceType}`;
+  let cacheKey = `${normalized}|${key.position}|${key.punctuation}|${key.sentenceType}`;
+  if (key.pronunciationIndex !== undefined) {
+    cacheKey += `|p${key.pronunciationIndex}`;
+  }
+  return cacheKey;
 }
 
 /**

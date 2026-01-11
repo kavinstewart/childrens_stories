@@ -31,11 +31,15 @@ jest.mock('@mykin-ai/expo-audio-stream', () => ({
   },
 }));
 
+const mockCacheGet = jest.fn(() => Promise.resolve(null));
+const mockCacheSet = jest.fn(() => Promise.resolve());
+const mockCacheGetAudioData = jest.fn(() => Promise.resolve(null));
+
 jest.mock('../../../lib/voice/word-tts-cache', () => ({
   WordTTSCache: {
-    get: jest.fn(() => Promise.resolve(null)),
-    set: jest.fn(() => Promise.resolve()),
-    getAudioData: jest.fn(() => Promise.resolve(null)),
+    get: (...args: unknown[]) => mockCacheGet(...args),
+    set: (...args: unknown[]) => mockCacheSet(...args),
+    getAudioData: (...args: unknown[]) => mockCacheGetAudioData(...args),
   },
   buildCacheKey: jest.fn((key) => `${key.word}|${key.sentenceType}`),
 }));
@@ -79,6 +83,9 @@ describe('useWordTTS', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockCacheGet.mockResolvedValue(null);
+    mockCacheSet.mockResolvedValue(undefined);
+    mockCacheGetAudioData.mockResolvedValue(null);
   });
 
   describe('initial state', () => {
@@ -253,5 +260,30 @@ describe('useWordTTS', () => {
 
       expect(mockDisambiguateHomograph).not.toHaveBeenCalled();
     });
+
+    it('includes pronunciationIndex in cache key for homographs', async () => {
+      mockDisambiguateHomograph.mockResolvedValue({
+        word: 'read',
+        pronunciation_index: 1,
+        phonemes: 'ɹ|ɛ|d',
+        is_homograph: true,
+      });
+
+      const { result } = renderHook(() => useWordTTS());
+
+      await act(async () => {
+        result.current.playWord('read', 0, createContext());
+        await new Promise(resolve => setTimeout(resolve, 10));
+      });
+
+      // Verify cache.get was called with pronunciationIndex
+      expect(mockCacheGet).toHaveBeenCalledWith(
+        expect.objectContaining({
+          word: 'read',
+          pronunciationIndex: 1,
+        })
+      );
+    });
   });
+
 });

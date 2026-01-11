@@ -245,5 +245,48 @@ describe('word-tts-cache', () => {
 
       expect(keyComma).not.toBe(keyNone);
     });
+
+    it('differentiates homographs with different pronunciations', async () => {
+      const keyPresent = buildCacheKey({
+        word: 'read',
+        position: 'mid',
+        punctuation: '',
+        sentenceType: 'statement',
+        pronunciationIndex: 0, // present tense "reed"
+      });
+      const keyPast = buildCacheKey({
+        word: 'read',
+        position: 'mid',
+        punctuation: '',
+        sentenceType: 'statement',
+        pronunciationIndex: 1, // past tense "red"
+      });
+
+      expect(keyPresent).not.toBe(keyPast);
+    });
+
+    it('includes pronunciationIndex in key when provided', () => {
+      const key = buildCacheKey({
+        word: 'read',
+        position: 'mid',
+        punctuation: '',
+        sentenceType: 'statement',
+        pronunciationIndex: 1,
+      });
+
+      expect(key).toBe('read|mid||statement|p1');
+    });
+
+    it('omits pronunciationIndex from key when not provided', () => {
+      const key = buildCacheKey({
+        word: 'hello',
+        position: 'mid',
+        punctuation: '',
+        sentenceType: 'statement',
+      });
+
+      expect(key).toBe('hello|mid||statement');
+      expect(key).not.toContain('|p');
+    });
   });
 });
