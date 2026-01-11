@@ -190,7 +190,13 @@ class WorkerSettings:
     # Job settings
     max_jobs = 2  # Max concurrent jobs (story generation is resource-intensive)
     job_timeout = 600  # 10 minutes max per job
-    max_tries = 1  # Don't retry failed jobs (story is marked failed in DB)
+    max_tries = 3  # Retry transient failures (safety net for @image_retry)
+
+    # Fixed 30-second delay between retries
+    # This is a safety net - primary retry with exponential backoff
+    # happens at @image_retry decorator level. ARQ retries are for
+    # edge cases where errors occur outside the image generation call.
+    retry_delay = 30
 
     # Health check
     health_check_interval = 30
