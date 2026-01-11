@@ -57,6 +57,13 @@ jest.mock('../../../lib/voice/homographs', () => ({
   formatPhonemes: jest.fn((p: string) => `<<${p}>>`),
 }));
 
+const mockDisambiguateHomograph = jest.fn();
+jest.mock('../../../lib/api', () => ({
+  api: {
+    disambiguateHomograph: (...args: unknown[]) => mockDisambiguateHomograph(...args),
+  },
+}));
+
 // Import after mocks
 import { useWordTTS } from '../../../lib/voice/use-word-tts';
 
@@ -173,7 +180,40 @@ describe('useWordTTS', () => {
   });
 
   describe('homograph handling', () => {
-    it('uses phoneme hints for homographs', async () => {
+    beforeEach(() => {
+      mockDisambiguateHomograph.mockReset();
+      mockDisambiguateHomograph.mockResolvedValue({
+        word: 'read',
+        pronunciation_index: 0,
+        phonemes: 'ɹ|iː|d',
+        is_homograph: true,
+      });
+    });
+
+    it('calls disambiguation API for homographs', async () => {
+      const { result } = renderHook(() => useWordTTS());
+      const context = createContext({ sentence: 'I read books every day.' });
+
+      await act(async () => {
+        result.current.playWord('read', 0, context);
+        await new Promise(resolve => setTimeout(resolve, 10));
+      });
+
+      expect(mockDisambiguateHomograph).toHaveBeenCalledWith(
+        'read',
+        'I read books every day.',
+        1
+      );
+    });
+
+    it('uses phonemes from disambiguation response', async () => {
+      mockDisambiguateHomograph.mockResolvedValue({
+        word: 'read',
+        pronunciation_index: 1,
+        phonemes: 'ɹ|ɛ|d',
+        is_homograph: true,
+      });
+
       const { result } = renderHook(() => useWordTTS());
 
       await act(async () => {
@@ -183,9 +223,35 @@ describe('useWordTTS', () => {
 
       expect(mockSpeak).toHaveBeenCalled();
       const callArg = mockSpeak.mock.calls[0]?.[0] as string;
-      // Should contain the phoneme markup
-      expect(callArg).toContain('<<');
-      expect(callArg).toContain('>>');
+      // Should contain the phoneme markup with disambiguated phonemes
+      expect(callArg).toContain('<<ɹ|ɛ|d>>');
+    });
+
+    it('falls back to first pronunciation if disambiguation fails', async () => {
+      mockDisambiguateHomograph.mockRejectedValue(new Error('API error'));
+
+      const { result } = renderHook(() => useWordTTS());
+
+      await act(async () => {
+        result.current.playWord('read', 0, createContext());
+        await new Promise(resolve => setTimeout(resolve, 10));
+      });
+
+      expect(mockSpeak).toHaveBeenCalled();
+      const callArg = mockSpeak.mock.calls[0]?.[0] as string;
+      // Should fall back to first pronunciation
+      expect(callArg).toContain('<<ɹ|iː|d>>');
+    });
+
+    it('does not call disambiguation for non-homographs', async () => {
+      const { result } = renderHook(() => useWordTTS());
+
+      await act(async () => {
+        result.current.playWord('hello', 0, createContext());
+        await new Promise(resolve => setTimeout(resolve, 10));
+      });
+
+      expect(mockDisambiguateHomograph).not.toHaveBeenCalled();
     });
   });
 });

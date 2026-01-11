@@ -18,6 +18,7 @@ import { WordTTSCache, buildCacheKey } from './word-tts-cache';
 import { createWavFromPcm, uint8ArrayToBase64, base64ToUint8Array } from './wav-utils';
 import { isHomograph, getHomographEntry, formatPhonemes } from './homographs';
 import { WordContext } from '@/components/TappableText';
+import { api } from '@/lib/api';
 
 // Cartesia TTS format constants
 const TTS_SAMPLE_RATE = 24000;
@@ -193,14 +194,23 @@ export function useWordTTS(): UseWordTTSResult {
         }
       }
 
-      // Determine phonemes for homographs
+      // Determine phonemes for homographs via LLM disambiguation
       let phonemes: string | null = null;
       if (isHomograph(word)) {
         const entry = getHomographEntry(word);
         if (entry) {
-          // For now, use first pronunciation (index 0)
-          // TODO: Implement LLM disambiguation
-          phonemes = entry.pronunciations[0];
+          try {
+            // Call backend to disambiguate based on sentence context
+            const result = await api.disambiguateHomograph(
+              word,
+              context.sentence,
+              1 // occurrence (TODO: track if word appears multiple times)
+            );
+            phonemes = result.phonemes;
+          } catch {
+            // Fall back to first pronunciation if disambiguation fails
+            phonemes = entry.pronunciations[0];
+          }
         }
       }
 

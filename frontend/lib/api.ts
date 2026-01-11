@@ -323,10 +323,30 @@ export const api = {
       body: JSON.stringify({ transcript }),
     });
   },
+
+  // Disambiguate homograph pronunciation based on sentence context
+  disambiguateHomograph: async (
+    word: string,
+    sentence: string,
+    occurrence: number = 1
+  ): Promise<DisambiguateResponse> => {
+    return fetchApi('/voice/disambiguate', {
+      method: 'POST',
+      body: JSON.stringify({ word, sentence, occurrence }),
+    });
+  },
 };
 
 // Response type for voice summarize endpoint
 export interface SummarizeResponse {
   goal: string;
   summary: string;
+}
+
+// Response type for homograph disambiguation endpoint
+export interface DisambiguateResponse {
+  word: string;
+  pronunciation_index: number;
+  phonemes: string | null;
+  is_homograph: boolean;
 }

@@ -193,3 +193,75 @@ describe('listStories caching', () => {
     expect(mockFetch).toHaveBeenCalledTimes(2);
   });
 });
+
+describe('disambiguateHomograph', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('calls POST /voice/disambiguate with word and sentence', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({
+        word: 'read',
+        pronunciation_index: 1,
+        phonemes: 'ɹ|ɛ|d',
+        is_homograph: true,
+      }),
+    });
+
+    const result = await api.disambiguateHomograph('read', 'I read the book yesterday.');
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const [url, options] = mockFetch.mock.calls[0];
+    expect(url).toContain('/voice/disambiguate');
+    expect(options.method).toBe('POST');
+    expect(JSON.parse(options.body)).toEqual({
+      word: 'read',
+      sentence: 'I read the book yesterday.',
+      occurrence: 1,
+    });
+  });
+
+  it('returns pronunciation index and phonemes', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({
+        word: 'read',
+        pronunciation_index: 0,
+        phonemes: 'ɹ|iː|d',
+        is_homograph: true,
+      }),
+    });
+
+    const result = await api.disambiguateHomograph('read', 'I read books every day.');
+
+    expect(result.pronunciation_index).toBe(0);
+    expect(result.phonemes).toBe('ɹ|iː|d');
+    expect(result.is_homograph).toBe(true);
+  });
+
+  it('passes occurrence parameter when provided', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({
+        word: 'bass',
+        pronunciation_index: 1,
+        phonemes: 'b|æ|s',
+        is_homograph: true,
+      }),
+    });
+
+    await api.disambiguateHomograph('bass', 'The bass player caught a bass.', 2);
+
+    const [, options] = mockFetch.mock.calls[0];
+    expect(JSON.parse(options.body)).toEqual({
+      word: 'bass',
+      sentence: 'The bass player caught a bass.',
+      occurrence: 2,
+    });
+  });
+});
