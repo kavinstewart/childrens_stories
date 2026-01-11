@@ -67,23 +67,22 @@ export default function EditPromptScreen() {
 
       setStatusMessage('Generating new illustration...');
 
-      // Start polling for completion
-      // Note: We poll for illustration_updated_at changes rather than job status
-      // because there's no job status endpoint. Job failures result in timeout.
+      // Poll the job status endpoint for completion/failure
       pollIntervalRef.current = setInterval(async () => {
         if (!isMountedRef.current) return;
 
         try {
-          const story = await api.getStory(storyId);
-          const spread = story.spreads?.find(s => s.spread_number === spreadNumber);
+          const status = await api.getRegenerateStatus(storyId, spreadNumber);
 
-          if (spread?.illustration_updated_at &&
-              spread.illustration_updated_at !== originalUpdatedAt.current) {
-            // Image was regenerated!
+          if (status.status === 'running') {
+            setStatusMessage('Generating new illustration...');
+          } else if (status.status === 'completed') {
+            // Success! Clean up and navigate back
             if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
             if (timeoutRef.current) clearTimeout(timeoutRef.current);
 
-            // Update cache with fresh data
+            // Refresh story data to get new illustration
+            const story = await api.getStory(storyId);
             queryClient.setQueryData(storyKeys.detail(storyId), story);
 
             // Invalidate offline cache so it re-downloads the new illustration
@@ -96,13 +95,26 @@ export default function EditPromptScreen() {
               setIsRegenerating(false);
               router.back();
             }
+          } else if (status.status === 'failed') {
+            // Job failed - show the actual error message
+            if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+            if (timeoutRef.current) clearTimeout(timeoutRef.current);
+
+            const errorMsg = status.error_message
+              ? formatErrorMessage(status.error_message)
+              : 'Regeneration failed. Please try again.';
+
+            setError(errorMsg);
+            setIsRegenerating(false);
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
           }
+          // 'pending' status - just keep polling
         } catch {
           // Ignore polling errors, will retry
         }
       }, POLL_INTERVAL_MS);
 
-      // Set timeout for job failures (no job status endpoint to check)
+      // Set timeout as a fallback (in case polling never returns completed/failed)
       timeoutRef.current = setTimeout(() => {
         if (!isMountedRef.current) return;
         if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
@@ -116,6 +128,21 @@ export default function EditPromptScreen() {
       setIsRegenerating(false);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     }
+  };
+
+  // Format server error messages for user display
+  const formatErrorMessage = (msg: string): string => {
+    if (msg.includes('503') || msg.includes('UNAVAILABLE') || msg.includes('overloaded')) {
+      return 'Image service is temporarily busy. Please try again in a few minutes.';
+    }
+    if (msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED') || msg.includes('rate limit')) {
+      return 'Too many requests. Please wait a moment and try again.';
+    }
+    if (msg.includes('timeout') || msg.includes('timed out')) {
+      return 'Request timed out. Please try again.';
+    }
+    // For other errors, show a generic message
+    return 'Regeneration failed. Please try again.';
   };
 
   const handleCancel = () => {

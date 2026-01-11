@@ -122,6 +122,15 @@ export interface RegenerateSpreadResponse {
   message: string;
 }
 
+export interface RegenerateStatusResponse {
+  job_id: string;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  created_at: string;
+  started_at?: string;
+  completed_at?: string;
+  error_message?: string;
+}
+
 export interface LoginRequest {
   pin: string;
 }
@@ -288,6 +297,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(prompt ? { prompt } : {}),
     });
+  },
+
+  // Get regeneration job status
+  getRegenerateStatus: async (storyId: string, spreadNumber: number): Promise<RegenerateStatusResponse> => {
+    return fetchApi(`/stories/${storyId}/spreads/${spreadNumber}/regenerate/status`);
   },
 
   // Health check
