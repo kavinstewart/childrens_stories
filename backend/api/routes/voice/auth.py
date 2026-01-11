@@ -69,6 +69,7 @@ async def authenticated_websocket_session(websocket: WebSocket, endpoint_name: s
         try:
             await websocket.send_json({
                 "type": "error",
+                "code": "auth_required",
                 "message": "Authentication required"
             })
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)

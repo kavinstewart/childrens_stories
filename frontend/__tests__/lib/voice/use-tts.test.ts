@@ -142,9 +142,9 @@ describe('useTTS', () => {
         mockWsInstance?.simulateError();
       });
 
-      await expect(connectPromise!).rejects.toThrow('Connection error');
+      await expect(connectPromise!).rejects.toThrow('Could not connect to voice service');
       expect(result.current.status).toBe('error');
-      expect(onError).toHaveBeenCalledWith('Connection error');
+      expect(onError).toHaveBeenCalledWith('Could not connect to voice service');
     });
 
     it('rejects on timeout', async () => {

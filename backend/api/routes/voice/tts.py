@@ -48,6 +48,7 @@ class CartesiaTTSProxy:
             logger.error("CARTESIA_API_KEY not configured")
             await self.client_ws.send_json({
                 "type": "error",
+                "code": "tts_not_configured",
                 "message": "TTS service not configured"
             })
             return False
@@ -66,9 +67,24 @@ class CartesiaTTSProxy:
 
         except Exception as e:
             logger.error(f"Failed to connect to Cartesia: {e}")
+            # Detect specific Cartesia errors
+            error_str = str(e).lower()
+            if "credit" in error_str or "quota" in error_str or "limit" in error_str:
+                code = "tts_credits_exhausted"
+                message = "TTS service credits exhausted"
+            elif "unauthorized" in error_str or "401" in error_str or "api key" in error_str:
+                code = "tts_auth_failed"
+                message = "TTS service authentication failed"
+            elif "rate" in error_str and "limit" in error_str:
+                code = "tts_rate_limited"
+                message = "TTS service rate limited, please try again"
+            else:
+                code = "tts_connection_failed"
+                message = f"Failed to connect to TTS service: {str(e)}"
             await self.client_ws.send_json({
                 "type": "error",
-                "message": f"Failed to connect to TTS service: {str(e)}"
+                "code": code,
+                "message": message
             })
             return False
 

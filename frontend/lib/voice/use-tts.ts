@@ -16,6 +16,46 @@ import { WS_BASE_URL } from '@/lib/api';
 // Sample rate from Cartesia TTS (24kHz PCM S16LE)
 const TTS_SAMPLE_RATE = 24000;
 
+/** Map error codes to user-friendly messages */
+function getUserFriendlyError(code: string | undefined, fallbackMessage: string): string {
+  switch (code) {
+    case 'auth_required':
+      return 'Please log in again to use voice features';
+    case 'tts_not_configured':
+      return 'Voice service is not available';
+    case 'tts_credits_exhausted':
+      return 'Voice service credits exhausted';
+    case 'tts_auth_failed':
+      return 'Voice service authentication failed';
+    case 'tts_rate_limited':
+      return 'Too many requests, please wait a moment';
+    case 'tts_connection_failed':
+      return 'Could not connect to voice service';
+    default:
+      return fallbackMessage || 'Voice service error';
+  }
+}
+
+/** Map WebSocket close codes to user-friendly messages */
+function getCloseCodeMessage(code: number): string | null {
+  switch (code) {
+    case 1000:
+      return null; // Normal close, no error
+    case 1001:
+      return 'Server is restarting';
+    case 1006:
+      return 'Connection lost unexpectedly';
+    case 1008:
+      return 'Please log in again'; // Policy violation (auth)
+    case 1011:
+      return 'Voice service encountered an error';
+    case 1013:
+      return 'Server is busy, please try again';
+    default:
+      return code >= 4000 ? 'Voice service error' : null;
+  }
+}
+
 export type TTSStatus = 'idle' | 'connecting' | 'ready' | 'speaking' | 'error';
 
 export interface UseTTSOptions {
@@ -86,6 +126,8 @@ export function useTTS(options: UseTTSOptions = {}): UseTTSResult {
   onAudioStartRef.current = onAudioStart;
   // Track if playSound has ever been called (to avoid calling stopSound before init)
   const hasPlayedAudioRef = useRef(false);
+  // Track last error received (to show meaningful message on close)
+  const lastErrorRef = useRef<{ code?: string; message: string } | null>(null);
 
   // Update status and notify
   const updateStatus = useCallback((newStatus: TTSStatus) => {
@@ -152,13 +194,17 @@ export function useTTS(options: UseTTSOptions = {}): UseTTSResult {
           break;
 
         case 'error':
-          console.error('[TTS] Server error:', data.message);
-          setError(data.message);
-          onError?.(data.message);
+          console.error('[TTS] Server error:', data.code || 'unknown', '-', data.message);
+          // Store error for use in close handler
+          lastErrorRef.current = { code: data.code, message: data.message };
+          // Map error codes to user-friendly messages
+          const userMessage = getUserFriendlyError(data.code, data.message);
+          setError(userMessage);
+          onError?.(userMessage);
           updateStatus('error');
           // Reject the connection promise if waiting
           if (connectResolversRef.current) {
-            connectResolversRef.current.reject(new Error(data.message));
+            connectResolversRef.current.reject(new Error(userMessage));
             connectResolversRef.current = null;
           }
           break;
@@ -236,30 +282,45 @@ export function useTTS(options: UseTTSOptions = {}): UseTTSResult {
 
       ws.onmessage = handleMessage;
 
-      ws.onerror = (event) => {
+      ws.onerror = () => {
         clearTimeout(timeoutId);
-        const errorMsg = 'Connection error';
-        console.error('[TTS] WebSocket error event:', event);
-        console.error('[TTS] WebSocket readyState:', ws.readyState);
+        // Use last error from server if available, otherwise infer from state
+        const lastError = lastErrorRef.current;
+        const errorMsg = lastError
+          ? getUserFriendlyError(lastError.code, lastError.message)
+          : 'Could not connect to voice service';
+        console.error('[TTS] WebSocket error - ' + errorMsg);
         setError(errorMsg);
         onError?.(errorMsg);
         updateStatus('error');
         if (connectResolversRef.current) {
-          console.log('[TTS] Rejecting connection promise due to error');
           connectResolversRef.current = null;
           reject(new Error(errorMsg));
         }
       };
 
       ws.onclose = (event) => {
-        console.log('[TTS] WebSocket closed, code:', event.code, 'reason:', event.reason, 'wasClean:', event.wasClean);
+        console.log('[TTS] WebSocket closed, code:', event.code, 'reason:', event.reason);
+        // Clear last error ref for next connection
+        const lastError = lastErrorRef.current;
+        lastErrorRef.current = null;
+
         updateStatus('idle');
-        // If we're still waiting for connection, reject
+        // If we're still waiting for connection, reject with meaningful error
         if (connectResolversRef.current) {
           clearTimeout(timeoutId);
-          console.log('[TTS] Rejecting connection promise due to close');
+          // Determine error message: use server error, close code, or generic
+          let errorMsg: string;
+          if (lastError) {
+            errorMsg = getUserFriendlyError(lastError.code, lastError.message);
+          } else {
+            errorMsg = getCloseCodeMessage(event.code) || 'Connection closed';
+          }
+          console.error('[TTS] Connection failed:', errorMsg);
+          setError(errorMsg);
+          onError?.(errorMsg);
           connectResolversRef.current = null;
-          reject(new Error('Connection closed'));
+          reject(new Error(errorMsg));
         }
       };
     });
