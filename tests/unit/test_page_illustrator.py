@@ -65,7 +65,6 @@ def sample_outline(sample_character_bible, sample_style):
     """Story metadata with character bibles."""
     return StoryMetadata(
         title="Luna and the Stars",
-        setting="A backyard on a summer night",
         character_bibles=[sample_character_bible],
         illustration_style=sample_style,
         style_rationale="Watercolor suits the dreamy night theme",

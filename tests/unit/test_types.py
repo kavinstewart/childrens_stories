@@ -21,14 +21,13 @@ class TestBuildIllustrationPrompt:
         """Should compose all fields into the expected format."""
         result = build_illustration_prompt(
             illustration_prompt="A fox dancing in a meadow",
-            setting="A sunny forest clearing",
             style_prefix="Warm watercolor style",
             lighting="golden hour sunlight",
         )
 
         assert "Warm watercolor style, 16:9 aspect ratio in landscape format." in result
         assert "Scene: A fox dancing in a meadow" in result
-        assert "Setting: A sunny forest clearing. Lighting: golden hour sunlight." in result
+        assert "Lighting: golden hour sunlight." in result
         assert "Wide shot framing with space at bottom for text overlay" in result
         assert "Maintain exact character identity from reference images above" in result
 
@@ -36,7 +35,6 @@ class TestBuildIllustrationPrompt:
         """Should work with default style prefix constant."""
         result = build_illustration_prompt(
             illustration_prompt="Test scene",
-            setting="Test setting",
             style_prefix=DEFAULT_STYLE_PREFIX,
             lighting=DEFAULT_LIGHTING,
         )
@@ -48,32 +46,29 @@ class TestBuildIllustrationPrompt:
         """Should handle empty illustration prompt gracefully."""
         result = build_illustration_prompt(
             illustration_prompt="",
-            setting="A cozy room",
             style_prefix="Digital cartoon style",
             lighting="soft ambient light",
         )
 
         assert "Scene: " in result
-        assert "Setting: A cozy room" in result
+        assert "Lighting: soft ambient light." in result
 
     def test_multiline_format(self):
         """Should produce multiline output with proper structure."""
         result = build_illustration_prompt(
             illustration_prompt="Test",
-            setting="Test",
             style_prefix="Style",
             lighting="Light",
         )
 
         lines = result.strip().split("\n")
-        # Should have multiple lines (style, blank, scene, blank, setting, blank, framing)
+        # Should have multiple lines (style, blank, scene, blank, lighting, blank, framing)
         assert len(lines) >= 5
 
     def test_aspect_ratio_in_landscape_format(self):
         """Should include the correct aspect ratio language."""
         result = build_illustration_prompt(
             illustration_prompt="Any scene",
-            setting="Any setting",
             style_prefix="Any style",
             lighting="Any lighting",
         )

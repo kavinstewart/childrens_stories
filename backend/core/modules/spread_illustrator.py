@@ -76,7 +76,6 @@ class SpreadIllustrator:
         style = outline.illustration_style
         return build_illustration_prompt(
             illustration_prompt=spread.illustration_prompt,
-            setting=outline.setting,
             style_prefix=style.prompt_prefix,
             lighting=style.lighting_direction or DEFAULT_LIGHTING,
         )

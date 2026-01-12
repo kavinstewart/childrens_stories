@@ -37,10 +37,9 @@ class IllustrationStyleResponse(BaseModel):
 
 
 class StoryMetadataResponse(BaseModel):
-    """Story metadata for illustration: style, setting, etc."""
+    """Story metadata for illustration: style, etc."""
 
     title: str
-    setting: str = ""
     illustration_style: Optional[IllustrationStyleResponse] = None  # For regeneration consistency
 
 

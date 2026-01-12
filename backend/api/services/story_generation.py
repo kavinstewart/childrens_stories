@@ -207,7 +207,6 @@ async def _save_story(
     # Serialize metadata (stored as outline_json for backwards compatibility)
     metadata_dict = {
         "title": story.metadata.title,
-        "setting": story.metadata.setting,
     }
 
     # Include illustration style if available (for regeneration consistency)

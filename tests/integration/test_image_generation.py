@@ -131,7 +131,6 @@ class TestSpreadIllustratorReal:
         """Minimal metadata for testing."""
         return StoryMetadata(
             title="The Sunny Cat",
-            setting="A cozy house",
             character_bibles=[],
             illustration_style=StyleDefinition(
                 name="Simple Cartoon",

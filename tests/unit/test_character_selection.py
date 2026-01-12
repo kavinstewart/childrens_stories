@@ -52,7 +52,6 @@ def clank_and_friends_outline(sample_style):
     """
     return StoryMetadata(
         title="Clank and the Green Thing",
-        setting="A forest clearing",
         character_bibles=[
             CharacterBible(
                 name="Clank",

@@ -459,7 +459,6 @@ class StoryRepository:
         a pure function. If this grows more complex, consider a response mapper.
         """
         style = metadata.illustration_style if metadata else None
-        setting = metadata.setting if metadata else ""
 
         return [
             StorySpreadResponse(
@@ -475,7 +474,6 @@ class StoryRepository:
                 illustration_updated_at=s.get("illustration_updated_at"),
                 composed_prompt=build_illustration_prompt(
                     illustration_prompt=s["illustration_prompt"] or "",
-                    setting=setting,
                     style_prefix=style.prompt_prefix if style else DEFAULT_STYLE_PREFIX,
                     lighting=style.lighting_direction if style and style.lighting_direction else DEFAULT_LIGHTING,
                 ) if s["illustration_prompt"] else None,

@@ -103,7 +103,6 @@ async def regenerate_spread(
         if story.metadata:
             metadata = StoryMetadata(
                 title=story.metadata.title,
-                setting=story.metadata.setting,
                 illustration_style=illustration_style,
             )
 

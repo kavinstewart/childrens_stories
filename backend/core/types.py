@@ -141,7 +141,6 @@ DEFAULT_LIGHTING = "soft diffused natural light with gentle shadows"
 
 def build_illustration_prompt(
     illustration_prompt: str,
-    setting: str,
     style_prefix: str,
     lighting: str,
 ) -> str:
@@ -153,7 +152,6 @@ def build_illustration_prompt(
 
     Args:
         illustration_prompt: Scene description for this spread
-        setting: Story setting (location, time of day, etc.)
         style_prefix: Style direction (e.g., "Warm watercolor style")
         lighting: Lighting direction (e.g., "soft diffused natural light")
 
@@ -164,7 +162,7 @@ def build_illustration_prompt(
 
 Scene: {illustration_prompt}
 
-Setting: {setting}. Lighting: {lighting}.
+Lighting: {lighting}.
 
 Wide shot framing with space at bottom for text overlay. Maintain exact character identity from reference images above."""
 
@@ -305,17 +303,16 @@ class StoryReferenceSheets:
 
 @dataclass
 class StoryMetadata:
-    """Metadata for story illustration: style, characters, and setting.
+    """Metadata for story illustration: style and characters.
 
     This is NOT an outline - the story-first workflow generates the complete
     story directly. This container holds metadata needed for illustration:
     - Character visual descriptions (bibles) for consistent illustration
     - Selected illustration style
-    - Title and setting for prompt composition
+    - Title for reference
     """
 
     title: str
-    setting: str = ""
     character_bibles: list[CharacterBible] = field(default_factory=list)
     illustration_style: Optional[StyleDefinition] = None
     style_rationale: str = ""
