@@ -1,6 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api, Story, CreateStoryRequest, JobStatus, RegenerateSpreadResponse } from '@/lib/api';
-import { StoryCacheManager } from '@/lib/story-cache';
 
 // Query keys
 export const storyKeys = {
@@ -76,7 +75,7 @@ export function useDeleteStory() {
 }
 
 // Hook to fetch story recommendations
-export function useRecommendations(storyId: string | undefined, limit: number = 3) {
+export function useRecommendations(storyId: string | undefined, limit: number = 4) {
   return useQuery({
     queryKey: storyKeys.recommendations(storyId!),
     queryFn: () => api.getRecommendations(storyId!, limit),
@@ -127,14 +126,11 @@ export function useRegenerateSpread() {
       return { previousStory, storyId };
     },
 
-    // On success, invalidate both React Query cache and offline cache
+    // On success, invalidate to get fresh data with new timestamp
     onSuccess: (_, { storyId }) => {
-      // Invalidate React Query cache to refetch from API
       queryClient.invalidateQueries({
         queryKey: storyKeys.detail(storyId),
       });
-      // Invalidate offline cache so fresh network data is used instead of stale cache
-      StoryCacheManager.invalidateStory(storyId);
     },
 
     // On error, restore previous state
