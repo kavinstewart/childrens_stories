@@ -66,8 +66,11 @@ export default function StoryReader() {
     const networkSpread = networkStory?.spreads?.find(s => s.spread_number === regeneratingSpreadNumber);
 
     // If the spread now has a completed illustration, clear the regenerating state
+    // and invalidate the cache so the UI uses fresh network data
     if (networkSpread?.illustration_status === 'complete' || networkSpread?.illustration_url) {
       console.log(`[Reader] Spread ${regeneratingSpreadNumber} regeneration complete, status=${networkSpread.illustration_status}`);
+      // Invalidate cache so story uses fresh networkStory data with the new illustration
+      StoryCacheManager.invalidateStory(id!);
       resetRegenerating();
       return;
     }
@@ -79,7 +82,7 @@ export default function StoryReader() {
     }, 2000);
 
     return () => clearInterval(pollInterval);
-  }, [regeneratingSpreadNumber, networkStory?.spreads, resetRegenerating, refetchStory]);
+  }, [regeneratingSpreadNumber, networkStory?.spreads, resetRegenerating, refetchStory, id]);
 
   const spreads = story?.spreads || [];
   const totalSpreads = spreads.length;
