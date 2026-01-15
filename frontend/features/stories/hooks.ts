@@ -75,7 +75,7 @@ export function useDeleteStory() {
 }
 
 // Hook to fetch story recommendations
-export function useRecommendations(storyId: string | undefined, limit: number = 4) {
+export function useRecommendations(storyId: string | undefined, limit: number = 3) {
   return useQuery({
     queryKey: storyKeys.recommendations(storyId!),
     queryFn: () => api.getRecommendations(storyId!, limit),
