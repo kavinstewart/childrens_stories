@@ -6,7 +6,7 @@ from uuid import UUID
 
 import pytest
 
-from backend.api.database.repository import SpreadRegenJobRepository
+from backend.api.database.repository import StoryRepository
 
 
 TEST_STORY_ID = "12345678-1234-5678-1234-567812345678"
@@ -25,17 +25,17 @@ def mock_connection():
 
 @pytest.fixture
 def repository(mock_connection):
-    """Create a SpreadRegenJobRepository with mock connection."""
-    return SpreadRegenJobRepository(mock_connection)
+    """Create a StoryRepository with mock connection."""
+    return StoryRepository(mock_connection)
 
 
-class TestCreateJob:
-    """Tests for create_job method."""
+class TestCreateSpreadRegenJob:
+    """Tests for create_spread_regen_job method."""
 
     @pytest.mark.asyncio
     async def test_creates_job_with_correct_fields(self, repository, mock_connection):
         """Creates job with correct fields (job_id, story_id, spread_number, status='pending')."""
-        await repository.create_job(
+        await repository.create_spread_regen_job(
             job_id=TEST_JOB_ID,
             story_id=TEST_STORY_ID,
             spread_number=3,
@@ -52,8 +52,8 @@ class TestCreateJob:
         assert call_args[0][3] == 3
 
 
-class TestGetJob:
-    """Tests for get_job method."""
+class TestGetSpreadRegenJob:
+    """Tests for get_spread_regen_job method."""
 
     @pytest.mark.asyncio
     async def test_returns_job_when_found(self, repository, mock_connection):
@@ -74,7 +74,7 @@ class TestGetJob:
         }[key]
         mock_connection.fetchrow = AsyncMock(return_value=mock_row)
 
-        result = await repository.get_job(TEST_JOB_ID)
+        result = await repository.get_spread_regen_job(TEST_JOB_ID)
 
         assert result is not None
         mock_connection.fetchrow.assert_called_once()
@@ -84,13 +84,13 @@ class TestGetJob:
         """Returns None for non-existent job_id."""
         mock_connection.fetchrow = AsyncMock(return_value=None)
 
-        result = await repository.get_job("nonexistent")
+        result = await repository.get_spread_regen_job("nonexistent")
 
         assert result is None
 
 
-class TestGetActiveJob:
-    """Tests for get_active_job method."""
+class TestGetActiveSpreadRegenJob:
+    """Tests for get_active_spread_regen_job method."""
 
     @pytest.mark.asyncio
     async def test_returns_active_job(self, repository, mock_connection):
@@ -98,7 +98,7 @@ class TestGetActiveJob:
         mock_row = MagicMock()
         mock_connection.fetchrow = AsyncMock(return_value=mock_row)
 
-        result = await repository.get_active_job(TEST_STORY_ID, 3)
+        result = await repository.get_active_spread_regen_job(TEST_STORY_ID, 3)
 
         assert result is not None
         call_args = mock_connection.fetchrow.call_args
@@ -110,20 +110,20 @@ class TestGetActiveJob:
         """Returns None when no active job exists."""
         mock_connection.fetchrow = AsyncMock(return_value=None)
 
-        result = await repository.get_active_job(TEST_STORY_ID, 3)
+        result = await repository.get_active_spread_regen_job(TEST_STORY_ID, 3)
 
         assert result is None
 
 
-class TestUpdateStatus:
-    """Tests for update_status method."""
+class TestUpdateSpreadRegenStatus:
+    """Tests for update_spread_regen_status method."""
 
     @pytest.mark.asyncio
     async def test_updates_status_to_running(self, repository, mock_connection):
         """Updates status from 'pending' to 'running' with started_at."""
         now = datetime.now(timezone.utc)
 
-        await repository.update_status(
+        await repository.update_spread_regen_status(
             job_id=TEST_JOB_ID,
             status="running",
             started_at=now,
@@ -140,7 +140,7 @@ class TestUpdateStatus:
         """Updates status to 'completed' with completed_at."""
         now = datetime.now(timezone.utc)
 
-        await repository.update_status(
+        await repository.update_spread_regen_status(
             job_id=TEST_JOB_ID,
             status="completed",
             completed_at=now,
@@ -156,7 +156,7 @@ class TestUpdateStatus:
         """Updates status to 'failed' with error_message."""
         now = datetime.now(timezone.utc)
 
-        await repository.update_status(
+        await repository.update_spread_regen_status(
             job_id=TEST_JOB_ID,
             status="failed",
             completed_at=now,
@@ -169,15 +169,15 @@ class TestUpdateStatus:
         assert call_args[0][5] == "Image generation failed"
 
 
-class TestUpdateProgress:
-    """Tests for update_progress method."""
+class TestUpdateSpreadRegenProgress:
+    """Tests for update_spread_regen_progress method."""
 
     @pytest.mark.asyncio
     async def test_updates_progress_json(self, repository, mock_connection):
         """Updates progress JSON field."""
         progress = '{"stage": "generating", "percent": 50}'
 
-        await repository.update_progress(TEST_JOB_ID, progress)
+        await repository.update_spread_regen_progress(TEST_JOB_ID, progress)
 
         mock_connection.execute.assert_called_once()
         call_args = mock_connection.execute.call_args

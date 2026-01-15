@@ -7,14 +7,13 @@ from dotenv import find_dotenv, load_dotenv
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-# Load environment variables from .env file.
-# Entry point (main.py) also calls load_dotenv() before importing this module.
-# This call is a safety net for direct imports. load_dotenv() is idempotent.
+# Load .env from project root (find_dotenv searches parent directories)
 load_dotenv(find_dotenv())
 
 from .auth.tokens import verify_token  # noqa: E402
 from .database.db import get_pool  # noqa: E402
-from .database.repository import SpreadRegenJobRepository, StoryRepository  # noqa: E402
+from .database.repository import StoryRepository  # noqa: E402
+from .database.vlm_eval_repository import VLMEvalRepository  # noqa: E402
 from .services.story_service import StoryService  # noqa: E402
 
 # Security scheme for bearer token authentication
@@ -37,27 +36,26 @@ def get_repository(
     return StoryRepository(conn)
 
 
-# Spread regen job repository - requires connection
-def get_spread_regen_repository(
+# VLM Eval Repository - requires connection
+def get_vlm_eval_repository(
     conn: Annotated[asyncpg.Connection, Depends(get_connection)]
-) -> SpreadRegenJobRepository:
-    """Get a SpreadRegenJobRepository instance with injected connection."""
-    return SpreadRegenJobRepository(conn)
+) -> VLMEvalRepository:
+    """Get a VLMEvalRepository instance with injected connection."""
+    return VLMEvalRepository(conn)
 
 
-# Service - depends on both repositories
+# Service - depends on repository
 def get_story_service(
-    repo: Annotated[StoryRepository, Depends(get_repository)],
-    regen_repo: Annotated[SpreadRegenJobRepository, Depends(get_spread_regen_repository)],
+    repo: Annotated[StoryRepository, Depends(get_repository)]
 ) -> StoryService:
-    """Get a StoryService instance with injected repositories."""
-    return StoryService(repo, regen_repo)
+    """Get a StoryService instance with injected repository."""
+    return StoryService(repo)
 
 
 # Type aliases for cleaner route signatures
 Connection = Annotated[asyncpg.Connection, Depends(get_connection)]
 Repository = Annotated[StoryRepository, Depends(get_repository)]
-SpreadRegenRepository = Annotated[SpreadRegenJobRepository, Depends(get_spread_regen_repository)]
+VLMEvalRepo = Annotated[VLMEvalRepository, Depends(get_vlm_eval_repository)]
 Service = Annotated[StoryService, Depends(get_story_service)]
 
 

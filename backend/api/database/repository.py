@@ -7,12 +7,12 @@ from typing import Optional
 
 import asyncpg
 
-from backend.core.types import build_illustration_prompt, DEFAULT_STYLE_PREFIX, DEFAULT_LIGHTING
 from ..models.enums import GenerationType, JobStatus
 from ..models.responses import (
     CharacterReferenceResponse,
     IllustrationStyleResponse,
-    StoryMetadataResponse,
+    QualityJudgmentResponse,
+    StoryOutlineResponse,
     StoryProgressResponse,
     StoryRecommendationItem,
     StoryResponse,
@@ -20,167 +20,32 @@ from ..models.responses import (
 )
 
 
-class SpreadRegenJobRepository:
-    """Repository for spread regeneration job operations."""
+def _build_composed_prompt(
+    illustration_prompt: str,
+    setting: str,
+    style: Optional[IllustrationStyleResponse],
+) -> str:
+    """
+    Build the full composed prompt for image generation.
 
-    def __init__(self, conn: asyncpg.Connection):
-        self.conn = conn
+    Single source of truth - this matches SpreadIllustrator._build_scene_prompt().
+    """
+    style_direction = (
+        style.prompt_prefix if style
+        else "Warm, inviting children's book illustration in soft watercolor and gouache style"
+    )
+    lighting = (
+        style.lighting_direction if style and style.lighting_direction
+        else "soft diffused natural light with gentle shadows"
+    )
 
-    async def create_job(
-        self,
-        job_id: str,
-        story_id: str,
-        spread_number: int,
-    ) -> None:
-        """Create a new spread regeneration job record."""
-        await self.conn.execute(
-            """
-            INSERT INTO spread_regen_jobs (id, story_id, spread_number, status)
-            VALUES ($1, $2, $3, 'pending')
-            """,
-            job_id,
-            story_id,
-            spread_number,
-        )
+    return f"""{style_direction}, 16:9 double-page spread composition.
 
-    async def get_job(self, job_id: str) -> Optional[dict]:
-        """Get a spread regeneration job by ID."""
-        row = await self.conn.fetchrow(
-            "SELECT * FROM spread_regen_jobs WHERE id = $1",
-            job_id,
-        )
-        return dict(row) if row else None
+Scene: {illustration_prompt}
 
-    async def get_active_job(
-        self, story_id: str, spread_number: int
-    ) -> Optional[dict]:
-        """Get an active (pending/running) regeneration job for a spread.
+Setting: {setting}. Lighting: {lighting}.
 
-        Jobs are considered stale (not active) if:
-        - pending for > 2 minutes (should be picked up quickly)
-        - running for > 12 minutes (job_timeout 600s + 2 min buffer)
-        """
-        row = await self.conn.fetchrow(
-            """
-            SELECT * FROM spread_regen_jobs
-            WHERE story_id = $1 AND spread_number = $2
-              AND (
-                (status = 'pending' AND created_at > NOW() - INTERVAL '2 minutes')
-                OR (status = 'running' AND started_at > NOW() - INTERVAL '12 minutes')
-              )
-            ORDER BY created_at DESC
-            LIMIT 1
-            """,
-            story_id,
-            spread_number,
-        )
-        return dict(row) if row else None
-
-    async def get_latest_job(
-        self, story_id: str, spread_number: int
-    ) -> Optional[dict]:
-        """Get the most recent regeneration job for a spread (any status)."""
-        row = await self.conn.fetchrow(
-            """
-            SELECT * FROM spread_regen_jobs
-            WHERE story_id = $1 AND spread_number = $2
-            ORDER BY created_at DESC
-            LIMIT 1
-            """,
-            story_id,
-            spread_number,
-        )
-        return dict(row) if row else None
-
-    async def cleanup_stale_jobs(self) -> int:
-        """Mark stale pending/running jobs as failed.
-
-        Returns the number of jobs marked as failed.
-        """
-        result = await self.conn.execute(
-            """
-            UPDATE spread_regen_jobs
-            SET status = 'failed',
-                error_message = 'Job timed out (stale job cleanup)',
-                completed_at = NOW()
-            WHERE (
-                (status = 'pending' AND created_at <= NOW() - INTERVAL '2 minutes')
-                OR (status = 'running' AND started_at <= NOW() - INTERVAL '12 minutes')
-            )
-            """
-        )
-        # asyncpg returns "UPDATE N" string
-        count = int(result.split()[-1]) if result else 0
-        return count
-
-    async def update_status(
-        self,
-        job_id: str,
-        status: str,
-        started_at: Optional[datetime] = None,
-        completed_at: Optional[datetime] = None,
-        error_message: Optional[str] = None,
-    ) -> None:
-        """Update spread regeneration job status."""
-        await self.conn.execute(
-            """
-            UPDATE spread_regen_jobs
-            SET status = $2,
-                started_at = COALESCE($3, started_at),
-                completed_at = COALESCE($4, completed_at),
-                error_message = COALESCE($5, error_message)
-            WHERE id = $1
-            """,
-            job_id,
-            status,
-            started_at,
-            completed_at,
-            error_message,
-        )
-
-    async def update_progress(
-        self,
-        job_id: str,
-        progress_json: str,
-    ) -> None:
-        """Update spread regeneration progress JSON."""
-        await self.conn.execute(
-            "UPDATE spread_regen_jobs SET progress_json = $2 WHERE id = $1",
-            job_id,
-            progress_json,
-        )
-
-    async def save_regenerated_spread(
-        self,
-        story_id: str,
-        spread_number: int,
-        illustration_path: str,
-    ) -> None:
-        """Update a spread's illustration after successful regeneration."""
-        await self.conn.execute(
-            """
-            UPDATE story_spreads
-            SET illustration_path = $3,
-                illustration_updated_at = $4
-            WHERE story_id = $1 AND spread_number = $2
-            """,
-            story_id,
-            spread_number,
-            illustration_path,
-            datetime.now(timezone.utc),
-        )
-
-    async def get_spread(self, story_id: str, spread_number: int) -> Optional[dict]:
-        """Get a single spread by story ID and spread number."""
-        row = await self.conn.fetchrow(
-            """
-            SELECT * FROM story_spreads
-            WHERE story_id = $1 AND spread_number = $2
-            """,
-            story_id,
-            spread_number,
-        )
-        return dict(row) if row else None
+Wide shot framing with space at bottom for text overlay. Maintain exact character identity from reference images above."""
 
 
 class StoryRepository:
@@ -319,15 +184,14 @@ class StoryRepository:
                         r["character_name"],
                         r.get("character_description"),
                         r.get("reference_image_path"),
-                        r.get("bible_json"),
                     )
                     for r in character_refs
                 ]
                 await self.conn.executemany(
                     """
                     INSERT INTO character_references
-                        (story_id, character_name, character_description, reference_image_path, bible_json)
-                    VALUES ($1, $2, $3, $4, $5)
+                        (story_id, character_name, character_description, reference_image_path)
+                    VALUES ($1, $2, $3, $4)
                     """,
                     ref_data,
                 )
@@ -367,23 +231,34 @@ class StoryRepository:
         status: Optional[str] = "completed",
     ) -> tuple[list[StoryResponse], int]:
         """List stories with pagination and optional status filter."""
-        # Build query conditionally based on status filter
-        where_clause = "WHERE status = $1" if status else ""
-        params: list = [status] if status else []
-
         # Get total count
-        count_query = f"SELECT COUNT(*) FROM stories {where_clause}"
-        total = await self.conn.fetchval(count_query, *params)
-
-        # Get paginated results
-        param_offset = len(params)
-        list_query = f"""
-            SELECT * FROM stories
-            {where_clause}
-            ORDER BY created_at DESC
-            LIMIT ${param_offset + 1} OFFSET ${param_offset + 2}
-        """
-        stories = await self.conn.fetch(list_query, *params, limit, offset)
+        if status:
+            total = await self.conn.fetchval(
+                "SELECT COUNT(*) FROM stories WHERE status = $1",
+                status,
+            )
+            stories = await self.conn.fetch(
+                """
+                SELECT * FROM stories
+                WHERE status = $1
+                ORDER BY created_at DESC
+                LIMIT $2 OFFSET $3
+                """,
+                status,
+                limit,
+                offset,
+            )
+        else:
+            total = await self.conn.fetchval("SELECT COUNT(*) FROM stories")
+            stories = await self.conn.fetch(
+                """
+                SELECT * FROM stories
+                ORDER BY created_at DESC
+                LIMIT $1 OFFSET $2
+                """,
+                limit,
+                offset,
+            )
 
         return [self._record_to_response(s) for s in stories], total or 0
 
@@ -430,86 +305,117 @@ class StoryRepository:
             for row in selected
         ]
 
-    def _parse_metadata(self, story: asyncpg.Record) -> Optional[StoryMetadataResponse]:
-        """Parse outline_json into StoryMetadataResponse."""
-        if not story["outline_json"]:
-            return None
-        metadata_data = json.loads(story["outline_json"])
-        return StoryMetadataResponse(**metadata_data)
+    # --- Spread Regeneration Job Methods ---
 
-    def _parse_progress(self, story: asyncpg.Record) -> Optional[StoryProgressResponse]:
-        """Parse progress_json into StoryProgressResponse."""
-        if not story["progress_json"]:
-            return None
-        progress_data = json.loads(story["progress_json"])
-        if progress_data.get("updated_at"):
-            progress_data["updated_at"] = datetime.fromisoformat(progress_data["updated_at"])
-        return StoryProgressResponse(**progress_data)
+    async def create_spread_regen_job(
+        self,
+        job_id: str,
+        story_id: str,
+        spread_number: int,
+    ) -> None:
+        """Create a new spread regeneration job record."""
+        await self.conn.execute(
+            """
+            INSERT INTO spread_regen_jobs (id, story_id, spread_number, status)
+            VALUES ($1, $2, $3, 'pending')
+            """,
+            job_id,
+            story_id,
+            spread_number,
+        )
 
-    def _build_spread_responses(
+    async def get_spread_regen_job(self, job_id: str) -> Optional[dict]:
+        """Get a spread regeneration job by ID."""
+        row = await self.conn.fetchrow(
+            "SELECT * FROM spread_regen_jobs WHERE id = $1",
+            job_id,
+        )
+        return dict(row) if row else None
+
+    async def get_active_spread_regen_job(
+        self, story_id: str, spread_number: int
+    ) -> Optional[dict]:
+        """Get an active (pending/running) regeneration job for a spread."""
+        row = await self.conn.fetchrow(
+            """
+            SELECT * FROM spread_regen_jobs
+            WHERE story_id = $1 AND spread_number = $2 AND status IN ('pending', 'running')
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            story_id,
+            spread_number,
+        )
+        return dict(row) if row else None
+
+    async def update_spread_regen_status(
+        self,
+        job_id: str,
+        status: str,
+        started_at: Optional[datetime] = None,
+        completed_at: Optional[datetime] = None,
+        error_message: Optional[str] = None,
+    ) -> None:
+        """Update spread regeneration job status."""
+        await self.conn.execute(
+            """
+            UPDATE spread_regen_jobs
+            SET status = $2,
+                started_at = COALESCE($3, started_at),
+                completed_at = COALESCE($4, completed_at),
+                error_message = COALESCE($5, error_message)
+            WHERE id = $1
+            """,
+            job_id,
+            status,
+            started_at,
+            completed_at,
+            error_message,
+        )
+
+    async def update_spread_regen_progress(
+        self,
+        job_id: str,
+        progress_json: str,
+    ) -> None:
+        """Update spread regeneration progress JSON."""
+        await self.conn.execute(
+            "UPDATE spread_regen_jobs SET progress_json = $2 WHERE id = $1",
+            job_id,
+            progress_json,
+        )
+
+    async def save_regenerated_spread(
         self,
         story_id: str,
-        spreads: list[asyncpg.Record],
-        metadata: Optional[StoryMetadataResponse],
-    ) -> list[StorySpreadResponse]:
-        """Convert spread records to StorySpreadResponse list.
+        spread_number: int,
+        illustration_path: str,
+    ) -> None:
+        """Update a spread's illustration after successful regeneration."""
+        await self.conn.execute(
+            """
+            UPDATE story_spreads
+            SET illustration_path = $3,
+                illustration_updated_at = $4
+            WHERE story_id = $1 AND spread_number = $2
+            """,
+            story_id,
+            spread_number,
+            illustration_path,
+            datetime.now(timezone.utc),
+        )
 
-        Note: We compute composed_prompt here rather than storing it or using a
-        service layer. It's a debug-only field and build_illustration_prompt is
-        a pure function. If this grows more complex, consider a response mapper.
-        """
-        style = metadata.illustration_style if metadata else None
-
-        return [
-            StorySpreadResponse(
-                spread_number=s["spread_number"],
-                text=s["text"],
-                word_count=s["word_count"],
-                was_revised=s["was_revised"],
-                page_turn_note=s["page_turn_note"],
-                illustration_prompt=s["illustration_prompt"],
-                illustration_url=f"/stories/{story_id}/spreads/{s['spread_number']}/image"
-                if s["illustration_path"]
-                else None,
-                illustration_updated_at=s.get("illustration_updated_at"),
-                composed_prompt=build_illustration_prompt(
-                    illustration_prompt=s["illustration_prompt"] or "",
-                    style_prefix=style.prompt_prefix if style else DEFAULT_STYLE_PREFIX,
-                    lighting=style.lighting_direction if style and style.lighting_direction else DEFAULT_LIGHTING,
-                ) if s["illustration_prompt"] else None,
-            )
-            for s in spreads
-        ]
-
-    def _build_character_ref_responses(
-        self,
-        story_id: str,
-        char_refs: list[asyncpg.Record],
-    ) -> list[CharacterReferenceResponse]:
-        """Convert character reference records to CharacterReferenceResponse list."""
-        responses = []
-        for r in char_refs:
-            # Parse bible_json if present
-            bible_data = None
-            if r.get("bible_json"):
-                bible_json = r["bible_json"]
-                # Handle both string and dict (asyncpg may auto-parse JSONB)
-                if isinstance(bible_json, str):
-                    bible_data = json.loads(bible_json)
-                else:
-                    bible_data = bible_json
-
-            responses.append(
-                CharacterReferenceResponse(
-                    character_name=r["character_name"],
-                    character_description=r["character_description"],
-                    reference_image_url=f"/stories/{story_id}/characters/{r['character_name']}/image"
-                    if r["reference_image_path"]
-                    else None,
-                    bible=bible_data,
-                )
-            )
-        return responses
+    async def get_spread(self, story_id: str, spread_number: int) -> Optional[dict]:
+        """Get a single spread by story ID and spread number."""
+        row = await self.conn.fetchrow(
+            """
+            SELECT * FROM story_spreads
+            WHERE story_id = $1 AND spread_number = $2
+            """,
+            story_id,
+            spread_number,
+        )
+        return dict(row) if row else None
 
     def _record_to_response(
         self,
@@ -518,17 +424,67 @@ class StoryRepository:
         char_refs: Optional[list[asyncpg.Record]] = None,
     ) -> StoryResponse:
         """Convert asyncpg Record to response model."""
-        metadata = self._parse_metadata(story)
-        progress = self._parse_progress(story)
+        # Parse outline JSON
+        outline = None
+        if story["outline_json"]:
+            outline_data = json.loads(story["outline_json"])
+            outline = StoryOutlineResponse(**outline_data)
 
-        spread_responses = (
-            self._build_spread_responses(story["id"], spreads, metadata)
-            if spreads else None
-        )
-        char_ref_responses = (
-            self._build_character_ref_responses(story["id"], char_refs)
-            if char_refs else None
-        )
+        # Parse judgment JSON
+        judgment = None
+        if story["judgment_json"]:
+            judgment_data = json.loads(story["judgment_json"])
+            judgment = QualityJudgmentResponse(**judgment_data)
+
+        # Convert spreads
+        spread_responses = None
+        if spreads:
+            # Extract style info for composed prompt
+            style = outline.illustration_style if outline else None
+            setting = outline.setting if outline else ""
+
+            spread_responses = [
+                StorySpreadResponse(
+                    spread_number=s["spread_number"],
+                    text=s["text"],
+                    word_count=s["word_count"],
+                    was_revised=s["was_revised"],
+                    page_turn_note=s["page_turn_note"],
+                    illustration_prompt=s["illustration_prompt"],
+                    illustration_url=f"/stories/{story['id']}/spreads/{s['spread_number']}/image"
+                    if s["illustration_path"]
+                    else None,
+                    illustration_updated_at=s.get("illustration_updated_at"),
+                    composed_prompt=_build_composed_prompt(
+                        s["illustration_prompt"] or "",
+                        setting,
+                        style,
+                    ) if s["illustration_prompt"] else None,
+                )
+                for s in spreads
+            ]
+
+        # Convert character refs
+        char_ref_responses = None
+        if char_refs:
+            char_ref_responses = [
+                CharacterReferenceResponse(
+                    character_name=r["character_name"],
+                    character_description=r["character_description"],
+                    reference_image_url=f"/stories/{story['id']}/characters/{r['character_name']}/image"
+                    if r["reference_image_path"]
+                    else None,
+                )
+                for r in char_refs
+            ]
+
+        # Parse progress JSON
+        progress = None
+        if story["progress_json"]:
+            progress_data = json.loads(story["progress_json"])
+            if progress_data.get("updated_at"):
+                progress_data["updated_at"] = datetime.fromisoformat(progress_data["updated_at"])
+            progress = StoryProgressResponse(**progress_data)
 
         return StoryResponse(
             id=story["id"],
@@ -544,8 +500,9 @@ class StoryRepository:
             word_count=story["word_count"],
             spread_count=story["spread_count"],
             attempts=story["attempts"],
-            metadata=metadata,
+            outline=outline,
             spreads=spread_responses,
+            judgment=judgment,
             character_references=char_ref_responses,
             progress=progress,
             error_message=story["error_message"],

@@ -26,6 +26,20 @@ class StorySpreadResponse(BaseModel):
     composed_prompt: Optional[str] = None  # Full prompt sent to image model (for dev editing)
 
 
+class QualityJudgmentResponse(BaseModel):
+    """Quality assessment of the story."""
+
+    overall_score: int
+    verdict: str
+    engagement_score: int
+    read_aloud_score: int
+    emotional_truth_score: int
+    coherence_score: int
+    chekhov_score: int
+    has_critical_failures: bool
+    specific_problems: str
+
+
 class IllustrationStyleResponse(BaseModel):
     """Illustration style definition for consistency."""
 
@@ -36,10 +50,14 @@ class IllustrationStyleResponse(BaseModel):
     lighting_direction: str = ""
 
 
-class StoryMetadataResponse(BaseModel):
-    """Story metadata for illustration: style, etc."""
+class StoryOutlineResponse(BaseModel):
+    """Story outline metadata."""
 
     title: str
+    characters: str = ""
+    setting: str = ""
+    plot_summary: str = ""
+    spread_count: int = 12  # Number of spreads (typically 12)
     illustration_style: Optional[IllustrationStyleResponse] = None  # For regeneration consistency
 
 
@@ -49,13 +67,12 @@ class CharacterReferenceResponse(BaseModel):
     character_name: str
     character_description: Optional[str] = None
     reference_image_url: Optional[str] = None
-    bible: Optional[dict] = None  # Full CharacterBible for editing
 
 
 class StoryProgressResponse(BaseModel):
     """Progress tracking for story generation."""
 
-    stage: str  # outline, spreads, character_refs, illustrations, failed
+    stage: str  # outline, spreads, quality, character_refs, illustrations, failed
     stage_detail: str  # Human-readable message
     percentage: int  # 0-100, weighted by stage
 
@@ -64,6 +81,9 @@ class StoryProgressResponse(BaseModel):
     characters_completed: Optional[int] = None
     spreads_total: Optional[int] = None
     spreads_completed: Optional[int] = None
+    quality_attempt: Optional[int] = None
+    quality_attempts_max: Optional[int] = None
+    quality_score: Optional[int] = None
 
     # Error context
     warnings: list[str] = Field(default_factory=list)
@@ -90,8 +110,9 @@ class StoryResponse(BaseModel):
     spread_count: Optional[int] = None  # Number of spreads (typically 12)
     attempts: Optional[int] = None
 
-    metadata: Optional[StoryMetadataResponse] = None
+    outline: Optional[StoryOutlineResponse] = None
     spreads: Optional[list[StorySpreadResponse]] = None
+    judgment: Optional[QualityJudgmentResponse] = None
     character_references: Optional[list[CharacterReferenceResponse]] = None
 
     # Progress tracking (populated while running)
@@ -152,14 +173,3 @@ class RegenerateSpreadResponse(BaseModel):
     message: str = Field(
         default="Spread regeneration started. Poll GET /stories/{story_id} for updated illustration."
     )
-
-
-class RegenerateStatusResponse(BaseModel):
-    """Response for regeneration job status."""
-
-    job_id: str
-    status: str  # pending, running, completed, failed
-    created_at: datetime
-    started_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
-    error_message: Optional[str] = None

@@ -15,9 +15,8 @@ from typing import Optional
 
 import asyncpg
 
-from ..config import get_dsn, STORIES_DIR
-from ..logging import story_logger
-from ..database.repository import SpreadRegenJobRepository, StoryRepository
+from ..config import DATABASE_URL, STORIES_DIR, story_logger
+from ..database.repository import StoryRepository
 
 
 async def regenerate_spread(
@@ -40,13 +39,12 @@ async def regenerate_spread(
     """
     # Import here to avoid circular imports and slow startup
     from backend.core.modules.spread_illustrator import SpreadIllustrator
-    from backend.core.modules.illustration_styles import DEFAULT_FALLBACK_STYLE
-    from backend.core.types import StorySpread, StoryMetadata, StoryReferenceSheets, StyleDefinition
+    from backend.core.types import StorySpread, StoryOutline, StoryReferenceSheets, StyleDefinition
 
     start_time = time.time()
 
     # Create a dedicated connection pool for this task
-    dsn = get_dsn()
+    dsn = DATABASE_URL.replace("+asyncpg", "")
     pool = await asyncpg.create_pool(dsn, min_size=1, max_size=2)
 
     try:
@@ -55,8 +53,8 @@ async def regenerate_spread(
 
         # Update job status to running
         async with pool.acquire() as conn:
-            regen_repo = SpreadRegenJobRepository(conn)
-            await regen_repo.update_status(
+            repo = StoryRepository(conn)
+            await repo.update_spread_regen_status(
                 job_id,
                 "running",
                 started_at=datetime.now(timezone.utc),
@@ -65,12 +63,11 @@ async def regenerate_spread(
         # Fetch story data
         async with pool.acquire() as conn:
             repo = StoryRepository(conn)
-            regen_repo = SpreadRegenJobRepository(conn)
             story = await repo.get_story(story_id)
             if not story:
                 raise ValueError(f"Story {story_id} not found")
 
-            spread_data = await regen_repo.get_spread(story_id, spread_number)
+            spread_data = await repo.get_spread(story_id, spread_number)
             if not spread_data:
                 raise ValueError(f"Spread {spread_number} not found in story {story_id}")
 
@@ -82,12 +79,12 @@ async def regenerate_spread(
             illustration_prompt=spread_data.get("illustration_prompt", ""),
         )
 
-        # Build metadata from story data
+        # Build outline from story data
         # Use stored illustration style if available, otherwise fall back to default
         illustration_style = None
-        if story.metadata and story.metadata.illustration_style:
+        if story.outline and story.outline.illustration_style:
             # Use the original style from the story
-            stored_style = story.metadata.illustration_style
+            stored_style = story.outline.illustration_style
             illustration_style = StyleDefinition(
                 name=stored_style.name,
                 description=stored_style.description,
@@ -97,12 +94,23 @@ async def regenerate_spread(
             )
         else:
             # Fall back to default style for older stories without stored style
-            illustration_style = DEFAULT_FALLBACK_STYLE
+            illustration_style = StyleDefinition(
+                name="children's book illustration",
+                description="Warm, inviting children's book illustration style",
+                prompt_prefix="Warm, inviting children's book illustration in soft watercolor and gouache style",
+                best_for=["any"],
+                lighting_direction="soft diffused natural light with gentle shadows",
+            )
 
-        metadata = None
-        if story.metadata:
-            metadata = StoryMetadata(
-                title=story.metadata.title,
+        outline = None
+        if story.outline:
+            outline = StoryOutline(
+                title=story.outline.title,
+                characters=story.outline.characters,
+                setting=story.outline.setting,
+                plot_summary=story.outline.plot_summary,
+                spread_breakdown="",  # Not needed for regeneration
+                goal="",  # Not needed for regeneration
                 illustration_style=illustration_style,
             )
 
@@ -113,7 +121,7 @@ async def regenerate_spread(
         illustrator = SpreadIllustrator()
         image_bytes = illustrator.illustrate_spread(
             spread=spread,
-            outline=metadata,
+            outline=outline,
             reference_sheets=reference_sheets,
             debug=True,
             custom_prompt=custom_prompt,
@@ -124,8 +132,8 @@ async def regenerate_spread(
 
         # Update job status to completed
         async with pool.acquire() as conn:
-            regen_repo = SpreadRegenJobRepository(conn)
-            await regen_repo.update_status(
+            repo = StoryRepository(conn)
+            await repo.update_spread_regen_status(
                 job_id,
                 "completed",
                 completed_at=datetime.now(timezone.utc),
@@ -141,8 +149,8 @@ async def regenerate_spread(
 
         # Update job status to failed
         async with pool.acquire() as conn:
-            regen_repo = SpreadRegenJobRepository(conn)
-            await regen_repo.update_status(
+            repo = StoryRepository(conn)
+            await repo.update_spread_regen_status(
                 job_id,
                 "failed",
                 completed_at=datetime.now(timezone.utc),
@@ -179,8 +187,8 @@ async def _load_character_refs(story_id: str, story) -> Optional["StoryReference
     if not character_sheets:
         return None
 
-    # Get story title from metadata or use a fallback
-    story_title = story.metadata.title if story.metadata else story.title or "Untitled"
+    # Get story title from outline or use a fallback
+    story_title = story.outline.title if story.outline else story.title or "Untitled"
 
     return StoryReferenceSheets(
         story_title=story_title,
@@ -219,8 +227,8 @@ async def _save_image_atomically(
 
     # Update database with new path and timestamp
     async with pool.acquire() as conn:
-        regen_repo = SpreadRegenJobRepository(conn)
-        await regen_repo.save_regenerated_spread(
+        repo = StoryRepository(conn)
+        await repo.save_regenerated_spread(
             story_id=story_id,
             spread_number=spread_number,
             illustration_path=str(final_path),

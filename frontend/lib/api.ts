@@ -2,24 +2,7 @@
 
 import { authStorage } from './auth-storage';
 
-export const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://dev.exoselfsystems.com';
-
-// Convert HTTP URL to WebSocket URL
-export const WS_BASE_URL = API_BASE_URL.replace(/^http/, 'ws');
-
-// Story list response cache (1 minute TTL)
-const STORIES_CACHE_TTL_MS = 60_000;
-interface StoriesCache {
-  data: StoryListResponse;
-  timestamp: number;
-  cacheKey: string;
-}
-let storiesCache: StoriesCache | null = null;
-
-// For testing: reset cache
-export function _resetStoriesCache(): void {
-  storiesCache = null;
-}
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://dev.exoselfsystems.com';
 
 export type JobStatus = 'pending' | 'running' | 'completed' | 'failed';
 export type GenerationType = 'simple' | 'standard' | 'illustrated';
@@ -52,14 +35,29 @@ export interface StorySpread {
   composed_prompt?: string;  // Full prompt sent to image model (for dev editing)
 }
 
+export interface QualityJudgment {
+  overall_score: number;
+  verdict: string;
+  engagement_score: number;
+  read_aloud_score: number;
+  emotional_truth_score: number;
+  coherence_score: number;
+  chekhov_score: number;
+  has_critical_failures: boolean;
+  specific_problems: string;
+}
+
 export interface StoryProgress {
-  stage: 'outline' | 'spreads' | 'character_refs' | 'illustrations' | 'failed';
+  stage: 'outline' | 'spreads' | 'quality' | 'character_refs' | 'illustrations' | 'failed';
   stage_detail: string;
   percentage: number;
   characters_total?: number;
   characters_completed?: number;
   spreads_total?: number;
   spreads_completed?: number;
+  quality_attempt?: number;
+  quality_attempts_max?: number;
+  quality_score?: number;
   warnings?: string[];
   updated_at?: string;
 }
@@ -79,10 +77,10 @@ export interface Story {
   attempts?: number;
   outline?: StoryOutline;
   spreads?: StorySpread[];
+  judgment?: QualityJudgment;
   is_illustrated: boolean;
   error_message?: string;
   progress?: StoryProgress;
-  isCached?: boolean;  // Runtime flag: true when story is loaded from cache
 }
 
 export interface StoryListResponse {
@@ -122,15 +120,6 @@ export interface RegenerateSpreadResponse {
   message: string;
 }
 
-export interface RegenerateStatusResponse {
-  job_id: string;
-  status: 'pending' | 'running' | 'completed' | 'failed';
-  created_at: string;
-  started_at?: string;
-  completed_at?: string;
-  error_message?: string;
-}
-
 export interface LoginRequest {
   pin: string;
 }
@@ -147,9 +136,6 @@ class ApiError extends Error {
   }
 }
 
-// Default timeout for API requests (10 seconds)
-const API_TIMEOUT_MS = 10_000;
-
 async function fetchApi<T>(
   endpoint: string,
   options?: RequestInit
@@ -163,90 +149,43 @@ async function fetchApi<T>(
     authHeaders['Authorization'] = `Bearer ${token}`;
   }
 
-  // Create abort controller for timeout
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+  const response = await fetch(url, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeaders,
+      ...options?.headers,
+    },
+  });
 
-  try {
-    const response = await fetch(url, {
-      ...options,
-      signal: controller.signal,
-      headers: {
-        'Content-Type': 'application/json',
-        ...authHeaders,
-        ...options?.headers,
-      },
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new ApiError(response.status, errorText || `HTTP ${response.status}`);
-    }
-
-    // Handle 204 No Content
-    if (response.status === 204) {
-      return undefined as T;
-    }
-
-    return response.json();
-  } finally {
-    clearTimeout(timeoutId);
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new ApiError(response.status, errorText || `HTTP ${response.status}`);
   }
-}
 
-// Helper to create cache key from params
-function getStoriesCacheKey(params?: {
-  limit?: number;
-  offset?: number;
-  status?: JobStatus;
-}): string {
-  const parts = [];
-  if (params?.limit !== undefined) parts.push(`limit=${params.limit}`);
-  if (params?.offset !== undefined) parts.push(`offset=${params.offset}`);
-  if (params?.status !== undefined) parts.push(`status=${params.status}`);
-  return parts.join('&') || 'default';
+  // Handle 204 No Content
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
+  return response.json();
 }
 
 // API functions
 export const api = {
-  // List all stories with pagination (cached for 1 minute)
+  // List all stories with pagination
   listStories: async (params?: {
     limit?: number;
     offset?: number;
     status?: JobStatus;
   }): Promise<StoryListResponse> => {
-    const cacheKey = getStoriesCacheKey(params);
-
-    // Check cache
-    if (
-      storiesCache &&
-      storiesCache.cacheKey === cacheKey &&
-      Date.now() - storiesCache.timestamp < STORIES_CACHE_TTL_MS
-    ) {
-      return storiesCache.data;
-    }
-
     const searchParams = new URLSearchParams();
-    if (params?.limit !== undefined) searchParams.set('limit', String(params.limit));
-    if (params?.offset !== undefined) searchParams.set('offset', String(params.offset));
-    if (params?.status !== undefined) searchParams.set('status', params.status);
+    if (params?.limit) searchParams.set('limit', String(params.limit));
+    if (params?.offset) searchParams.set('offset', String(params.offset));
+    if (params?.status) searchParams.set('status', params.status);
 
     const query = searchParams.toString();
-    const data = await fetchApi<StoryListResponse>(`/stories/${query ? `?${query}` : ''}`);
-
-    // Update cache
-    storiesCache = {
-      data,
-      timestamp: Date.now(),
-      cacheKey,
-    };
-
-    return data;
-  },
-
-  // Invalidate the stories list cache (call after creating/deleting stories)
-  invalidateStoriesCache: (): void => {
-    storiesCache = null;
+    return fetchApi(`/stories/${query ? `?${query}` : ''}`);
   },
 
   // Get a single story by ID
@@ -299,11 +238,6 @@ export const api = {
     });
   },
 
-  // Get regeneration job status
-  getRegenerateStatus: async (storyId: string, spreadNumber: number): Promise<RegenerateStatusResponse> => {
-    return fetchApi(`/stories/${storyId}/spreads/${spreadNumber}/regenerate/status`);
-  },
-
   // Health check
   healthCheck: async (): Promise<{ status: string }> => {
     return fetchApi('/health');
@@ -316,51 +250,4 @@ export const api = {
       body: JSON.stringify(request),
     });
   },
-
-  // Send frontend logs to backend
-  sendLogs: async (entries: Array<{
-    level: string;
-    message: string;
-    timestamp: string;
-    context?: Record<string, unknown>;
-  }>): Promise<void> => {
-    return fetchApi('/logs/ingest', {
-      method: 'POST',
-      body: JSON.stringify({ entries }),
-    });
-  },
-
-  // Summarize voice transcript into story goal
-  summarizeTranscript: async (transcript: string): Promise<SummarizeResponse> => {
-    return fetchApi('/voice/summarize', {
-      method: 'POST',
-      body: JSON.stringify({ transcript }),
-    });
-  },
-
-  // Disambiguate homograph pronunciation based on sentence context
-  disambiguateHomograph: async (
-    word: string,
-    sentence: string,
-    occurrence: number = 1
-  ): Promise<DisambiguateResponse> => {
-    return fetchApi('/voice/disambiguate', {
-      method: 'POST',
-      body: JSON.stringify({ word, sentence, occurrence }),
-    });
-  },
 };
-
-// Response type for voice summarize endpoint
-export interface SummarizeResponse {
-  goal: string;
-  summary: string;
-}
-
-// Response type for homograph disambiguation endpoint
-export interface DisambiguateResponse {
-  word: string;
-  pronunciation_index: number;
-  phonemes: string | null;
-  is_homograph: boolean;
-}

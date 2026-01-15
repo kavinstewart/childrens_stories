@@ -11,7 +11,6 @@ from .image import (
     get_image_model,
     get_image_config,
     extract_image_from_response,
-    image_retry,
 )
 
 __all__ = [
@@ -28,5 +27,4 @@ __all__ = [
     "get_image_model",
     "get_image_config",
     "extract_image_from_response",
-    "image_retry",
 ]

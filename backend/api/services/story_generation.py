@@ -15,8 +15,7 @@ from typing import Callable, Optional
 
 import asyncpg
 
-from ..config import get_dsn, STORIES_DIR
-from ..logging import story_logger
+from ..config import DATABASE_URL, STORIES_DIR, story_logger
 from ..database.repository import StoryRepository
 from .progress_tracker import ProgressTracker
 
@@ -26,6 +25,8 @@ async def generate_story(
     goal: str,
     target_age_range: str = "4-7",
     generation_type: str = "illustrated",
+    quality_threshold: int = 7,
+    max_attempts: int = 3,
     on_progress: Optional[Callable[[str, str, int, int], None]] = None,
 ) -> None:
     """
@@ -40,6 +41,8 @@ async def generate_story(
         goal: The learning goal or theme for the story
         target_age_range: Target reader age range (default "4-7")
         generation_type: "simple", "standard", or "illustrated"
+        quality_threshold: Minimum score (0-10) to accept a story
+        max_attempts: Maximum generation attempts
         on_progress: Optional callback for progress updates
     """
     # Import here to avoid circular imports and slow startup
@@ -50,7 +53,8 @@ async def generate_story(
 
     # Create a dedicated connection pool for this task
     # This avoids event loop conflicts with the main FastAPI thread
-    dsn = get_dsn()
+    # Convert SQLAlchemy-style URL to asyncpg format
+    dsn = DATABASE_URL.replace("+asyncpg", "")
     pool = await asyncpg.create_pool(dsn, min_size=1, max_size=2)
 
     # Create progress tracker
@@ -76,12 +80,16 @@ async def generate_story(
         lm = get_inference_lm()
 
         # Create generator with explicit LM
-        generator = StoryGenerator(lm=lm)
+        generator = StoryGenerator(
+            quality_threshold=quality_threshold,
+            max_attempts=max_attempts,
+            lm=lm,
+        )
 
         # Generate based on type
         if generation_type == "simple":
             await tracker.update_async("outline", "Crafting your story outline...")
-            story = generator.forward(goal)
+            story = generator.generate_simple(goal)
             await tracker.update_async("spreads", "Story complete", completed=1, total=1)
 
         elif generation_type == "illustrated":
@@ -106,7 +114,8 @@ async def generate_story(
                 generator.generate_illustrated,
                 goal,
                 target_age_range,
-                use_image_qa=False,  # Disabled: manual regeneration approach preferred
+                skip_quality_loop=False,
+                use_image_qa=True,
                 max_image_attempts=3,
                 debug=True,
                 on_progress=progress_callback,
@@ -114,8 +123,12 @@ async def generate_story(
 
         else:  # standard
             await tracker.update_async("outline", "Crafting your story outline...")
-            story = generator.forward(goal, target_age_range)
-            await tracker.update_async("spreads", "Story generation complete")
+            story = generator.forward(
+                goal,
+                target_age_range,
+                skip_quality_loop=False,
+            )
+            await tracker.update_async("quality", "Story generation complete")
 
         # Save to database and filesystem
         await _save_story(story_id, story, pool)
@@ -190,34 +203,47 @@ async def _save_story(
             ref_path = refs_dir / f"{_safe_filename(name)}_reference.png"
             ref_path.write_bytes(sheet.reference_image)
 
-            # Include full bible as JSON for editing (story-37l6)
-            bible_json = None
-            if sheet.bible:
-                bible_json = json.dumps(sheet.bible.to_dict())
-
             char_refs_data.append(
                 {
                     "character_name": name,
                     "character_description": sheet.character_description,
                     "reference_image_path": str(ref_path),
-                    "bible_json": bible_json,
                 }
             )
 
-    # Serialize metadata (stored as outline_json for backwards compatibility)
-    metadata_dict = {
-        "title": story.metadata.title,
+    # Serialize outline
+    outline_dict = {
+        "title": story.outline.title,
+        "characters": story.outline.characters,
+        "setting": story.outline.setting,
+        "plot_summary": story.outline.plot_summary,
+        "spread_count": story.outline.spread_count,
     }
 
     # Include illustration style if available (for regeneration consistency)
-    if story.metadata.illustration_style:
-        style = story.metadata.illustration_style
-        metadata_dict["illustration_style"] = {
+    if story.outline.illustration_style:
+        style = story.outline.illustration_style
+        outline_dict["illustration_style"] = {
             "name": style.name,
             "description": style.description,
             "prompt_prefix": style.prompt_prefix,
             "best_for": style.best_for,
             "lighting_direction": style.lighting_direction,
+        }
+
+    # Serialize judgment if present
+    judgment_dict = None
+    if story.judgment:
+        judgment_dict = {
+            "overall_score": story.judgment.overall_score,
+            "verdict": story.judgment.verdict,
+            "engagement_score": story.judgment.engagement_score,
+            "read_aloud_score": story.judgment.read_aloud_score,
+            "emotional_truth_score": story.judgment.emotional_truth_score,
+            "coherence_score": story.judgment.coherence_score,
+            "chekhov_score": story.judgment.chekhov_score,
+            "has_critical_failures": story.judgment.has_critical_failures,
+            "specific_problems": story.judgment.specific_problems,
         }
 
     # Save to database
@@ -228,10 +254,10 @@ async def _save_story(
             title=story.title,
             word_count=story.word_count,
             spread_count=story.spread_count,
-            attempts=1,  # Always single attempt now
+            attempts=story.attempts,
             is_illustrated=story.is_illustrated,
-            outline_json=json.dumps(metadata_dict),
-            judgment_json=None,  # No longer using quality judge
+            outline_json=json.dumps(outline_dict),
+            judgment_json=json.dumps(judgment_dict) if judgment_dict else None,
             spreads=spreads_data,
             character_refs=char_refs_data,
         )

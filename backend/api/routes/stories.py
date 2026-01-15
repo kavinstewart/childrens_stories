@@ -1,9 +1,7 @@
 """Story CRUD endpoints."""
 
-import re
 import shutil
 from typing import Optional
-from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, status, Query
 from fastapi.responses import FileResponse
@@ -15,33 +13,12 @@ from ..models.responses import (
     CreateStoryResponse,
     StoryRecommendationsResponse,
     RegenerateSpreadResponse,
-    RegenerateStatusResponse,
     JobStatus,
 )
-from ..dependencies import Repository, SpreadRegenRepository, Service, CurrentUser
+from ..dependencies import Repository, Service, CurrentUser
 from ..config import STORIES_DIR
 
 router = APIRouter()
-
-
-def validate_story_id(story_id: str) -> None:
-    """Validate story_id is a valid UUID to prevent path traversal."""
-    try:
-        UUID(story_id)
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid story ID format",
-        )
-
-
-def validate_safe_filename(name: str) -> None:
-    """Validate name contains no path separators to prevent path traversal."""
-    if "/" in name or "\\" in name or ".." in name:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid character name",
-        )
 
 
 @router.post(
@@ -136,9 +113,8 @@ async def get_recommendations(
         404: {"description": "Image not found"},
     },
 )
-async def get_spread_image(story_id: str, spread_number: int, user: CurrentUser):
-    """Get a spread illustration image."""
-    validate_story_id(story_id)
+async def get_spread_image(story_id: str, spread_number: int):
+    """Get a spread illustration image (no auth - images accessed via unguessable UUID)."""
     image_path = STORIES_DIR / story_id / "images" / f"spread_{spread_number:02d}.png"
 
     if not image_path.exists():
@@ -159,10 +135,8 @@ async def get_spread_image(story_id: str, spread_number: int, user: CurrentUser)
         404: {"description": "Image not found"},
     },
 )
-async def get_character_image(story_id: str, character_name: str, user: CurrentUser):
-    """Get a character reference image."""
-    validate_story_id(story_id)
-    validate_safe_filename(character_name)
+async def get_character_image(story_id: str, character_name: str):
+    """Get a character reference image (no auth - images accessed via unguessable UUID)."""
     refs_dir = STORIES_DIR / story_id / "character_refs"
 
     if not refs_dir.exists():
@@ -194,7 +168,6 @@ async def regenerate_spread(
     spread_number: int,
     request: RegenerateSpreadRequest,
     repo: Repository,
-    regen_repo: SpreadRegenRepository,
     service: Service,
     user: CurrentUser,
 ):
@@ -215,7 +188,7 @@ async def regenerate_spread(
         )
 
     # Verify spread exists
-    spread = await regen_repo.get_spread(story_id, spread_number)
+    spread = await repo.get_spread(story_id, spread_number)
     if not spread:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -223,7 +196,7 @@ async def regenerate_spread(
         )
 
     # Check if already regenerating
-    active_job = await regen_repo.get_active_job(story_id, spread_number)
+    active_job = await repo.get_active_spread_regen_job(story_id, spread_number)
     if active_job:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -242,37 +215,6 @@ async def regenerate_spread(
         story_id=story_id,
         spread_number=spread_number,
         status=JobStatus.PENDING,
-    )
-
-
-@router.get(
-    "/{story_id}/spreads/{spread_number}/regenerate/status",
-    response_model=RegenerateStatusResponse,
-    summary="Get regeneration job status",
-    description="Get the status of the most recent regeneration job for a spread.",
-)
-async def get_regenerate_status(
-    story_id: str,
-    spread_number: int,
-    regen_repo: SpreadRegenRepository,
-    user: CurrentUser,
-):
-    """Get regeneration job status for a spread."""
-    job = await regen_repo.get_latest_job(story_id, spread_number)
-
-    if not job:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"No regeneration job found for spread {spread_number}",
-        )
-
-    return RegenerateStatusResponse(
-        job_id=job["id"],
-        status=job["status"],
-        created_at=job["created_at"],
-        started_at=job.get("started_at"),
-        completed_at=job.get("completed_at"),
-        error_message=job.get("error_message"),
     )
 
 
