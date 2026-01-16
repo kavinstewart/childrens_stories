@@ -1,6 +1,6 @@
-import { View, Text, TextInput, Pressable, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, ActivityIndicator, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useState } from 'react';
 import { fontFamily } from '@/lib/fonts';
@@ -10,6 +10,7 @@ import { useAuthStore } from '@/features/auth/store';
 
 export default function Login() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [pin, setPin] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -55,7 +56,7 @@ export default function Login() {
         <Text style={{ fontSize: 28, opacity: 0.25 }}>🔮</Text>
       </FloatingElement>
 
-      <SafeAreaView style={{ flex: 1, justifyContent: 'center', padding: 24 }}>
+      <View style={{ flex: 1, justifyContent: 'center', padding: 24, paddingTop: insets.top, paddingBottom: insets.bottom }}>
         {/* Title */}
         <View style={{ alignItems: 'center', marginBottom: 48 }}>
           <Text style={{ fontSize: 48, marginBottom: 16 }}>📖</Text>
@@ -200,7 +201,7 @@ export default function Login() {
             </LinearGradient>
           )}
         </Pressable>
-      </SafeAreaView>
+      </View>
     </LinearGradient>
   );
 }

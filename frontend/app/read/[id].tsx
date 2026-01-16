@@ -1,23 +1,88 @@
-import { View, Text, Pressable, Image, ActivityIndicator, Dimensions } from 'react-native';
+import { View, Text, Image, ActivityIndicator, Dimensions, Pressable } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useState } from 'react';
-import { useStory, useRecommendations } from '@/features/stories/hooks';
-import { api } from '@/lib/api';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useStory, useRecommendations, useRegenerateSpread } from '@/features/stories/hooks';
+import { Story } from '@/lib/api';
 import { fontFamily } from '@/lib/fonts';
 import { StoryCard } from '@/components/StoryCard';
+import { StoryCacheManager } from '@/lib/story-cache';
+import { useStoryCache } from '@/lib/use-story-cache';
+import { useAuthStore } from '@/features/auth/store';
+import { TappableText, WordContext, defaultTapHighlightStyle, defaultLoadingStyle } from '@/components/TappableText';
+import { useWordTTS } from '@/lib/voice';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 // Card sizing for recommendations
 const CARD_GAP = 16;
-const CARD_COUNT = 4;
+const CARD_COUNT = 3;
 
 export default function StoryReader() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { data: story, isLoading, error } = useStory(id);
+  const { data: networkStory, isLoading, error, refetch: refetchStory } = useStory(id);
+  const token = useAuthStore((state) => state.token);
   const [currentSpread, setCurrentSpread] = useState(0);
+
+  // Cache management - handles loading cached story and background caching
+  const { story, cachedStory, isCached, cacheCheckComplete, isCaching, getImageUrl } = useStoryCache(id, networkStory);
+
+  // Word-level TTS for tap-to-speak functionality
+  const { playWord, loadingWordIndex, stop: stopTTS } = useWordTTS();
+
+  // Spread regeneration for failed illustrations
+  const { mutate: regenerateSpread, isPending: isRegenerating, regeneratingSpreadNumber, resetRegenerating } = useRegenerateSpread();
+
+  // Keep a ref to stop function to avoid effect re-runs
+  const stopTTSRef = useRef(stopTTS);
+  stopTTSRef.current = stopTTS;
+
+  // Handle word tap - play the word's TTS
+  const handleWordPress = useCallback((word: string, wordIndex: number, context: WordContext) => {
+    console.log(`[Reader] Word tapped: "${word}" at index ${wordIndex}, spread ${currentSpread}`);
+    playWord(word, wordIndex, context).catch((err) => {
+      // Log but don't re-throw - this handles expected cancellations (e.g., spread change)
+      console.log(`[Reader] playWord rejected: ${err.message}`);
+    });
+  }, [playWord, currentSpread]);
+
+  // Stop TTS when changing spreads (use ref to avoid dependency on stopTTS)
+  useEffect(() => {
+    console.log(`[Reader] Spread effect running, currentSpread=${currentSpread}`);
+    return () => {
+      console.log(`[Reader] Spread cleanup - stopping TTS (was spread ${currentSpread})`);
+      stopTTSRef.current();
+    };
+  }, [currentSpread]);
+
+  // Poll for updates while regenerating, and clear state when illustration completes
+  // IMPORTANT: Use networkStory (not story) to check completion status because
+  // the story variable may contain stale cached data. refetchStory() updates networkStory.
+  useEffect(() => {
+    if (!regeneratingSpreadNumber) return;
+
+    // Check networkStory for completion (this is what refetchStory updates)
+    const networkSpread = networkStory?.spreads?.find(s => s.spread_number === regeneratingSpreadNumber);
+
+    // If the spread now has a completed illustration, clear the regenerating state
+    // and invalidate the cache so the UI uses fresh network data
+    if (networkSpread?.illustration_status === 'complete' || networkSpread?.illustration_url) {
+      console.log(`[Reader] Spread ${regeneratingSpreadNumber} regeneration complete, status=${networkSpread.illustration_status}`);
+      // Invalidate cache so story uses fresh networkStory data with the new illustration
+      StoryCacheManager.invalidateStory(id!);
+      resetRegenerating();
+      return;
+    }
+
+    // Poll every 2 seconds while regenerating
+    const pollInterval = setInterval(() => {
+      console.log(`[Reader] Polling for spread ${regeneratingSpreadNumber} regeneration status`);
+      refetchStory();
+    }, 2000);
+
+    return () => clearInterval(pollInterval);
+  }, [regeneratingSpreadNumber, networkStory?.spreads, resetRegenerating, refetchStory, id]);
 
   const spreads = story?.spreads || [];
   const totalSpreads = spreads.length;
@@ -25,7 +90,30 @@ export default function StoryReader() {
   const isLastSpread = currentSpread === totalSpreads - 1;
 
   // Fetch recommendations (only used on last page, but hook must be called unconditionally)
-  const { data: recommendations } = useRecommendations(id, CARD_COUNT);
+  const { data: networkRecommendations } = useRecommendations(id, CARD_COUNT);
+  const [offlineRecommendations, setOfflineRecommendations] = useState<Story[]>([]);
+
+  // Load offline recommendations only when we don't have network recommendations
+  useEffect(() => {
+    const loadOfflineRecommendations = async () => {
+      if (!networkRecommendations || networkRecommendations.length === 0) {
+        // Offline: show random cached stories (except current) as recommendations
+        const allCached = await StoryCacheManager.loadAllCachedStories();
+        const filtered = allCached.filter(s => s.id !== id);
+        // Shuffle and take first N for randomness
+        const shuffled = filtered.sort(() => Math.random() - 0.5);
+        setOfflineRecommendations(shuffled.slice(0, CARD_COUNT));
+      }
+    };
+
+    loadOfflineRecommendations();
+  }, [networkRecommendations, id]);
+
+  // Determine if we're online (have network recommendations)
+  const isOnline = !!(networkRecommendations && networkRecommendations.length > 0);
+
+  // Online: use network recommendations directly; Offline: use cached stories
+  const recommendations = isOnline ? networkRecommendations : offlineRecommendations;
 
   const goBack = () => {
     if (showEndScreen) {
@@ -48,7 +136,9 @@ export default function StoryReader() {
   const goToLibrary = () => router.replace('/');
   const goToStory = (storyId: string) => router.replace(`/read/${storyId}`);
 
-  if (isLoading) {
+  // Show loading while checking cache, or while fetching from network (if no cached version)
+  // If we have a cached story, show it immediately without waiting for network
+  if (!cacheCheckComplete || (isLoading && !cachedStory)) {
     return (
       <View style={{ flex: 1, backgroundColor: '#1a1a2e', alignItems: 'center', justifyContent: 'center' }}>
         <ActivityIndicator size="large" color="#FBBF24" />
@@ -59,7 +149,8 @@ export default function StoryReader() {
     );
   }
 
-  if (error || !story) {
+  // Only show error if we have no story (neither from network nor cache)
+  if (!story) {
     return (
       <View style={{ flex: 1, backgroundColor: '#1a1a2e', alignItems: 'center', justifyContent: 'center' }}>
         <Text style={{ fontSize: 64, marginBottom: 16 }}>😕</Text>
@@ -80,11 +171,12 @@ export default function StoryReader() {
   const lastSpreadData = spreads[totalSpreads - 1];
 
   // Get image URL - use last spread's image on end screen
-  // Include illustration_updated_at for cache busting after regeneration
+  // URL is computed based on isCached flag, not stored in story data
   const displaySpread = showEndScreen ? lastSpreadData : currentSpreadData;
   const imageUrl = story.is_illustrated && displaySpread
-    ? api.getSpreadImageUrl(story.id, displaySpread.spread_number, displaySpread.illustration_updated_at)
+    ? getImageUrl(story.id, displaySpread)
     : null;
+  const isLocalFile = imageUrl?.startsWith('file://');
 
   const isFirstSpread = currentSpread === 0 && !showEndScreen;
   const progressPercent = showEndScreen ? 100 : (totalSpreads > 0 ? ((currentSpread + 1) / totalSpreads) * 100 : 0);
@@ -95,12 +187,17 @@ export default function StoryReader() {
   const cardHeight = cardWidth * 1.1;
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#1a1a2e' }}>
+    <Pressable
+      style={{ flex: 1, backgroundColor: '#1a1a2e' }}
+    >
       {/* Full-bleed Illustration */}
       {imageUrl ? (
         <Image
           key={imageUrl}
-          source={{ uri: imageUrl }}
+          source={{
+            uri: imageUrl,
+            headers: (!isLocalFile && token) ? { Authorization: `Bearer ${token}` } : undefined,
+          }}
           style={{
             position: 'absolute',
             top: 0,
@@ -123,10 +220,70 @@ export default function StoryReader() {
           alignItems: 'center',
           justifyContent: 'center',
         }}>
-          <Text style={{ fontSize: 80 }}>📖</Text>
-          <Text style={{ color: 'rgba(255,255,255,0.6)', marginTop: 16, fontFamily: fontFamily.nunito }}>
-            {story.is_illustrated ? 'Illustration loading...' : 'Text-only story'}
-          </Text>
+          {/* Check if this spread is currently being regenerated */}
+          {regeneratingSpreadNumber === displaySpread?.spread_number ? (
+            // Regeneration in progress - show loading state
+            <>
+              <ActivityIndicator size="large" color="#F97316" />
+              <Text style={{
+                color: 'rgba(255,255,255,0.8)',
+                marginTop: 20,
+                fontFamily: fontFamily.nunitoBold,
+                fontSize: 18,
+                textAlign: 'center',
+              }}>
+                Regenerating illustration...
+              </Text>
+            </>
+          ) : displaySpread?.illustration_status === 'failed' ? (
+            // Failed illustration - show retry option
+            <>
+              <Text style={{ fontSize: 80 }}>🖼️</Text>
+              <Text style={{
+                color: 'rgba(255,255,255,0.8)',
+                marginTop: 16,
+                fontFamily: fontFamily.nunitoBold,
+                fontSize: 18,
+                textAlign: 'center',
+              }}>
+                Image generation failed
+              </Text>
+              <Pressable
+                onPress={() => {
+                  if (story && displaySpread) {
+                    regenerateSpread({
+                      storyId: story.id,
+                      spreadNumber: displaySpread.spread_number,
+                    });
+                  }
+                }}
+                disabled={isRegenerating}
+                style={{
+                  backgroundColor: isRegenerating ? '#666' : '#F97316',
+                  paddingHorizontal: 24,
+                  paddingVertical: 14,
+                  borderRadius: 20,
+                  marginTop: 20,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 8,
+                }}
+              >
+                <Text style={{ fontSize: 20 }}>🔄</Text>
+                <Text style={{ color: 'white', fontFamily: fontFamily.nunitoBold, fontSize: 16 }}>
+                  Try Again
+                </Text>
+              </Pressable>
+            </>
+          ) : (
+            // Pending illustration or text-only story
+            <>
+              <Text style={{ fontSize: 80 }}>📖</Text>
+              <Text style={{ color: 'rgba(255,255,255,0.6)', marginTop: 16, fontFamily: fontFamily.nunito }}>
+                {story.is_illustrated ? 'Illustration loading...' : 'Text-only story'}
+              </Text>
+            </>
+          )}
         </View>
       )}
 
@@ -257,38 +414,81 @@ export default function StoryReader() {
           </Text>
         </View>
 
-        {/* Edit Button - only show when on a spread (not end screen) and story is illustrated */}
-        {!showEndScreen && story.is_illustrated && currentSpreadData && (
-          <Pressable
-            onPress={() => {
-              router.push({
-                pathname: '/edit-prompt',
-                params: {
-                  storyId: story.id,
-                  spreadNumber: currentSpreadData.spread_number.toString(),
-                  composedPrompt: currentSpreadData.composed_prompt || '',
-                },
-              });
-            }}
-            style={{
-              backgroundColor: '#FAF7F2',
-              paddingVertical: 16,
-              paddingHorizontal: 22,
-              borderRadius: 22,
-              borderWidth: 2,
-              borderColor: '#EDE8E0',
-              alignItems: 'center',
-              justifyContent: 'center',
-              shadowColor: '#000',
-              shadowOffset: { width: 0, height: 2 },
-              shadowOpacity: 0.15,
-              shadowRadius: 6,
-              elevation: 4,
-            }}
-          >
-            <Text style={{ fontSize: 32 }}>✏️</Text>
-          </Pressable>
-        )}
+        {/* Right side buttons - Edit, Retry, or Loading based on illustration status */}
+        <View style={{ flexDirection: 'row', gap: 12 }}>
+          {!showEndScreen && story.is_illustrated && currentSpreadData && (
+            regeneratingSpreadNumber === currentSpreadData.spread_number ? (
+              /* Loading indicator - show while regenerating */
+              <View style={{
+                backgroundColor: '#666',
+                paddingVertical: 16,
+                paddingHorizontal: 22,
+                borderRadius: 22,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}>
+                <ActivityIndicator size={32} color="white" />
+              </View>
+            ) : currentSpreadData.illustration_status === 'failed' ? (
+              /* Retry Button - show when illustration failed */
+              <Pressable
+                onPress={() => {
+                  regenerateSpread({
+                    storyId: story.id,
+                    spreadNumber: currentSpreadData.spread_number,
+                  });
+                }}
+                style={{
+                  backgroundColor: '#F97316',
+                  paddingVertical: 16,
+                  paddingHorizontal: 22,
+                  borderRadius: 22,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  shadowColor: '#000',
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.15,
+                  shadowRadius: 6,
+                  elevation: 4,
+                }}
+              >
+                <Text style={{ fontSize: 32 }}>🔄</Text>
+              </Pressable>
+            ) : currentSpreadData.illustration_status === 'complete' ? (
+              /* Edit Button - only show for complete illustrations */
+              <Pressable
+                onPress={() => {
+                  router.push({
+                    pathname: '/edit-prompt',
+                    params: {
+                      storyId: story.id,
+                      spreadNumber: currentSpreadData.spread_number.toString(),
+                      composedPrompt: currentSpreadData.composed_prompt || '',
+                      illustrationUpdatedAt: currentSpreadData.illustration_updated_at || '',
+                    },
+                  });
+                }}
+                style={{
+                  backgroundColor: '#FAF7F2',
+                  paddingVertical: 16,
+                  paddingHorizontal: 22,
+                  borderRadius: 22,
+                  borderWidth: 2,
+                  borderColor: '#EDE8E0',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  shadowColor: '#000',
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.15,
+                  shadowRadius: 6,
+                  elevation: 4,
+                }}
+              >
+                <Text style={{ fontSize: 32 }}>✏️</Text>
+              </Pressable>
+            ) : null /* pending - no button shown */
+          )}
+        </View>
       </View>
 
       {/* Bottom Content */}
@@ -337,7 +537,8 @@ export default function StoryReader() {
                 {recommendations.slice(0, CARD_COUNT).map((rec, index) => (
                   <StoryCard
                     key={rec.id}
-                    recommendation={rec}
+                    story={!isOnline ? (rec as Story) : undefined}
+                    recommendation={isOnline ? rec : undefined}
                     width={cardWidth}
                     height={cardHeight}
                     colorIndex={index}
@@ -453,24 +654,29 @@ export default function StoryReader() {
             <Text style={{ fontSize: 28 }}>👈</Text>
           </Pressable>
 
-          {/* Story Text */}
+          {/* Story Text - tappable words for TTS */}
           <View style={{
             flex: 1,
             paddingHorizontal: 32,
           }}>
             {currentSpreadData ? (
-              <Text style={{
-                fontSize: 26,
-                lineHeight: 40,
-                color: 'white',
-                textAlign: 'center',
-                fontFamily: fontFamily.nunitoSemiBold,
-                textShadowColor: 'rgba(0,0,0,0.5)',
-                textShadowOffset: { width: 0, height: 2 },
-                textShadowRadius: 8,
-              }}>
-                {currentSpreadData.text}
-              </Text>
+              <TappableText
+                text={currentSpreadData.text}
+                style={{
+                  fontSize: 26,
+                  lineHeight: 40,
+                  color: 'white',
+                  textAlign: 'center',
+                  fontFamily: fontFamily.nunitoSemiBold,
+                  textShadowColor: 'rgba(0,0,0,0.5)',
+                  textShadowOffset: { width: 0, height: 2 },
+                  textShadowRadius: 8,
+                }}
+                highlightStyle={defaultTapHighlightStyle}
+                loadingStyle={defaultLoadingStyle}
+                loadingWordIndex={loadingWordIndex}
+                onWordPress={handleWordPress}
+              />
             ) : (
               <Text style={{
                 fontSize: 20,
@@ -508,6 +714,31 @@ export default function StoryReader() {
         </View>
       )}
 
-    </View>
+      {/* Offline caching indicator */}
+      {isCaching && (
+        <View style={{
+          position: 'absolute',
+          bottom: 16,
+          alignSelf: 'center',
+          flexDirection: 'row',
+          alignItems: 'center',
+          backgroundColor: 'rgba(0, 0, 0, 0.6)',
+          paddingVertical: 8,
+          paddingHorizontal: 16,
+          borderRadius: 20,
+          gap: 8,
+        }}>
+          <ActivityIndicator size="small" color="white" />
+          <Text style={{
+            color: 'white',
+            fontSize: 13,
+            fontFamily: fontFamily.nunito,
+          }}>
+            Saving for offline...
+          </Text>
+        </View>
+      )}
+
+    </Pressable>
   );
 }
