@@ -12,6 +12,9 @@ Includes:
 
 import os
 import logging
+from dataclasses import dataclass
+from typing import Optional
+
 from dotenv import find_dotenv, load_dotenv
 import dspy
 from tenacity import (
@@ -22,7 +25,10 @@ from tenacity import (
     before_sleep_log,
 )
 
-# Load environment variables from .env file (find_dotenv searches parent directories)
+# Load environment variables from .env file.
+# Entry points (main.py, worker.py) also call load_dotenv() before importing this module.
+# This call is a safety net for direct imports (e.g., in tests or scripts).
+# load_dotenv() is idempotent so multiple calls are harmless.
 load_dotenv(find_dotenv())
 
 # Logging for retry attempts
@@ -40,6 +46,70 @@ RETRYABLE_EXCEPTIONS = (
 )
 
 
+@dataclass(frozen=True)
+class ProviderConfig:
+    """Configuration for a single LLM provider."""
+    env_key: str
+    inference_model: str
+    reflection_model: str
+    inference_max_tokens: int
+    reflection_max_tokens: int
+
+
+# Provider configurations in priority order
+_PROVIDERS = [
+    ProviderConfig(
+        env_key="GOOGLE_API_KEY",
+        inference_model="gemini/gemini-3-pro-preview",
+        reflection_model="gemini/gemini-3-pro-preview",
+        inference_max_tokens=4096,
+        reflection_max_tokens=8192,
+    ),
+    ProviderConfig(
+        env_key="ANTHROPIC_API_KEY",
+        inference_model="anthropic/claude-opus-4-5-20251101",
+        reflection_model="anthropic/claude-sonnet-4-20250514",
+        inference_max_tokens=4096,
+        reflection_max_tokens=8192,
+    ),
+    ProviderConfig(
+        env_key="OPENAI_API_KEY",
+        inference_model="gpt-5.2",
+        reflection_model="gpt-5.2",
+        inference_max_tokens=16000,  # GPT-5 reasoning models require >= 16000
+        reflection_max_tokens=16000,
+    ),
+]
+
+
+def _get_active_provider() -> tuple[ProviderConfig, str]:
+    """
+    Get the first available provider based on environment variables.
+
+    Returns:
+        Tuple of (provider config, api_key)
+
+    Raises:
+        ValueError: If no API key is found
+    """
+    for provider in _PROVIDERS:
+        api_key = os.getenv(provider.env_key)
+        if api_key:
+            return provider, api_key
+
+    env_keys = ", ".join(p.env_key for p in _PROVIDERS)
+    raise ValueError(f"No API key found. Set one of: {env_keys} in .env")
+
+
+def _get_active_provider_or_none() -> Optional[tuple[ProviderConfig, str]]:
+    """Get active provider without raising, returns None if not found."""
+    for provider in _PROVIDERS:
+        api_key = os.getenv(provider.env_key)
+        if api_key:
+            return provider, api_key
+    return None
+
+
 def get_inference_lm() -> dspy.LM:
     """
     Get the inference LM for story generation.
@@ -51,34 +121,14 @@ def get_inference_lm() -> dspy.LM:
 
     Includes 120s timeout per call.
     """
-    if os.getenv("GOOGLE_API_KEY"):
-        return dspy.LM(
-            "gemini/gemini-3-pro-preview",
-            api_key=os.getenv("GOOGLE_API_KEY"),
-            max_tokens=4096,
-            temperature=1.0,  # Google recommends 1.0 for Gemini 3 (optimized for it)
-            timeout=LLM_TIMEOUT,
-        )
-    elif os.getenv("ANTHROPIC_API_KEY"):
-        return dspy.LM(
-            "anthropic/claude-opus-4-5-20251101",
-            api_key=os.getenv("ANTHROPIC_API_KEY"),
-            max_tokens=4096,
-            temperature=1.0,  # Anthropic recommends 1.0 for creative writing
-            timeout=LLM_TIMEOUT,
-        )
-    elif os.getenv("OPENAI_API_KEY"):
-        return dspy.LM(
-            "gpt-5.2",
-            api_key=os.getenv("OPENAI_API_KEY"),
-            max_tokens=16000,  # GPT-5 reasoning models require >= 16000
-            temperature=1.0,   # GPT-5 reasoning models require 1.0
-            timeout=LLM_TIMEOUT,
-        )
-    else:
-        raise ValueError(
-            "No API key found. Set GOOGLE_API_KEY, ANTHROPIC_API_KEY, or OPENAI_API_KEY in .env"
-        )
+    provider, api_key = _get_active_provider()
+    return dspy.LM(
+        provider.inference_model,
+        api_key=api_key,
+        max_tokens=provider.inference_max_tokens,
+        temperature=1.0,
+        timeout=LLM_TIMEOUT,
+    )
 
 
 def get_reflection_lm() -> dspy.LM:
@@ -87,34 +137,14 @@ def get_reflection_lm() -> dspy.LM:
     Uses a stronger model for analyzing errors and improving prompts.
     Includes 120s timeout per call.
     """
-    if os.getenv("GOOGLE_API_KEY"):
-        return dspy.LM(
-            "gemini/gemini-3-pro-preview",
-            api_key=os.getenv("GOOGLE_API_KEY"),
-            max_tokens=8192,
-            temperature=1.0,
-            timeout=LLM_TIMEOUT,
-        )
-    elif os.getenv("ANTHROPIC_API_KEY"):
-        return dspy.LM(
-            "anthropic/claude-sonnet-4-20250514",
-            api_key=os.getenv("ANTHROPIC_API_KEY"),
-            max_tokens=8192,
-            temperature=1.0,
-            timeout=LLM_TIMEOUT,
-        )
-    elif os.getenv("OPENAI_API_KEY"):
-        return dspy.LM(
-            "gpt-5.2",
-            api_key=os.getenv("OPENAI_API_KEY"),
-            max_tokens=16000,  # GPT-5 reasoning models require >= 16000
-            temperature=1.0,
-            timeout=LLM_TIMEOUT,
-        )
-    else:
-        raise ValueError(
-            "No API key found. Set GOOGLE_API_KEY, ANTHROPIC_API_KEY, or OPENAI_API_KEY in .env"
-        )
+    provider, api_key = _get_active_provider()
+    return dspy.LM(
+        provider.reflection_model,
+        api_key=api_key,
+        max_tokens=provider.reflection_max_tokens,
+        temperature=1.0,
+        timeout=LLM_TIMEOUT,
+    )
 
 
 # Retry decorator for LLM calls with network errors
@@ -129,14 +159,13 @@ llm_retry = retry(
 
 def get_inference_model_name() -> str:
     """Get the name of the inference model that will be used."""
-    if os.getenv("GOOGLE_API_KEY"):
-        return "gemini-3-pro-preview"
-    elif os.getenv("ANTHROPIC_API_KEY"):
-        return "claude-opus-4-5-20251101"
-    elif os.getenv("OPENAI_API_KEY"):
-        return "gpt-5.2"
-    else:
+    result = _get_active_provider_or_none()
+    if result is None:
         return "unknown"
+    provider, _ = result
+    # Strip provider prefix (e.g., "gemini/" or "anthropic/") for display
+    model = provider.inference_model
+    return model.split("/")[-1] if "/" in model else model
 
 
 def configure_dspy(use_reflection_lm: bool = False) -> None:
