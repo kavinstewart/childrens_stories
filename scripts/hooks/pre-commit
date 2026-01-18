@@ -38,15 +38,7 @@ fi
 
 # Run Claude review
 echo "Running Claude code review on source files..."
-RESPONSE=$(claude -p "Review this diff for bugs, security issues, and obvious problems. Focus only on serious issues, not style.
-
-If you find issues, respond with:
-ISSUES_FOUND
-- issue 1
-- issue 2
-
-If no issues, respond with exactly:
-NO_ISSUES
+ISSUES=$(claude -p "Review this diff for bugs, security issues, and obvious problems. Focus only on serious issues, not style. List each issue on its own line. If no issues, output nothing.
 
 $DIFF" 2>/dev/null)
 
@@ -56,22 +48,21 @@ if [ $? -ne 0 ]; then
     exit 0
 fi
 
-# Check for explicit NO_ISSUES response
-if echo "$RESPONSE" | grep -q "^NO_ISSUES"; then
-    echo "Code review passed."
-    exit 0
-fi
+# Block commit if issues found (filter out "no issues" responses)
+if [ -n "$ISSUES" ]; then
+    # Check if response indicates no issues
+    if echo "$ISSUES" | grep -qiE "^(no issues|none|looks good|no problems|no bugs|lgtm|all good)"; then
+        echo "Code review passed."
+        exit 0
+    fi
 
-# Check for ISSUES_FOUND marker
-if echo "$RESPONSE" | grep -q "^ISSUES_FOUND"; then
     echo ""
     echo "=== CODE REVIEW: Issues Found ==="
-    echo "$RESPONSE" | tail -n +2
+    echo "$ISSUES"
     echo ""
     echo "Fix issues above or bypass with: SKIP_REVIEW=1 git commit ..."
     exit 1
 fi
 
-# Fallback: if response doesn't match expected format, pass through
-echo "Code review passed (unstructured response)."
+echo "Code review passed."
 exit 0

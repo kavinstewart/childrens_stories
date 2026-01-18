@@ -2,6 +2,7 @@
 
 from .db import init_pool, close_pool, init_db, get_pool, get_connection
 from .repository import StoryRepository
+from .vlm_eval_repository import VLMEvalRepository
 
 __all__ = [
     # Connection management
@@ -12,4 +13,5 @@ __all__ = [
     "get_connection",
     # Repositories
     "StoryRepository",
+    "VLMEvalRepository",
 ]

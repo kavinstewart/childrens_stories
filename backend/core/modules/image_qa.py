@@ -88,7 +88,7 @@ class ImageQA:
     def vlm_judge(self) -> VLMJudge:
         """Lazy load VLMJudge."""
         if self._vlm_judge is None:
-            self._vlm_judge = VLMJudge()
+            self._vlm_judge = VLMJudge(enable_logging=self.enable_logging)
         return self._vlm_judge
 
     def evaluate(

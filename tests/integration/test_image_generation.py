@@ -13,7 +13,7 @@ from backend.core.modules.character_sheet_generator import CharacterSheetGenerat
 from backend.core.modules.spread_illustrator import SpreadIllustrator
 from backend.core.types import (
     StorySpread,
-    StoryMetadata,
+    StoryOutline,
     CharacterBible,
     StyleDefinition,
 )
@@ -128,9 +128,14 @@ class TestSpreadIllustratorReal:
 
     @pytest.fixture
     def simple_outline(self):
-        """Minimal metadata for testing."""
-        return StoryMetadata(
+        """A minimal outline for testing."""
+        return StoryOutline(
             title="The Sunny Cat",
+            characters="Pip - an orange kitten",
+            setting="A cozy house",
+            plot_summary="A cat finds a sunny spot",
+            spread_breakdown="Spread 1: Cat sits in sun",
+            goal="Relaxation",
             character_bibles=[],
             illustration_style=StyleDefinition(
                 name="Simple Cartoon",

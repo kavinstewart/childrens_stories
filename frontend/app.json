@@ -13,12 +13,7 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true,
-      "bundleIdentifier": "com.kavinstewart.childrensstories",
-      "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false,
-        "NSMicrophoneUsageDescription": "This app uses the microphone to let you create stories by talking to the AI assistant"
-      }
+      "supportsTablet": true
     },
     "android": {
       "adaptiveIcon": {
@@ -29,28 +24,10 @@
       "predictiveBackGestureEnabled": false
     },
     "web": {
-      "favicon": "./assets/favicon.png",
-      "bundler": "metro"
+      "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-router",
-      "expo-sqlite",
-      "@kesha-antonov/react-native-background-downloader",
-      [
-        "expo-build-properties",
-        {
-          "ios": {
-            "deploymentTarget": "16.0"
-          }
-        }
-      ]
-    ],
-    "extra": {
-      "router": {},
-      "eas": {
-        "projectId": "e48e9e31-babb-445f-a500-bff63dcf1d6e"
-      }
-    },
-    "owner": "kavinstewart"
+      "expo-router"
+    ]
   }
 }
