@@ -4,7 +4,7 @@
 #
 # This Makefile serves as executable documentation for common operations.
 
-.PHONY: help run run-fast run-illustrated debug optimize test clean api
+.PHONY: help setup run run-fast run-illustrated debug optimize test clean api
 
 # Default target - show help
 help:
@@ -19,6 +19,9 @@ help:
 	@echo ""
 	@echo "API:"
 	@echo "  api                  Start the FastAPI server"
+	@echo ""
+	@echo "Setup:"
+	@echo "  setup                Install deps and configure git hooks (run after clone)"
 	@echo ""
 	@echo "Development:"
 	@echo "  debug                Debug page generation"
@@ -86,6 +89,12 @@ clean:
 # Install dependencies
 install:
 	poetry install
+
+# Full setup (run after cloning)
+setup: install
+	@echo "Configuring git hooks..."
+	git config core.hooksPath scripts/hooks
+	@echo "Setup complete!"
 
 # Show current configuration
 config:
