@@ -1,7 +1,13 @@
 """FastAPI application for the Children's Story Generator."""
 
 import logging
+import warnings
 from contextlib import asynccontextmanager
+
+# Suppress pydub's ffmpeg warning. pydub is a required dependency of the cartesia
+# TTS library, but we only use Cartesia's WebSocket streaming with raw PCM output.
+# We never use pydub's audio conversion/concatenation features that require ffmpeg.
+warnings.filterwarnings("ignore", message="Couldn't find ffmpeg or avconv")
 
 from arq import create_pool
 from arq.connections import RedisSettings
