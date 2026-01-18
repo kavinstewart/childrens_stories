@@ -1,14 +1,10 @@
-import { View, Text, ScrollView, ActivityIndicator, useWindowDimensions, RefreshControl, Pressable } from 'react-native';
+import { View, Text, Pressable, ScrollView, ActivityIndicator, useWindowDimensions, RefreshControl } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useState, useEffect, useCallback } from 'react';
 import { useStories } from '@/features/stories/hooks';
 import { Story } from '@/lib/api';
 import { StoryCard } from '@/components/StoryCard';
-import { StoryCacheManager } from '@/lib/story-cache';
-import { getNetworkState } from '@/lib/network-aware';
-
 
 // Grid configuration
 const GRID_PADDING = 24; // matches contentContainerStyle padding
@@ -17,52 +13,8 @@ const COLUMNS = 4;       // number of columns
 
 export default function StoryLibrary() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
-
-  const { data: networkStories, isLoading, isFetching, error, refetch } = useStories();
-  const handleRetry = () => { refetch(); };
+  const { data: stories, isLoading, isFetching, error, refetch } = useStories();
   const { width: screenWidth } = useWindowDimensions();
-  const [cachedStories, setCachedStories] = useState<Story[]>([]);
-  const [isLoadingCache, setIsLoadingCache] = useState(true); // Start true - always load cache on mount
-  const [isNetworkOffline, setIsNetworkOffline] = useState(false);
-
-  // Check network connectivity
-  const checkNetwork = useCallback(async () => {
-    const state = await getNetworkState();
-    setIsNetworkOffline(!state.isConnected);
-  }, []);
-
-  // Load cached stories and check network on mount
-  useEffect(() => {
-    StoryCacheManager.loadAllCachedStories()
-      .then((stories) => setCachedStories(stories))
-      .catch(() => {})
-      .finally(() => setIsLoadingCache(false));
-
-    checkNetwork();
-  }, [checkNetwork]);
-
-  // Determine if we're in offline mode (network disconnected OR API error)
-  const isOffline = isNetworkOffline || (!!error && !isLoading);
-
-  // Merge stories: use network list but overlay cached versions (which have file:// URLs)
-  // When offline, use only cached stories
-  const stories = (() => {
-    if (isOffline) {
-      return cachedStories.length > 0 ? cachedStories : undefined;
-    }
-    if (!networkStories) return undefined;
-
-    // Overlay cached stories onto network stories (cached have isCached=true for render-time file:// computation)
-    return networkStories.map(networkStory => {
-      const cachedVersion = cachedStories.find(s => s.id === networkStory.id);
-      if (cachedVersion) {
-        // Use cached version - it has isCached=true for offline image display
-        return cachedVersion;
-      }
-      return networkStory;
-    });
-  })();
 
   // Calculate card dimensions (matching HTML mockup)
   // Available width = screen - left padding - right padding
@@ -77,19 +29,15 @@ export default function StoryLibrary() {
       colors={['#E0E7FF', '#FAE8FF', '#FCE7F3']}
       style={{ flex: 1 }}
     >
-      <View style={{ flex: 1, paddingTop: insets.top, paddingLeft: insets.left, paddingRight: insets.right }}>
+      <SafeAreaView className="flex-1" edges={['top', 'left', 'right']}>
         <ScrollView
           className="flex-1"
-          contentContainerStyle={{ padding: 24, flexGrow: 1 }}
+          contentContainerStyle={{ padding: 24 }}
           showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="always"
           refreshControl={
             <RefreshControl
               refreshing={isFetching && !isLoading}
-              onRefresh={() => {
-                checkNetwork(); // Re-check network status on pull-to-refresh
-                refetch();
-              }}
+              onRefresh={refetch}
               tintColor="#7C3AED"
               colors={['#7C3AED']}
             />
@@ -106,77 +54,41 @@ export default function StoryLibrary() {
               </Text>
             </View>
 
-            {/* Header Buttons */}
-            <View className="flex-row items-center gap-3">
-              {/* Settings Button */}
-              <Pressable
-                onPress={() => router.push('/settings')}
-                className="bg-gray-200 py-4 px-4 rounded-2xl"
-                style={({ pressed }) => ({
-                  opacity: pressed ? 0.8 : 1,
-                  transform: [{ scale: pressed ? 0.95 : 1 }],
-                })}
-              >
-                <Text className="text-2xl">{'⚙️'}</Text>
-              </Pressable>
-
-              {/* New Story Button - routes to text input */}
-              <Pressable
-                onPress={() => router.push('/new')}
-                className="bg-purple-600 py-4 px-6 rounded-2xl"
-                style={({ pressed }) => ({
-                  opacity: pressed ? 0.8 : 1,
-                  transform: [{ scale: pressed ? 0.95 : 1 }],
-                })}
-              >
-                <Text className="text-lg font-bold text-white">
-                  + New Story
-                </Text>
-              </Pressable>
-            </View>
+            {/* New Story Button */}
+            <Pressable
+              onPress={() => router.push('/new')}
+              className="bg-purple-600 py-4 px-6 rounded-2xl"
+              style={({ pressed }) => ({
+                opacity: pressed ? 0.8 : 1,
+                transform: [{ scale: pressed ? 0.95 : 1 }],
+              })}
+            >
+              <Text className="text-lg font-bold text-white">
+                + New Story
+              </Text>
+            </Pressable>
           </View>
 
-          {/* Offline Mode Banner */}
-          {isOffline && (
-            <View className="bg-amber-100 rounded-2xl px-4 py-3 mb-4 flex-row items-center">
-              <Text className="text-lg mr-2">📴</Text>
-              <Text className="text-amber-800 font-semibold flex-1">
-                Offline Mode - Showing {stories?.length ?? 0} cached {stories?.length === 1 ? 'story' : 'stories'}
-              </Text>
-              <Pressable
-                onPress={() => {
-                  checkNetwork();
-                  refetch();
-                }}
-                className="bg-amber-200 px-3 py-1 rounded-lg"
-              >
-                <Text className="text-amber-800 font-semibold">Retry</Text>
-              </Pressable>
-            </View>
-          )}
-
-          {/* Loading State - only show if we have no stories to display yet */}
-          {(isLoadingCache || (isLoading && cachedStories.length === 0)) && !stories && (
+          {/* Loading State */}
+          {isLoading && (
             <View className="items-center justify-center py-20">
               <ActivityIndicator size="large" color="#7C3AED" />
-              <Text className="text-gray-600 mt-4">
-                Loading stories...
-              </Text>
+              <Text className="text-gray-600 mt-4">Loading stories...</Text>
             </View>
           )}
 
-          {/* Error State - only show if no cached stories available */}
-          {error && !isOffline && !isLoadingCache && (
+          {/* Error State */}
+          {error && (
             <View className="items-center justify-center py-20 bg-red-50 rounded-3xl">
               <Text className="text-4xl mb-4">😕</Text>
               <Text className="text-red-800 font-bold text-xl mb-2">
                 Couldn't load stories
               </Text>
               <Text className="text-red-600 mb-4">
-                No cached stories available for offline reading
+                Is the backend running on port 8000?
               </Text>
               <Pressable
-                onPress={handleRetry}
+                onPress={() => refetch()}
                 className="bg-red-600 px-6 py-3 rounded-xl"
               >
                 <Text className="text-white font-bold">Try Again</Text>
@@ -194,26 +106,14 @@ export default function StoryLibrary() {
               <Text className="text-gray-600 mb-6">
                 Create your first magical adventure
               </Text>
-              <View className="flex-row gap-4">
-                <Pressable
-                  onPress={() => router.push('/new-voice')}
-                  className="bg-pink-500 px-8 py-4 rounded-2xl flex-row items-center gap-2"
-                >
-                  <Text className="text-2xl">🎤</Text>
-                  <Text className="text-white font-bold text-lg">
-                    Use Voice
-                  </Text>
-                </Pressable>
-                <Pressable
-                  onPress={() => router.push('/new')}
-                  className="bg-purple-600 px-8 py-4 rounded-2xl flex-row items-center gap-2"
-                >
-                  <Text className="text-2xl">✏️</Text>
-                  <Text className="text-white font-bold text-lg">
-                    Type Story
-                  </Text>
-                </Pressable>
-              </View>
+              <Pressable
+                onPress={() => router.push('/new')}
+                className="bg-purple-600 px-8 py-4 rounded-2xl"
+              >
+                <Text className="text-white font-bold text-lg">
+                  Create a Story
+                </Text>
+              </Pressable>
             </View>
           )}
 
@@ -253,7 +153,7 @@ export default function StoryLibrary() {
             </View>
           )}
         </ScrollView>
-      </View>
+      </SafeAreaView>
     </LinearGradient>
   );
 }

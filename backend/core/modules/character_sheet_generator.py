@@ -6,10 +6,10 @@ visual consistency across all story illustrations. Optimized for Nano Banana Pro
 following Google's recommended prompting practices.
 """
 
-from backend.config import get_image_client, get_image_model, get_image_config, extract_image_from_response, image_retry
+from backend.config import get_image_client, get_image_model, get_image_config, extract_image_from_response
 from ..types import (
     CharacterBible,
-    StoryMetadata,
+    StoryOutline,
     StyleDefinition,
     CharacterReferenceSheet,
     StoryReferenceSheets,
@@ -60,16 +60,6 @@ Layout: Front view, 3/4 view, side profile (all full body), plus 4 expression he
 
         return prompt
 
-    @image_retry
-    def _generate_image(self, prompt: str) -> bytes:
-        """Generate image from prompt with retry for network errors."""
-        response = self.client.models.generate_content(
-            model=self.model,
-            contents=prompt,
-            config=self.config,
-        )
-        return extract_image_from_response(response)
-
     def generate_reference(self, bible: CharacterBible, illustration_style: StyleDefinition) -> CharacterReferenceSheet:
         """Generate a character model sheet reference image."""
         if not illustration_style:
@@ -77,8 +67,14 @@ Layout: Front view, 3/4 view, side profile (all full body), plus 4 expression he
 
         prompt = self._build_reference_prompt(bible, illustration_style)
 
+        response = self.client.models.generate_content(
+            model=self.model,
+            contents=prompt,
+            config=self.config,
+        )
+
         try:
-            image_data = self._generate_image(prompt)
+            image_data = extract_image_from_response(response)
         except ValueError:
             raise ValueError(f"No image generated for character: {bible.name}")
 
@@ -90,12 +86,11 @@ Layout: Front view, 3/4 view, side profile (all full body), plus 4 expression he
             reference_image=image_data,
             prompt_used=prompt,
             character_description=description,
-            bible=bible,  # Store full bible for editing (story-37l6)
         )
 
     def generate_for_story(
         self,
-        outline: StoryMetadata,
+        outline: StoryOutline,
         debug: bool = False,
         on_progress: callable = None,
     ) -> StoryReferenceSheets:

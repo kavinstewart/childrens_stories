@@ -6,7 +6,7 @@ from typing import AsyncGenerator, Optional
 
 import asyncpg
 
-from ..config import DATABASE_URL, get_dsn
+from ..config import DATABASE_URL
 
 
 # Global pool - initialized in lifespan handler, not at module import
@@ -31,7 +31,9 @@ async def init_pool() -> asyncpg.Pool:
             "to a PostgreSQL connection string."
         )
 
-    dsn = get_dsn()
+    # Convert SQLAlchemy-style URL to asyncpg format
+    # postgresql+asyncpg://... -> postgresql://...
+    dsn = DATABASE_URL.replace("+asyncpg", "")
 
     _pool = await asyncpg.create_pool(
         dsn,

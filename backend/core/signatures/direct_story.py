@@ -80,5 +80,21 @@ class DirectStorySignature(dspy.Signature):
     )
 
     story: str = dspy.OutputField(
-        desc="Complete story following the OUTPUT FORMAT in the signature docstring above."
+        desc="""Complete story with title, illustration notes, and character presence.
+Format:
+TITLE: [title]
+
+Spread 1: [story text]
+[Illustration: scene description]
+[Characters: names of characters visible in this illustration, or "none"]
+
+Spread 2: [story text]
+[Illustration: scene description]
+[Characters: names visible in illustration]
+
+... through Spread 12.
+
+Each spread: 35-50 words. Total: 400-600 words.
+CRITICAL: [Characters: ...] is REQUIRED for EVERY spread - never omit it.
+Characters field must list ONLY characters who appear in THAT spread's illustration, or "none" if empty."""
     )

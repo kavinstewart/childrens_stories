@@ -2,17 +2,21 @@
 
 import uuid
 
-from ..config import DEFAULT_GENERATION_TYPE, DEFAULT_TARGET_AGE_RANGE
-from ..database.repository import SpreadRegenJobRepository, StoryRepository
+from ..database.repository import StoryRepository
 from ..arq_pool import get_pool as get_arq_pool
 
 
 class StoryService:
     """Service for creating and managing story generation jobs."""
 
-    def __init__(self, repo: StoryRepository, regen_repo: SpreadRegenJobRepository):
+    def __init__(self, repo: StoryRepository):
         self.repo = repo
-        self.regen_repo = regen_repo
+
+    # Hardcoded generation defaults (not exposed via API)
+    DEFAULT_TARGET_AGE_RANGE = "4-7"
+    DEFAULT_GENERATION_TYPE = "illustrated"
+    DEFAULT_QUALITY_THRESHOLD = 7
+    DEFAULT_MAX_ATTEMPTS = 3
 
     async def create_story_job(self, goal: str) -> str:
         """
@@ -37,8 +41,8 @@ class StoryService:
         await self.repo.create_story(
             story_id=story_id,
             goal=goal,
-            target_age_range=DEFAULT_TARGET_AGE_RANGE,
-            generation_type=DEFAULT_GENERATION_TYPE,
+            target_age_range=self.DEFAULT_TARGET_AGE_RANGE,
+            generation_type=self.DEFAULT_GENERATION_TYPE,
             llm_model=llm_model,
         )
 
@@ -48,8 +52,10 @@ class StoryService:
             "generate_story_task",
             story_id=story_id,
             goal=goal,
-            target_age_range=DEFAULT_TARGET_AGE_RANGE,
-            generation_type=DEFAULT_GENERATION_TYPE,
+            target_age_range=self.DEFAULT_TARGET_AGE_RANGE,
+            generation_type=self.DEFAULT_GENERATION_TYPE,
+            quality_threshold=self.DEFAULT_QUALITY_THRESHOLD,
+            max_attempts=self.DEFAULT_MAX_ATTEMPTS,
         )
 
         return story_id
@@ -78,7 +84,7 @@ class StoryService:
         job_id = str(uuid.uuid4())[:8]
 
         # Create pending job record in database
-        await self.regen_repo.create_job(
+        await self.repo.create_spread_regen_job(
             job_id=job_id,
             story_id=story_id,
             spread_number=spread_number,

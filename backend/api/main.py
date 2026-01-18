@@ -1,13 +1,7 @@
 """FastAPI application for the Children's Story Generator."""
 
 import logging
-import warnings
 from contextlib import asynccontextmanager
-
-# Suppress pydub's ffmpeg warning. pydub is a required dependency of the cartesia
-# TTS library, but we only use Cartesia's WebSocket streaming with raw PCM output.
-# We never use pydub's audio conversion/concatenation features that require ffmpeg.
-warnings.filterwarnings("ignore", message="Couldn't find ffmpeg or avconv")
 
 from arq import create_pool
 from arq.connections import RedisSettings
@@ -19,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .auth.routes import router as auth_router
 from .config import DATABASE_URL
-from .routes import logs, stories, voice
+from .routes import stories, admin
 from . import arq_pool as arq_pool_module
 
 logger = logging.getLogger(__name__)
@@ -92,8 +86,7 @@ app.add_middleware(
 # Include routers
 app.include_router(auth_router)  # No prefix - already has /auth
 app.include_router(stories.router, prefix="/stories", tags=["Stories"])
-app.include_router(logs.router, prefix="/logs", tags=["Logs"])
-app.include_router(voice.router, prefix="/voice", tags=["Voice"])
+app.include_router(admin.router, prefix="/admin", tags=["Admin"])
 
 
 @app.get("/health", tags=["Health"])

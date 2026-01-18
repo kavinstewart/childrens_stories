@@ -1,9 +1,6 @@
-import { useState } from 'react';
-import { View, Text, Image, Pressable } from 'react-native';
+import { View, Text, Pressable, Image } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { api, Story, StoryRecommendation } from '@/lib/api';
-import { cacheFiles } from '@/lib/cache-files';
-import { useAuthStore } from '@/features/auth/store';
 
 // Color gradients for story cards based on index or id
 const cardColors: readonly [string, string][] = [
@@ -57,8 +54,6 @@ export function StoryCard({
   onPress,
   showStatusBadge = false,
 }: StoryCardProps) {
-  const token = useAuthStore((state) => state.token);
-
   // Normalize data from either story or recommendation
   const id = story?.id || recommendation?.id || '';
   const title = story?.title || recommendation?.title;
@@ -66,21 +61,8 @@ export function StoryCard({
   const isIllustrated = story?.is_illustrated ?? recommendation?.is_illustrated ?? false;
   const status = story?.status;
 
-  // Get cover image URLs - compute file:// path at render time for cached stories
-  const isCached = story?.isCached ?? false;
-  const cachedUrl = isCached ? cacheFiles.getSpreadPath(id, 1) : null;
-  const networkUrl = api.getSpreadImageUrl(id, 1);
-
-  // Track if cached image failed to load (fallback to network)
-  const [useFallback, setUseFallback] = useState(false);
-
-  // Use cached URL first, fall back to network if cached fails or not cached
-  const coverUrl = isIllustrated
-    ? (cachedUrl && !useFallback ? cachedUrl : networkUrl)
-    : null;
-
-  // Determine if we need auth headers (only for network URLs)
-  const needsAuth = !cachedUrl || useFallback;
+  // Get cover image URL
+  const coverUrl = isIllustrated ? api.getSpreadImageUrl(id, 1) : null;
 
   // Calculate section heights (70% illustration, 30% info - matches library)
   const illustrationHeight = height * 0.70;
@@ -119,18 +101,9 @@ export function StoryCard({
         }}>
           {coverUrl ? (
             <Image
-              source={{
-                uri: coverUrl,
-                headers: (needsAuth && token) ? { Authorization: `Bearer ${token}` } : undefined,
-              }}
+              source={{ uri: coverUrl }}
               style={{ width: '100%', height: '100%' }}
               resizeMode="cover"
-              onError={() => {
-                // If cached image fails, fall back to network URL
-                if (cachedUrl && !useFallback) {
-                  setUseFallback(true);
-                }
-              }}
             />
           ) : (
             <LinearGradient

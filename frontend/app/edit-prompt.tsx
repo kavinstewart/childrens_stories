@@ -1,148 +1,49 @@
-import { View, Text, TextInput, ActivityIndicator, Pressable } from 'react-native';
+import { View, Text, TextInput, Pressable, ScrollView, ActivityIndicator } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useState, useRef, useEffect } from 'react';
+import { useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
-import * as Haptics from 'expo-haptics';
 import { fontFamily } from '@/lib/fonts';
-import { useRegenerateSpread, storyKeys } from '@/features/stories/hooks';
-import { api } from '@/lib/api';
-import { useQueryClient } from '@tanstack/react-query';
-import { StoryCacheManager } from '@/lib/story-cache';
-
-const POLL_INTERVAL_MS = 2000;
-const TIMEOUT_MS = 90000; // 90 seconds for image generation
+import { useRegenerateSpread } from '@/features/stories/hooks';
 
 export default function EditPromptScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const queryClient = useQueryClient();
   const params = useLocalSearchParams<{
     storyId: string;
     spreadNumber: string;
     composedPrompt: string;
-    illustrationUpdatedAt: string;
   }>();
 
   const storyId = params.storyId;
   const spreadNumber = parseInt(params.spreadNumber || '1', 10);
   const initialPrompt = params.composedPrompt || '';
-  const originalUpdatedAt = useRef(params.illustrationUpdatedAt || '');
 
   const [prompt, setPrompt] = useState(initialPrompt);
   const [isRegenerating, setIsRegenerating] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [statusMessage, setStatusMessage] = useState('Regenerating illustration...');
   const regenerateSpread = useRegenerateSpread();
-  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const hasChanges = prompt !== initialPrompt;
-  const isMountedRef = useRef(true);
 
-  // Cleanup polling on unmount
-  useEffect(() => {
-    isMountedRef.current = true;
-    return () => {
-      isMountedRef.current = false;
-      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    };
-  }, []);
-
-  const handleRegenerate = async () => {
+  const handleRegenerate = () => {
     if (!storyId) return;
 
     setIsRegenerating(true);
-    setError(null);
-    setStatusMessage('Starting regeneration...');
-
-    try {
-      await regenerateSpread.mutateAsync({
+    regenerateSpread.mutate(
+      {
         storyId,
         spreadNumber,
         prompt,
-      });
-
-      setStatusMessage('Generating new illustration...');
-
-      // Poll the job status endpoint for completion/failure
-      pollIntervalRef.current = setInterval(async () => {
-        if (!isMountedRef.current) return;
-
-        try {
-          const status = await api.getRegenerateStatus(storyId, spreadNumber);
-
-          if (status.status === 'running') {
-            setStatusMessage('Generating new illustration...');
-          } else if (status.status === 'completed') {
-            // Success! Clean up and navigate back
-            if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-            if (timeoutRef.current) clearTimeout(timeoutRef.current);
-
-            // Refresh story data to get new illustration
-            const story = await api.getStory(storyId);
-            queryClient.setQueryData(storyKeys.detail(storyId), story);
-
-            // Invalidate offline cache so it re-downloads the new illustration
-            await StoryCacheManager.invalidateStory(storyId);
-
-            // Haptic feedback for success
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-
-            if (isMountedRef.current) {
-              setIsRegenerating(false);
-              router.back();
-            }
-          } else if (status.status === 'failed') {
-            // Job failed - show the actual error message
-            if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-            if (timeoutRef.current) clearTimeout(timeoutRef.current);
-
-            const errorMsg = status.error_message
-              ? formatErrorMessage(status.error_message)
-              : 'Regeneration failed. Please try again.';
-
-            setError(errorMsg);
-            setIsRegenerating(false);
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-          }
-          // 'pending' status - just keep polling
-        } catch {
-          // Ignore polling errors, will retry
-        }
-      }, POLL_INTERVAL_MS);
-
-      // Set timeout as a fallback (in case polling never returns completed/failed)
-      timeoutRef.current = setTimeout(() => {
-        if (!isMountedRef.current) return;
-        if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-        setError('Regeneration timed out. Please try again.');
-        setIsRegenerating(false);
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      }, TIMEOUT_MS);
-
-    } catch {
-      setError('Failed to start regeneration. Please try again.');
-      setIsRegenerating(false);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-    }
-  };
-
-  // Format server error messages for user display
-  const formatErrorMessage = (msg: string): string => {
-    if (msg.includes('503') || msg.includes('UNAVAILABLE') || msg.includes('overloaded')) {
-      return 'Image service is temporarily busy. Please try again in a few minutes.';
-    }
-    if (msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED') || msg.includes('rate limit')) {
-      return 'Too many requests. Please wait a moment and try again.';
-    }
-    if (msg.includes('timeout') || msg.includes('timed out')) {
-      return 'Request timed out. Please try again.';
-    }
-    // For other errors, show a generic message
-    return 'Regeneration failed. Please try again.';
+      },
+      {
+        onSuccess: () => {
+          router.back();
+        },
+        onError: () => {
+          setIsRegenerating(false);
+        },
+      }
+    );
   };
 
   const handleCancel = () => {
@@ -224,7 +125,6 @@ export default function EditPromptScreen() {
             flex: 1,
             alignItems: 'center',
             justifyContent: 'center',
-            paddingHorizontal: 24,
           }}
         >
           <ActivityIndicator size="large" color="#FBBF24" />
@@ -236,7 +136,7 @@ export default function EditPromptScreen() {
               marginTop: 24,
             }}
           >
-            {statusMessage}
+            Regenerating illustration...
           </Text>
           <Text
             style={{
@@ -247,17 +147,15 @@ export default function EditPromptScreen() {
               textAlign: 'center',
             }}
           >
-            This may take up to a minute.{'\n'}You'll be returned to the story when complete.
+            This may take a moment.{'\n'}You'll be returned to the story when complete.
           </Text>
         </View>
       ) : (
         <>
-          <KeyboardAwareScrollView
+          <ScrollView
             style={{ flex: 1 }}
             contentContainerStyle={{ padding: 24 }}
             keyboardShouldPersistTaps="handled"
-            extraScrollHeight={100}
-            enableOnAndroid={true}
           >
             <Text
               style={{
@@ -300,50 +198,7 @@ export default function EditPromptScreen() {
               instructions. Character reference images will still be included
               automatically.
             </Text>
-
-            {error && (
-              <View
-                style={{
-                  backgroundColor: 'rgba(239, 68, 68, 0.2)',
-                  borderRadius: 12,
-                  padding: 16,
-                  marginTop: 16,
-                }}
-              >
-                <Text
-                  style={{
-                    color: '#FCA5A5',
-                    fontSize: 14,
-                    fontFamily: fontFamily.nunitoSemiBold,
-                    textAlign: 'center',
-                  }}
-                >
-                  {error}
-                </Text>
-                <Pressable
-                  onPress={handleRegenerate}
-                  style={({ pressed }) => ({
-                    backgroundColor: pressed ? 'rgba(239, 68, 68, 0.4)' : 'rgba(239, 68, 68, 0.3)',
-                    borderRadius: 8,
-                    paddingVertical: 10,
-                    paddingHorizontal: 20,
-                    marginTop: 12,
-                    alignSelf: 'center',
-                  })}
-                >
-                  <Text
-                    style={{
-                      color: '#FCA5A5',
-                      fontSize: 14,
-                      fontFamily: fontFamily.nunitoSemiBold,
-                    }}
-                  >
-                    Retry
-                  </Text>
-                </Pressable>
-              </View>
-            )}
-          </KeyboardAwareScrollView>
+          </ScrollView>
 
           {/* Bottom Action Bar */}
           <View
