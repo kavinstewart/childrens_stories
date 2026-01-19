@@ -1,4 +1,44 @@
-# LLM Evaluation for Homograph Disambiguation
+# LLM Evaluation Tests
+
+This directory contains LLM evaluation tests for different capabilities:
+
+1. **Entity Format Compliance** (`test_entity_format.py`) - Tests that LLMs produce correctly formatted entity definitions for character consistency
+2. **Homograph Disambiguation** (`test_disambiguation.py`) - Tests LLM ability to disambiguate homographs
+
+---
+
+## Entity Format Compliance
+
+Tests that LLMs produce the required `[Entities]` block format:
+```
+@e1: Character Name (type, description)
+```
+
+### Quick Start
+
+```bash
+# Run all-models comparison (recommended first step)
+poetry run pytest tests/llm_eval/test_entity_format.py::test_entity_format_all_models -v -s
+
+# Test specific model
+poetry run pytest tests/llm_eval/test_entity_format.py -v --dspy-model=anthropic/claude-sonnet-4-5-20250929
+```
+
+### Results
+
+See [ENTITY_RESULTS.md](ENTITY_RESULTS.md) for full results. Summary:
+
+| Model | Compliance |
+|-------|------------|
+| gemini/gemini-3-pro-preview | **0%** |
+| anthropic/claude-opus-4-5-20251101 | **100%** |
+| anthropic/claude-sonnet-4-5-20250929 | **100%** |
+
+**Recommendation:** Use Claude models for story generation.
+
+---
+
+## Homograph Disambiguation
 
 This test suite evaluates LLMs on their ability to disambiguate homographs (words spelled the same but pronounced differently based on meaning).
 

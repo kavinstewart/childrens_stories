@@ -5,7 +5,8 @@ AI agent that generates illustrated children's picture books from brief goals/th
 ## Tech Stack
 - **Backend**: Python, FastAPI, DSPy, Poetry
 - **Frontend**: React Native (Expo), TypeScript
-- **LLM**: Qwen3-235B via Cerebras (`backend/config/`)
+- **LLM**: Claude Opus 4.5 via Anthropic API (`backend/config/`)
+- **Image Generation**: Gemini 3 Pro Image (Nano Banana Pro) via Google API
 - **Database**: PostgreSQL with asyncpg
 
 ## Commands
