@@ -29,12 +29,21 @@ def _strip_leading_article(s: str) -> str:
     return normalized
 
 
-def _names_match(query: str, canonical: str) -> bool:
+def _names_match(query: str, canonical: str, aliases: list[str] = None) -> bool:
     """
     Check if query matches canonical name using normalization and article-stripping.
 
     Supports exact match and article-stripped match (e.g., "Blue Bird" matches "The Blue Bird").
+    Also checks against provided aliases for flexible matching.
     Does NOT use substring matching to avoid false positives.
+
+    Args:
+        query: The name to search for
+        canonical: The canonical character name
+        aliases: Optional list of alias names that should also match
+
+    Returns:
+        True if query matches canonical name or any alias
     """
     query_norm = _normalize_name(query)
     canonical_norm = _normalize_name(canonical)
@@ -54,7 +63,93 @@ def _names_match(query: str, canonical: str) -> bool:
     if query_stripped == canonical_norm:
         return True
 
+    # Check against aliases
+    if aliases:
+        for alias in aliases:
+            alias_norm = _normalize_name(alias)
+            alias_stripped = _strip_leading_article(alias)
+
+            # Check various matching combinations with alias
+            if query_norm == alias_norm:
+                return True
+            if query_stripped == alias_stripped:
+                return True
+            if query_norm == alias_stripped:
+                return True
+            if query_stripped == alias_norm:
+                return True
+
     return False
+
+
+def build_character_lookup(character_bibles: list) -> dict[str, str]:
+    """
+    Build a lookup dict mapping normalized names (and variants) to canonical names.
+
+    Includes both canonical names and aliases for flexible lookup.
+
+    Args:
+        character_bibles: List of CharacterBible objects
+
+    Returns:
+        Dict mapping normalized name variants -> canonical character name
+    """
+    lookup = {}
+    for bible in character_bibles:
+        canonical = bible.name
+        # Add normalized canonical name
+        normalized = _normalize_name(canonical)
+        lookup[normalized] = canonical
+        # Add article-stripped variant
+        stripped = _strip_leading_article(canonical)
+        if stripped != normalized:
+            lookup[stripped] = canonical
+
+        # Add aliases if present
+        aliases = getattr(bible, 'aliases', []) or []
+        for alias in aliases:
+            alias_norm = _normalize_name(alias)
+            if alias_norm not in lookup:
+                lookup[alias_norm] = canonical
+            alias_stripped = _strip_leading_article(alias)
+            if alias_stripped != alias_norm and alias_stripped not in lookup:
+                lookup[alias_stripped] = canonical
+
+    return lookup
+
+
+def name_matches_in_text(character_name: str, text: str) -> bool:
+    """
+    Check if a character name (or article-stripped variant) appears as whole word(s) in text.
+
+    Uses word-boundary regex matching to avoid false positives like "He" matching "The".
+    For multi-word names, matches the whole phrase as a unit.
+
+    Args:
+        character_name: The canonical character name (e.g., "The Blue Bird")
+        text: The text to search in
+
+    Returns:
+        True if the name appears as whole word(s), False otherwise
+    """
+    text_lower = text.lower()
+    name_normalized = _normalize_name(character_name)
+
+    # Try matching the full name with word boundaries
+    # \b ensures we match whole words only
+    pattern = r'\b' + re.escape(name_normalized) + r'\b'
+    if re.search(pattern, text_lower):
+        return True
+
+    # Try matching article-stripped version (e.g., "Blue Bird" for "The Blue Bird")
+    name_stripped = _strip_leading_article(character_name)
+    if name_stripped != name_normalized:
+        pattern_stripped = r'\b' + re.escape(name_stripped) + r'\b'
+        if re.search(pattern_stripped, text_lower):
+            return True
+
+    return False
+
 
 # Conditional import for PIL (only needed at runtime for some methods)
 if TYPE_CHECKING:
@@ -77,6 +172,41 @@ class StyleDefinition:
     lighting_direction: str = ""  # Specific lighting for this style
 
 
+# Default style values when no style is provided
+DEFAULT_STYLE_PREFIX = "Warm, inviting children's book illustration in soft watercolor and gouache style"
+DEFAULT_LIGHTING = "soft diffused natural light with gentle shadows"
+
+
+def build_illustration_prompt(
+    illustration_prompt: str,
+    style_prefix: str,
+    lighting: str,
+) -> str:
+    """
+    Build the composed prompt for image generation.
+
+    This is the single source of truth for illustration prompt composition.
+    Used by both SpreadIllustrator (generation) and StoryRepository (API responses).
+
+    Args:
+        illustration_prompt: Scene description for this spread
+        style_prefix: Style direction (e.g., "Warm watercolor style")
+        lighting: Lighting direction (e.g., "soft diffused natural light")
+
+    Returns:
+        Complete prompt string for image generation
+    """
+    return f"""{style_prefix}, 16:9 aspect ratio in landscape format.
+
+Scene: {illustration_prompt}
+
+Lighting: {lighting}.
+
+Wide shot framing with space at bottom for text overlay.
+
+CRITICAL: Any named character in this scene MUST match their reference image EXACTLY - same face, same age, same hair color, same clothing. Do not create different-looking versions of characters. If a character reference image was provided above, use it as the definitive appearance."""
+
+
 # =============================================================================
 # Character Types
 # =============================================================================
@@ -97,6 +227,7 @@ class CharacterBible:
     signature_item: str = ""
     color_palette: list[str] = field(default_factory=list)
     style_tags: list[str] = field(default_factory=list)
+    aliases: list[str] = field(default_factory=list)  # Alternative names for this character
 
     def to_prompt_string(self) -> str:
         """Convert to a string suitable for image generation prompts."""
@@ -117,6 +248,41 @@ class CharacterBible:
             parts.append(f"with {self.signature_item}")
         return ", ".join(parts)
 
+    def to_dict(self) -> dict:
+        """Convert to dict for JSON storage in database."""
+        return {
+            "name": self.name,
+            "species": self.species,
+            "age_appearance": self.age_appearance,
+            "body": self.body,
+            "face": self.face,
+            "hair": self.hair,
+            "eyes": self.eyes,
+            "clothing": self.clothing,
+            "signature_item": self.signature_item,
+            "color_palette": self.color_palette,
+            "style_tags": self.style_tags,
+            "aliases": self.aliases,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "CharacterBible":
+        """Reconstruct from stored dict data."""
+        return cls(
+            name=data.get("name", ""),
+            species=data.get("species", ""),
+            age_appearance=data.get("age_appearance", ""),
+            body=data.get("body", ""),
+            face=data.get("face", ""),
+            hair=data.get("hair", ""),
+            eyes=data.get("eyes", ""),
+            clothing=data.get("clothing", ""),
+            signature_item=data.get("signature_item", ""),
+            color_palette=data.get("color_palette", []),
+            style_tags=data.get("style_tags", []),
+            aliases=data.get("aliases", []),
+        )
+
 
 @dataclass
 class CharacterReferenceSheet:
@@ -126,6 +292,7 @@ class CharacterReferenceSheet:
     reference_image: bytes  # PNG/JPEG bytes of the reference portrait
     prompt_used: str = ""
     character_description: str = ""  # Age, physical features, etc. from character bible
+    bible: Optional["CharacterBible"] = None  # Full character bible for editing
 
     def to_pil_image(self) -> "Image.Image":
         """Convert to PIL Image for passing to Nano Banana Pro."""
@@ -144,16 +311,19 @@ class StoryReferenceSheets:
         """Get reference sheet by character name.
 
         Uses exact matching with normalization and article-stripping.
+        Also checks aliases stored in the character bible.
         Does NOT use substring matching to avoid false positives.
 
         Args:
-            character_name: Name to search for (e.g., "Blue Bird" matches "The Blue Bird")
+            character_name: Name to search for (e.g., "George Washington" matches "George" if aliased)
 
         Returns:
             CharacterReferenceSheet if found, None otherwise
         """
         for name, sheet in self.character_sheets.items():
-            if _names_match(character_name, name):
+            # Get aliases from the bible attached to this sheet
+            aliases = getattr(sheet.bible, 'aliases', []) if sheet.bible else []
+            if _names_match(character_name, name, aliases=aliases):
                 return sheet
         return None
 
@@ -178,59 +348,36 @@ class StoryReferenceSheets:
 
 
 @dataclass
-class StoryOutline:
-    """Structured representation of a story outline."""
+class StoryMetadata:
+    """Metadata for story illustration: style and characters.
+
+    This is NOT an outline - the story-first workflow generates the complete
+    story directly. This container holds metadata needed for illustration:
+    - Character visual descriptions (bibles) for consistent illustration
+    - Selected illustration style
+    - Title for reference
+    """
 
     title: str
-    characters: str
-    setting: str
-    plot_summary: str
-    spread_breakdown: str  # 12 spreads
-    goal: str  # Original goal for reference
     character_bibles: list[CharacterBible] = field(default_factory=list)
     illustration_style: Optional[StyleDefinition] = None
     style_rationale: str = ""
-
-    def get_spreads(self) -> list[dict]:
-        """Parse spread_breakdown into structured list."""
-        spreads = []
-        if not self.spread_breakdown:
-            return spreads
-        for line in self.spread_breakdown.split("\n"):
-            line = line.strip()
-            # Remove markdown formatting like *Spread 1* or **Spread 1**
-            clean_line = re.sub(r"^\*+", "", line).strip()
-            clean_line = re.sub(r"\*+$", "", clean_line.split(":")[0] if ":" in clean_line else clean_line).strip()
-
-            if clean_line.lower().startswith("spread"):
-                # Try to extract spread number and content
-                parts = line.split(":", 1)
-                if len(parts) == 2:
-                    # Clean up the spread identifier too
-                    spread_num = re.sub(r"[\*_]", "", parts[0]).strip()
-                    content = parts[1].strip()
-                    spreads.append({"spread": spread_num, "content": content})
-        return spreads
-
-    @property
-    def spread_count(self) -> int:
-        """Return the number of spreads in the outline."""
-        return len(self.get_spreads())
 
     def get_character_bible(self, name: str) -> Optional[CharacterBible]:
         """Find a character bible by name.
 
         Uses exact matching with normalization and article-stripping.
+        Also checks character aliases for flexible matching.
         Does NOT use substring matching to avoid false positives.
 
         Args:
-            name: Name to search for (e.g., "Blue Bird" matches "The Blue Bird")
+            name: Name to search for (e.g., "George Washington" matches "George" if aliased)
 
         Returns:
             CharacterBible if found, None otherwise
         """
         for bible in self.character_bibles:
-            if _names_match(name, bible.name):
+            if _names_match(name, bible.name, aliases=bible.aliases):
                 return bible
         return None
 
@@ -264,76 +411,6 @@ class StorySpread:
 
 
 # =============================================================================
-# Quality Judgment Types
-# =============================================================================
-
-
-@dataclass
-class QualityJudgment:
-    """Structured representation of a quality judgment."""
-
-    has_critical_failures: bool
-    critical_failure_reasons: str
-    engagement_score: int
-    read_aloud_score: int
-    emotional_truth_score: int
-    coherence_score: int
-    chekhov_violations: str
-    chekhov_score: int
-    overall_score: int
-    specific_problems: str
-    verdict: str
-
-    @property
-    def is_excellent(self) -> bool:
-        return self.verdict == "EXCELLENT" or self.overall_score >= 8
-
-    @property
-    def is_good(self) -> bool:
-        return self.verdict == "GOOD" or self.overall_score >= 6
-
-    @property
-    def needs_revision(self) -> bool:
-        return self.verdict in ("NEEDS_WORK", "REJECTED") or self.overall_score < 6
-
-    @property
-    def is_rejected(self) -> bool:
-        return self.verdict == "REJECTED" or self.overall_score <= 3
-
-    def get_summary(self) -> str:
-        """Get a summary of the judgment."""
-        summary = f"""
-Quality Assessment: {self.verdict}
-Overall Score: {self.overall_score}/10
-
-Scores:
-- Engagement: {self.engagement_score}/10
-- Read-Aloud Quality: {self.read_aloud_score}/10
-- Emotional Truth: {self.emotional_truth_score}/10
-- Coherence: {self.coherence_score}/10
-- Chekhov's Gun: {self.chekhov_score}/10
-"""
-
-        if self.has_critical_failures:
-            summary += f"""
-CRITICAL FAILURES:
-{self.critical_failure_reasons}
-"""
-
-        if self.chekhov_violations and self.chekhov_violations.lower() != "none":
-            summary += f"""
-CHEKHOV'S GUN VIOLATIONS:
-{self.chekhov_violations}
-"""
-
-        summary += f"""
-Specific Problems:
-{self.specific_problems}
-"""
-        return summary.strip()
-
-
-# =============================================================================
 # Complete Story Types
 # =============================================================================
 
@@ -344,17 +421,10 @@ class GeneratedStory:
 
     title: str
     goal: str
-    outline: StoryOutline
+    metadata: StoryMetadata
     spreads: list[StorySpread]
-    judgment: Optional[QualityJudgment]
-    attempts: int
     reference_sheets: Optional[StoryReferenceSheets] = None
     is_illustrated: bool = False
-
-    @property
-    def full_text(self) -> str:
-        """Get the complete story text."""
-        return "\n\n".join(spread.text for spread in self.spreads)
 
     @property
     def word_count(self) -> int:
@@ -413,13 +483,9 @@ class GeneratedStory:
         lines.append(f"Spreads: {self.spread_count}")
         lines.append(f"Illustrated: {'Yes' if self.is_illustrated else 'No'}")
 
-        if self.outline.illustration_style:
-            lines.append(f"Illustration style: {self.outline.illustration_style.name}")
-            if self.outline.style_rationale:
-                lines.append(f"Style rationale: {self.outline.style_rationale}")
-
-        if self.judgment:
-            lines.append(f"Quality score: {self.judgment.overall_score}/10")
-            lines.append(f"Verdict: {self.judgment.verdict}")
+        if self.metadata.illustration_style:
+            lines.append(f"Illustration style: {self.metadata.illustration_style.name}")
+            if self.metadata.style_rationale:
+                lines.append(f"Style rationale: {self.metadata.style_rationale}")
 
         return "\n".join(lines)

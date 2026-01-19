@@ -17,6 +17,11 @@ class ExtractedCharacter:
     """A character extracted from a story."""
     name: str
     details: str  # Everything the story tells us about them
+    aliases: list[str] = None  # Alternative names/references for this character
+
+    def __post_init__(self):
+        if self.aliases is None:
+            self.aliases = []
 
 
 class CharacterExtractor(dspy.Module):
@@ -41,7 +46,25 @@ class CharacterExtractor(dspy.Module):
             if not line:
                 continue
 
-            # Parse "NAME: [name] | DETAILS: [details]" format
+            # Parse "NAME: [name] | ALIASES: [aliases] | DETAILS: [details]" format
+            match_with_aliases = re.match(
+                r'NAME:\s*(.+?)\s*\|\s*ALIASES:\s*(.+?)\s*\|\s*DETAILS:\s*(.+)',
+                line,
+                re.IGNORECASE
+            )
+            if match_with_aliases:
+                name = match_with_aliases.group(1).strip()
+                aliases_str = match_with_aliases.group(2).strip()
+                details = match_with_aliases.group(3).strip()
+                # Parse comma-separated aliases, handling "none" case
+                if aliases_str.lower() == 'none':
+                    aliases = []
+                else:
+                    aliases = [a.strip() for a in aliases_str.split(',') if a.strip()]
+                characters.append(ExtractedCharacter(name=name, details=details, aliases=aliases))
+                continue
+
+            # Parse "NAME: [name] | DETAILS: [details]" format (no aliases)
             match = re.match(
                 r'NAME:\s*(.+?)\s*\|\s*DETAILS:\s*(.+)',
                 line,
