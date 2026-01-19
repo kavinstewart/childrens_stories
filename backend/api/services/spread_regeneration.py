@@ -99,11 +99,22 @@ async def regenerate_spread(
             # Fall back to default style for older stories without stored style
             illustration_style = DEFAULT_FALLBACK_STYLE
 
+        # Build entity_bibles from character_references for spread illustration
+        # This is needed for _get_characters_for_spread() to work correctly
+        entity_bibles = {}
+        if story.character_references:
+            from backend.core.types import EntityBible
+            for char_ref in story.character_references:
+                if char_ref.bible:
+                    # char_ref.bible is a dict from JSON storage
+                    entity_bibles[char_ref.character_name] = EntityBible.from_dict(char_ref.bible)
+
         metadata = None
         if story.metadata:
             metadata = StoryMetadata(
                 title=story.metadata.title,
                 illustration_style=illustration_style,
+                entity_bibles=entity_bibles,
             )
 
         # Load character reference sheets if available
@@ -165,11 +176,16 @@ async def _load_character_refs(story_id: str, story) -> Optional["StoryReference
     character_sheets = {}
     for char_ref in story.character_references:
         # Find the reference image file
+        # Entity IDs in DB use @ prefix (@e1) but files use _ prefix (_e1_reference.png)
+        # Normalize by replacing @ with _ for file matching
+        char_name = char_ref.character_name
+        file_search_name = char_name.replace("@", "_").lower()
+
         for path in refs_dir.glob("*_reference.png"):
-            if char_ref.character_name.lower() in path.stem.lower():
+            if file_search_name in path.stem.lower():
                 image_bytes = path.read_bytes()
-                character_sheets[char_ref.character_name] = CharacterReferenceSheet(
-                    character_name=char_ref.character_name,
+                character_sheets[char_name] = CharacterReferenceSheet(
+                    character_name=char_name,
                     reference_image=image_bytes,
                     prompt_used="",  # Not stored in DB currently
                     character_description=char_ref.character_description or "",
