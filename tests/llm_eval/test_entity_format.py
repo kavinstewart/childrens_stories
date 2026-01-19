@@ -263,10 +263,17 @@ def test_entity_format_all_models():
 
     This is a single test that runs all models for comparison,
     rather than separate parametrized tests.
+
+    Results are written to tests/llm_eval/results/entity_results.md
     """
     import os
+    from datetime import datetime
+    from pathlib import Path
 
     results = {}
+    results_dir = Path(__file__).parent / "results"
+    results_dir.mkdir(exist_ok=True)
+    results_file = results_dir / "entity_results.md"
 
     for model_id, env_key in MODELS_TO_TEST:
         api_key = os.getenv(env_key)
@@ -377,6 +384,34 @@ def test_entity_format_all_models():
         print("\nWARNING: No model achieved 100% compliance. Parser improvements needed.")
 
     print("=" * 70 + "\n")
+
+    # Write results to file
+    with open(results_file, "w") as f:
+        f.write("# Entity Extraction Format Compliance Results\n\n")
+        f.write(f"Tests run: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n\n")
+        f.write("## Summary\n\n")
+        f.write("| Model | [Entities] Block | Fully Compliant | Non-compliant |\n")
+        f.write("|-------|------------------|-----------------|---------------|\n")
+
+        for model_id, result in results.items():
+            if "status" in result:
+                f.write(f"| {model_id} | {result['status']} | - | {result.get('reason', '')} |\n")
+            else:
+                tested = result["stories_tested"]
+                present = result["entities_block_present"]
+                compliant = result["fully_compliant"]
+                non_compliant = result["non_compliant_count"]
+                f.write(
+                    f"| {model_id} | {present}/{tested} ({100*present/tested:.0f}%) | "
+                    f"**{compliant}/{tested} ({100*compliant/tested:.0f}%)** | {non_compliant} |\n"
+                )
+
+        if compliant_models:
+            f.write(f"\n**Recommendation:** Use one of: {', '.join(compliant_models)}\n")
+        else:
+            f.write("\n**Warning:** No model achieved 100% compliance.\n")
+
+    print(f"Results written to: {results_file}")
 
     # This test passes if we were able to run at least one model
     assert any(

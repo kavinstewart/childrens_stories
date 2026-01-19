@@ -26,7 +26,7 @@ poetry run pytest tests/llm_eval/test_entity_format.py -v --dspy-model=anthropic
 
 ### Results
 
-See [ENTITY_RESULTS.md](ENTITY_RESULTS.md) for full results. Summary:
+Results are written to `results/entity_results.md` (gitignored). Example summary:
 
 | Model | Compliance |
 |-------|------------|

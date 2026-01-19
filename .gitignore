@@ -81,3 +81,6 @@ docs/references/
 
 # Playwright test artifacts
 test-results/
+
+# LLM eval results (generated output)
+tests/llm_eval/results/
