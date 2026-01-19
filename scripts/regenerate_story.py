@@ -131,31 +131,16 @@ async def save_story(story_id: str, story, goal: str) -> None:
         "spread_count": story.outline.spread_count,
     }
 
-    # Serialize judgment if present
-    judgment_dict = None
-    if story.judgment:
-        judgment_dict = {
-            "overall_score": story.judgment.overall_score,
-            "verdict": story.judgment.verdict,
-            "engagement_score": story.judgment.engagement_score,
-            "read_aloud_score": story.judgment.read_aloud_score,
-            "emotional_truth_score": story.judgment.emotional_truth_score,
-            "coherence_score": story.judgment.coherence_score,
-            "chekhov_score": story.judgment.chekhov_score,
-            "has_critical_failures": story.judgment.has_critical_failures,
-            "specific_problems": story.judgment.specific_problems,
-        }
-
     # Save to database
     await repo.save_completed_story(
         story_id=story_id,
         title=story.title,
         word_count=story.word_count,
         spread_count=story.spread_count,
-        attempts=story.attempts,
+        attempts=1,
         is_illustrated=story.is_illustrated,
         outline_json=json.dumps(outline_dict),
-        judgment_json=json.dumps(judgment_dict) if judgment_dict else None,
+        judgment_json=None,
         spreads=spreads_data,
         character_refs=char_refs_data,
     )
@@ -183,18 +168,14 @@ async def main(story_id: str):
     configure_dspy(use_reflection_lm=False)
     lm = get_inference_lm()
 
-    generator = StoryGenerator(
-        quality_threshold=7,
-        max_attempts=3,
-        lm=lm,
-    )
+    generator = StoryGenerator(lm=lm)
 
     # Generate illustrated story
     story = generator.generate_illustrated(
         goal=goal,
         target_age_range=target_age_range,
         skip_quality_loop=False,
-        use_image_qa=True,
+        use_image_qa=False,  # Disabled: manual regeneration approach preferred
         max_image_attempts=3,
         debug=True,
     )

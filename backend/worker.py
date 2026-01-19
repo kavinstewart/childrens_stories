@@ -5,8 +5,10 @@ Run with: arq backend.worker.WorkerSettings
 """
 
 import logging
+import os
 from typing import Any
 
+import asyncpg
 from arq import cron
 from arq.connections import RedisSettings
 from dotenv import load_dotenv
@@ -16,8 +18,16 @@ load_dotenv()
 
 from backend.api.services.story_generation import generate_story
 from backend.api.services.spread_regeneration import regenerate_spread
+from backend.api.database.repository import SpreadRegenJobRepository
 
 logger = logging.getLogger(__name__)
+
+
+def _get_database_dsn() -> str:
+    """Get PostgreSQL DSN from environment."""
+    dsn = os.getenv("DATABASE_URL", "")
+    # Convert SQLAlchemy-style URL to asyncpg format
+    return dsn.replace("+asyncpg", "")
 
 
 async def generate_story_task(
@@ -26,8 +36,6 @@ async def generate_story_task(
     goal: str,
     target_age_range: str = "4-7",
     generation_type: str = "illustrated",
-    quality_threshold: int = 7,
-    max_attempts: int = 3,
 ) -> dict[str, Any]:
     """
     ARQ task for generating a story.
@@ -41,8 +49,6 @@ async def generate_story_task(
         goal: The learning goal or theme for the story
         target_age_range: Target reader age range
         generation_type: "simple", "standard", or "illustrated"
-        quality_threshold: Minimum score (0-10) to accept
-        max_attempts: Maximum generation attempts
 
     Returns:
         Dict with story_id and status
@@ -56,8 +62,6 @@ async def generate_story_task(
             goal=goal,
             target_age_range=target_age_range,
             generation_type=generation_type,
-            quality_threshold=quality_threshold,
-            max_attempts=max_attempts,
         )
         logger.info(f"Completed story generation job {job_id} for story {story_id}")
         return {"story_id": story_id, "status": "completed"}
@@ -108,9 +112,55 @@ async def regenerate_spread_task(
         raise
 
 
+async def cleanup_stale_jobs_task(ctx: dict[str, Any]) -> dict[str, Any]:
+    """
+    Cron task to clean up stale spread regeneration jobs.
+
+    Runs every minute to mark jobs as failed if they've been:
+    - pending for > 2 minutes
+    - running for > 12 minutes
+    """
+    dsn = _get_database_dsn()
+    if not dsn:
+        logger.warning("DATABASE_URL not set, skipping stale job cleanup")
+        return {"cleaned": 0}
+
+    try:
+        conn = await asyncpg.connect(dsn)
+        try:
+            regen_repo = SpreadRegenJobRepository(conn)
+            count = await regen_repo.cleanup_stale_jobs()
+            if count > 0:
+                logger.info(f"Cleaned up {count} stale spread regeneration job(s)")
+            return {"cleaned": count}
+        finally:
+            await conn.close()
+    except Exception as e:
+        logger.error(f"Failed to cleanup stale jobs: {e}")
+        return {"cleaned": 0, "error": str(e)}
+
+
 async def startup(ctx: dict[str, Any]) -> None:
     """Called when worker starts up."""
     logger.info("ARQ worker starting up")
+
+    # Cleanup any jobs left in bad state from previous crash
+    dsn = _get_database_dsn()
+    if not dsn:
+        logger.warning("DATABASE_URL not set, skipping startup cleanup")
+        return
+
+    try:
+        conn = await asyncpg.connect(dsn)
+        try:
+            regen_repo = SpreadRegenJobRepository(conn)
+            count = await regen_repo.cleanup_stale_jobs()
+            if count > 0:
+                logger.info(f"Startup cleanup: marked {count} stale job(s) as failed")
+        finally:
+            await conn.close()
+    except Exception as e:
+        logger.error(f"Failed startup cleanup: {e}")
 
 
 async def shutdown(ctx: dict[str, Any]) -> None:
@@ -124,6 +174,12 @@ class WorkerSettings:
     # Task functions to register
     functions = [generate_story_task, regenerate_spread_task]
 
+    # Cron jobs for periodic maintenance
+    cron_jobs = [
+        # Run stale job cleanup every minute
+        cron(cleanup_stale_jobs_task, minute=set(range(60))),
+    ]
+
     # Lifecycle hooks
     on_startup = startup
     on_shutdown = shutdown
@@ -134,7 +190,13 @@ class WorkerSettings:
     # Job settings
     max_jobs = 2  # Max concurrent jobs (story generation is resource-intensive)
     job_timeout = 600  # 10 minutes max per job
-    max_tries = 1  # Don't retry failed jobs (story is marked failed in DB)
+    max_tries = 3  # Retry transient failures (safety net for @image_retry)
+
+    # Fixed 30-second delay between retries
+    # This is a safety net - primary retry with exponential backoff
+    # happens at @image_retry decorator level. ARQ retries are for
+    # edge cases where errors occur outside the image generation call.
+    retry_delay = 30
 
     # Health check
     health_check_interval = 30

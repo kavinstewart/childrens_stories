@@ -79,6 +79,17 @@ ILLUSTRATION_STYLES: dict[IllustrationStyleType, StyleDefinition] = {
 }
 
 
+# Default fallback style for stories without stored illustration style
+# (e.g., older stories generated before style persistence was added)
+DEFAULT_FALLBACK_STYLE = StyleDefinition(
+    name="children's book illustration",
+    description="Warm, inviting children's book illustration style",
+    prompt_prefix="Warm, inviting children's book illustration in soft watercolor and gouache style",
+    best_for=["any"],
+    lighting_direction="soft diffused natural light with gentle shadows",
+)
+
+
 def get_style_by_name(name: str) -> StyleDefinition:
     """Get style definition by string name (case-insensitive)."""
     name_lower = name.lower().replace(" ", "_").replace("-", "_")
