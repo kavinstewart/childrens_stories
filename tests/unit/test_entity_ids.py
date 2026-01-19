@@ -277,9 +277,9 @@ class TestDirectStoryGeneratorEntityParsing:
         """Should parse [Entities] block into entity definitions."""
         raw_output = """
 [Entities]
-@e1: George Washington (character, young boy exploring the forest)
-@e2: The Wise Owl (character, elderly owl who gives advice)
-@e3: The Enchanted Forest (location, misty magical woods)
+@e1: George Washington (young boy exploring the forest)
+@e2: The Wise Owl (elderly owl who gives advice)
+@e3: The Enchanted Forest (misty magical woods)
 
 TITLE: The Forest Adventure
 
@@ -298,25 +298,24 @@ Spread 2: He met the owl.
         assert "@e1" in entity_definitions
         e1 = entity_definitions["@e1"]
         assert e1.display_name == "George Washington"
-        assert e1.entity_type == "character"
         assert e1.brief_description == "young boy exploring the forest"
 
         assert "@e2" in entity_definitions
         e2 = entity_definitions["@e2"]
         assert e2.display_name == "The Wise Owl"
-        assert e2.entity_type == "character"
+        assert e2.brief_description == "elderly owl who gives advice"
 
         assert "@e3" in entity_definitions
         e3 = entity_definitions["@e3"]
         assert e3.display_name == "The Enchanted Forest"
-        assert e3.entity_type == "location"
+        assert e3.brief_description == "misty magical woods"
 
     def test_parse_characters_with_entity_ids(self, story_generator):
         """Should parse [Characters: @e1, @e2] as entity ID list."""
         raw_output = """
 [Entities]
-@e1: George (character, a boy)
-@e2: Owl (character, a wise owl)
+@e1: George (a young boy)
+@e2: Owl (a wise owl)
 
 TITLE: Test
 
@@ -368,8 +367,8 @@ Spread 1: George walked.
         """Entity IDs should be in @eN format."""
         raw_output = """
 [Entities]
-@e1: Valid Entity (character, description)
-@e10: Also Valid (character, description with number 10)
+@e1: Valid Entity (a description)
+@e10: Also Valid (description with number 10)
 
 TITLE: Test
 
@@ -388,7 +387,7 @@ Spread 1: Text
         """Should distinguish @eN entity IDs from plain character names."""
         raw_output = """
 [Entities]
-@e1: George (character, a boy)
+@e1: George (a young boy)
 
 TITLE: Test
 
@@ -408,7 +407,7 @@ Spread 1: George walked.
         # If [Entities] block is present, all [Characters:] should use @eN format
         raw_output = """
 [Entities]
-@e1: George (character, a boy)
+@e1: George (a young boy)
 
 TITLE: Test
 
@@ -447,8 +446,8 @@ class TestBibleGeneratorEntityIds:
             "@e3": EntityDefinition("@e3", "The Enchanted Forest", "location", "magical woods"),
         }
 
-    def test_generate_bibles_for_character_entities(self, bible_generator, sample_entity_definitions):
-        """Should generate bibles only for character-type entities."""
+    def test_generate_bibles_for_all_entities(self, bible_generator, sample_entity_definitions):
+        """Should generate bibles for ALL entities (not just characters)."""
         with patch.object(bible_generator, 'generate') as mock_generate:
             mock_generate.return_value = MagicMock(entity_bibles="""
 CHARACTER: George Washington
@@ -461,6 +460,11 @@ CHARACTER: The Wise Owl
 SPECIES: owl
 AGE_APPEARANCE: elderly
 BODY: large feathered
+
+CHARACTER: The Enchanted Forest
+SPECIES: n/a
+AGE_APPEARANCE: ancient
+BODY: vast wooded area
 """)
 
             story_text = "George walked into the forest and met the wise owl."
@@ -474,8 +478,8 @@ BODY: large feathered
             assert isinstance(bibles, dict)
             assert "@e1" in bibles
             assert "@e2" in bibles
-            # Location entity should NOT have a bible
-            assert "@e3" not in bibles
+            # Location entity SHOULD have a bible now
+            assert "@e3" in bibles
 
     def test_bible_output_keyed_by_entity_id(self, bible_generator, sample_entity_definitions):
         """Bible output should be dict keyed by entity ID."""
@@ -500,10 +504,10 @@ SPECIES: human
             if "@e1" in bibles:
                 assert bibles["@e1"].name == "George Washington"
 
-    def test_filters_out_non_character_entities(self, bible_generator, sample_entity_definitions):
-        """Should only generate bibles for character-type entities."""
+    def test_generates_bibles_for_all_entity_types(self, bible_generator, sample_entity_definitions):
+        """Should generate bibles for ALL entity types including locations."""
         # The input has 2 characters and 1 location
-        # BibleGenerator should only process the 2 characters
+        # BibleGenerator should process ALL entities
         with patch.object(bible_generator, 'generate') as mock_generate:
             mock_generate.return_value = MagicMock(entity_bibles="""
 CHARACTER: George Washington
@@ -511,6 +515,9 @@ SPECIES: human
 
 CHARACTER: The Wise Owl
 SPECIES: owl
+
+CHARACTER: The Enchanted Forest
+SPECIES: n/a
 """)
 
             bibles = bible_generator.forward(
@@ -519,8 +526,11 @@ SPECIES: owl
                 entity_definitions=sample_entity_definitions,
             )
 
-            # Only 2 bibles (characters), not 3 (which includes location)
-            assert len(bibles) <= 2
+            # ALL 3 entities get bibles (characters + location)
+            assert len(bibles) == 3
+            assert "@e1" in bibles
+            assert "@e2" in bibles
+            assert "@e3" in bibles
 
     def test_no_copy_aliases_needed(self, bible_generator):
         """With entity IDs, alias copying is no longer needed."""

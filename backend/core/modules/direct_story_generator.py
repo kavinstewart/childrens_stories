@@ -144,27 +144,26 @@ class DirectStoryGenerator(dspy.Module):
         entities_block = entities_match.group(1).strip()
         remaining_output = raw_output[entities_match.end():]
 
-        # Parse each entity line: @e1: Display Name (type, description)
+        # Parse each entity line: @e1: Display Name (description)
         for line in entities_block.split('\n'):
             line = line.strip()
             if not line:
                 continue
 
-            # Match: @e1: Display Name (type, description)
+            # Match: @e1: Display Name (description)
             entity_match = re.match(
-                r'(@e\d+):\s*(.+?)\s*\((\w+),\s*(.+?)\)\s*$',
+                r'(@e\d+):\s*(.+?)\s*\((.+?)\)\s*$',
                 line
             )
             if entity_match:
                 entity_id = entity_match.group(1)
                 display_name = entity_match.group(2).strip()
-                entity_type = entity_match.group(3).strip().lower()
-                brief_description = entity_match.group(4).strip()
+                brief_description = entity_match.group(3).strip()
 
                 entity_definitions[entity_id] = EntityDefinition(
                     entity_id=entity_id,
                     display_name=display_name,
-                    entity_type=entity_type,
+                    entity_type="entity",  # Default type for all entities
                     brief_description=brief_description,
                 )
 

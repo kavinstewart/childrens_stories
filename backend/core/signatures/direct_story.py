@@ -51,9 +51,9 @@ class DirectStorySignature(dspy.Signature):
 
     OUTPUT FORMAT:
     [Entities]
-    @e1: Character Name (character, brief description of role/appearance)
-    @e2: Another Character (character, brief description)
-    @e3: Location Name (location, brief description) [optional - for key locations]
+    @e1: Character Name (brief description of role/appearance)
+    @e2: Another Character (brief description)
+    @e3: Important Location (brief description of the place)
 
     TITLE: [Your title]
 
@@ -68,12 +68,13 @@ class DirectStorySignature(dspy.Signature):
     ... through Spread 12
 
     CRITICAL - Entity IDs and [Characters:] fields:
-    - Start with an [Entities] block that assigns @e1, @e2, etc. to each character
+    - Start with an [Entities] block that assigns @e1, @e2, etc. to each entity
+    - Include characters, key locations, and important objects as entities
     - Use entity IDs (NOT names) in [Characters:] fields: [Characters: @e1, @e2]
     - You MUST include a [Characters: ...] line for every single spread
-    - List ONLY characters who should be VISIBLE in the illustration
-    - If a character hasn't appeared yet in the story, do NOT include them
-    - If NO characters are visible (e.g., empty room, landscape), write: [Characters: none]
+    - List ONLY entities who should be VISIBLE in the illustration
+    - If an entity hasn't appeared yet in the story, do NOT include them
+    - If NO entities are visible (e.g., empty room), write: [Characters: none]
     - Be precise: if the text says "soldiers grumbled" but @e1 (the General) hasn't arrived yet, don't list @e1
     - Missing [Characters:] fields will cause illustration errors - do NOT skip this field
     """
