@@ -285,11 +285,11 @@ TITLE: The Forest Adventure
 
 Spread 1: George walked into the forest.
 [Illustration: A young boy entering a misty forest]
-[Characters: @e1]
+[Entities: @e1]
 
 Spread 2: He met the owl.
 [Illustration: Boy talking to an owl on a branch]
-[Characters: @e1, @e2]
+[Entities: @e1, @e2]
 """
         title, spreads, entity_definitions = story_generator._parse_story_output(raw_output)
 
@@ -311,7 +311,7 @@ Spread 2: He met the owl.
         assert e3.brief_description == "misty magical woods"
 
     def test_parse_characters_with_entity_ids(self, story_generator):
-        """Should parse [Characters: @e1, @e2] as entity ID list."""
+        """Should parse [Entities: @e1, @e2] as entity ID list."""
         raw_output = """
 [Entities]
 @e1: George (a young boy)
@@ -321,15 +321,15 @@ TITLE: Test
 
 Spread 1: George and the owl talked.
 [Illustration: Boy and owl]
-[Characters: @e1, @e2]
+[Entities: @e1, @e2]
 
 Spread 2: Just George.
 [Illustration: Boy alone]
-[Characters: @e1]
+[Entities: @e1]
 
 Spread 3: Empty room.
 [Illustration: An empty room]
-[Characters: none]
+[Entities: none]
 """
         title, spreads, entity_definitions = story_generator._parse_story_output(raw_output)
 
@@ -351,7 +351,7 @@ TITLE: Old Story
 
 Spread 1: George walked.
 [Illustration: A boy walking]
-[Characters: George]
+[Entities: George]
 """
         title, spreads, entity_definitions = story_generator._parse_story_output(raw_output)
 
@@ -374,7 +374,7 @@ TITLE: Test
 
 Spread 1: Text
 [Illustration: scene]
-[Characters: @e1, @e10]
+[Entities: @e1, @e10]
 """
         title, spreads, entity_definitions = story_generator._parse_story_output(raw_output)
 
@@ -393,7 +393,7 @@ TITLE: Test
 
 Spread 1: George walked.
 [Illustration: A boy]
-[Characters: @e1]
+[Entities: @e1]
 """
         title, spreads, entity_definitions = story_generator._parse_story_output(raw_output)
 
@@ -404,7 +404,7 @@ Spread 1: George walked.
 
     def test_mixed_format_not_allowed(self, story_generator):
         """Should not mix entity IDs and legacy names in same story."""
-        # If [Entities] block is present, all [Characters:] should use @eN format
+        # If [Entities] block is present, all [Entities:] should use @eN format
         raw_output = """
 [Entities]
 @e1: George (a young boy)
@@ -413,9 +413,9 @@ TITLE: Test
 
 Spread 1: George walked.
 [Illustration: A boy]
-[Characters: George]
+[Entities: George]
 """
-        # With entities block, "George" in [Characters:] should trigger warning
+        # With entities block, "George" in [Entities:] should trigger warning
         # but still parse (as legacy fallback during transition)
         title, spreads, entity_definitions = story_generator._parse_story_output(raw_output)
 

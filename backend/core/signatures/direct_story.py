@@ -59,24 +59,24 @@ class DirectStorySignature(dspy.Signature):
 
     Spread 1: [text]
     [Illustration: what to draw]
-    [Characters: @e1]
+    [Entities: @e1]
 
     Spread 2: [text]
     [Illustration: what to draw]
-    [Characters: @e1, @e2]
+    [Entities: @e1, @e2]
 
     ... through Spread 12
 
-    CRITICAL - Entity IDs and [Characters:] fields:
+    CRITICAL - Entity IDs and [Entities:] fields:
     - Start with an [Entities] block that assigns @e1, @e2, etc. to each entity
     - Include characters, key locations, and important objects as entities
-    - Use entity IDs (NOT names) in [Characters:] fields: [Characters: @e1, @e2]
-    - You MUST include a [Characters: ...] line for every single spread
+    - Use entity IDs (NOT names) in [Entities:] fields: [Entities: @e1, @e2]
+    - You MUST include an [Entities: ...] line for every single spread
     - List ONLY entities who should be VISIBLE in the illustration
     - If an entity hasn't appeared yet in the story, do NOT include them
-    - If NO entities are visible (e.g., empty room), write: [Characters: none]
+    - If NO entities are visible (e.g., empty room), write: [Entities: none]
     - Be precise: if the text says "soldiers grumbled" but @e1 (the General) hasn't arrived yet, don't list @e1
-    - Missing [Characters:] fields will cause illustration errors - do NOT skip this field
+    - Missing [Entities:] fields will cause illustration errors - do NOT skip this field
     """
 
     goal: str = dspy.InputField(

@@ -7,8 +7,8 @@ approach which invented characters before the story existed.
 
 Inline Entity Tagging:
 Stories now include an [Entities] block at the top that defines all entities
-with stable IDs (@e1, @e2, etc.). Spreads use these IDs in [Characters: @e1, @e2]
-instead of character names, eliminating the need for fuzzy name matching.
+with stable IDs (@e1, @e2, etc.). Spreads use these IDs in [Entities: @e1, @e2]
+to specify which entities are visible in each illustration.
 """
 
 import re
@@ -60,12 +60,12 @@ class DirectStoryGenerator(dspy.Module):
 
         return "\n".join(parts)
 
-    def _parse_characters_field(self, characters_str: str, has_entities: bool = False) -> tuple[list[str] | None, list[str] | None]:
+    def _parse_entities_field(self, entities_str: str, has_entities: bool = False) -> tuple[list[str] | None, list[str] | None]:
         """
-        Parse the [Characters: ...] field into entity IDs or character names.
+        Parse the [Entities: ...] field into entity IDs or character names.
 
         Args:
-            characters_str: Raw string from [Characters: ...] field
+            entities_str: Raw string from [Entities: ...] field
             has_entities: Whether the story has an [Entities] block (use entity IDs)
 
         Returns:
@@ -74,20 +74,20 @@ class DirectStoryGenerator(dspy.Module):
             - If using legacy names: (None, ["George", "Owl"])
             - If "none" or empty: ([], None) for entity mode, (None, []) for legacy
         """
-        if not characters_str:
+        if not entities_str:
             return (None, None)
 
-        characters_str = characters_str.strip()
+        entities_str = entities_str.strip()
 
         # Handle explicit "none" or empty
-        if characters_str.lower() in ("none", "n/a", "no one", "nobody", "empty", ""):
+        if entities_str.lower() in ("none", "n/a", "no one", "nobody", "empty", ""):
             if has_entities:
                 return ([], None)  # Empty entity list
             else:
                 return (None, [])  # Empty legacy list
 
         # Split by comma and clean up
-        items = [item.strip() for item in characters_str.split(",")]
+        items = [item.strip() for item in entities_str.split(",")]
         items = [item for item in items if item and item.lower() not in ("none", "n/a")]
 
         if not items:
@@ -173,7 +173,7 @@ class DirectStoryGenerator(dspy.Module):
         """
         Parse the raw LLM output into title, spreads, and entity definitions.
 
-        Validates that [Characters:] field is present for each spread.
+        Validates that [Entities:] field is present for each spread.
         Emits warnings for missing fields but continues with None (fallback path).
 
         Returns:
@@ -191,7 +191,7 @@ class DirectStoryGenerator(dspy.Module):
 
         # Parse spreads
         spreads = []
-        missing_characters_spreads = []  # Track spreads missing [Characters:] field
+        missing_entities_spreads = []  # Track spreads missing [Entities:] field
 
         # Split by "Spread N:" markers
         parts = re.split(r'(?=Spread\s+\d+:)', remaining_output, flags=re.IGNORECASE)
@@ -217,19 +217,19 @@ class DirectStoryGenerator(dspy.Module):
                 # Remove illustration prompt from text
                 content = content[:illust_match.start()] + content[illust_match.end():]
 
-            # Extract present characters - REQUIRED field
+            # Extract present entities - REQUIRED field
             present_entity_ids = None
             present_characters = None
-            chars_match = re.search(r'\[Characters:\s*(.+?)\]', content, re.DOTALL)
-            if chars_match:
-                present_entity_ids, present_characters = self._parse_characters_field(
-                    chars_match.group(1), has_entities=has_entities
+            entities_match = re.search(r'\[Entities:\s*(.+?)\]', content, re.DOTALL)
+            if entities_match:
+                present_entity_ids, present_characters = self._parse_entities_field(
+                    entities_match.group(1), has_entities=has_entities
                 )
-                # Remove characters field from text
-                content = content[:chars_match.start()] + content[chars_match.end():]
+                # Remove entities field from text
+                content = content[:entities_match.start()] + content[entities_match.end():]
             else:
-                # Track missing [Characters:] for warning
-                missing_characters_spreads.append(spread_num)
+                # Track missing [Entities:] for warning
+                missing_entities_spreads.append(spread_num)
 
             text = content.strip()
 
@@ -245,11 +245,11 @@ class DirectStoryGenerator(dspy.Module):
         # Sort by spread number
         spreads.sort(key=lambda s: s.spread_number)
 
-        # Emit warning if any spreads are missing [Characters:] field
-        if missing_characters_spreads:
+        # Emit warning if any spreads are missing [Entities:] field
+        if missing_entities_spreads:
             print(
-                f"WARNING: [Characters:] field missing from {len(missing_characters_spreads)} spread(s): "
-                f"{missing_characters_spreads}. Illustration will use fallback character detection "
+                f"WARNING: [Entities:] field missing from {len(missing_entities_spreads)} spread(s): "
+                f"{missing_entities_spreads}. Illustration will use fallback entity detection "
                 f"which may be less accurate. Consider regenerating the story.",
                 file=sys.stderr
             )

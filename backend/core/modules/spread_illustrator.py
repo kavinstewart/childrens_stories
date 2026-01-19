@@ -277,7 +277,7 @@ class SpreadIllustrator:
 
         Priority:
         1. Use spread.present_entity_ids if populated (new entity tagging system)
-        2. Use spread.present_characters if populated (legacy [Characters:] field)
+        2. Use spread.present_characters if populated (legacy format)
         3. Fall back to safe text-based detection (word-boundary matching only)
 
         Returns:
@@ -295,11 +295,11 @@ class SpreadIllustrator:
             )
 
         # Priority 3: Fallback to text-based detection with SAFE matching
-        # WARNING: This path means [Characters:] was missing from story generation
+        # WARNING: This path means [Entities:] was missing from story generation
         print(
-            f"WARNING: Spread {spread.spread_number} has no present_characters. "
-            "Falling back to text-based character detection. "
-            "Consider regenerating story with [Characters:] field.",
+            f"WARNING: Spread {spread.spread_number} has no present entities. "
+            "Falling back to text-based entity detection. "
+            "Consider regenerating story with [Entities:] field.",
             file=sys.stderr
         )
 
