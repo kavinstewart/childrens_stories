@@ -1,5 +1,7 @@
+import { useState, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api, Story, CreateStoryRequest, JobStatus, RegenerateSpreadResponse } from '@/lib/api';
+import { StoryCacheManager } from '@/lib/story-cache';
 
 // Query keys
 export const storyKeys = {
@@ -75,7 +77,7 @@ export function useDeleteStory() {
 }
 
 // Hook to fetch story recommendations
-export function useRecommendations(storyId: string | undefined, limit: number = 4) {
+export function useRecommendations(storyId: string | undefined, limit: number = 3) {
   return useQuery({
     queryKey: storyKeys.recommendations(storyId!),
     queryFn: () => api.getRecommendations(storyId!, limit),
@@ -87,8 +89,9 @@ export function useRecommendations(storyId: string | undefined, limit: number = 
 // Hook to regenerate a spread illustration
 export function useRegenerateSpread() {
   const queryClient = useQueryClient();
+  const [regeneratingSpreadNumber, setRegeneratingSpreadNumber] = useState<number | null>(null);
 
-  return useMutation({
+  const mutation = useMutation({
     mutationFn: ({
       storyId,
       spreadNumber,
@@ -101,6 +104,9 @@ export function useRegenerateSpread() {
 
     // Optimistic update: mark spread as regenerating
     onMutate: async ({ storyId, spreadNumber }) => {
+      // Track which spread is being regenerated
+      setRegeneratingSpreadNumber(spreadNumber);
+
       // Cancel any outgoing queries to prevent race conditions
       await queryClient.cancelQueries({
         queryKey: storyKeys.detail(storyId),
@@ -123,18 +129,26 @@ export function useRegenerateSpread() {
         });
       }
 
-      return { previousStory, storyId };
+      return { previousStory, storyId, spreadNumber };
     },
 
-    // On success, invalidate to get fresh data with new timestamp
+    // On success, invalidate both React Query cache and offline cache
+    // NOTE: We do NOT clear regeneratingSpreadNumber here because the POST
+    // returns immediately (job queued), but actual regeneration takes time.
+    // The caller should clear it when they observe the illustration status change.
     onSuccess: (_, { storyId }) => {
+      // Invalidate React Query cache to refetch from API
       queryClient.invalidateQueries({
         queryKey: storyKeys.detail(storyId),
       });
+      // Invalidate offline cache so fresh network data is used instead of stale cache
+      StoryCacheManager.invalidateStory(storyId);
     },
 
     // On error, restore previous state
     onError: (_, __, context) => {
+      // Clear regenerating state
+      setRegeneratingSpreadNumber(null);
       if (context?.previousStory) {
         queryClient.setQueryData(
           storyKeys.detail(context.storyId),
@@ -143,4 +157,15 @@ export function useRegenerateSpread() {
       }
     },
   });
+
+  // Allow caller to clear the regenerating state (e.g., when they detect completion)
+  const resetRegenerating = useCallback(() => {
+    setRegeneratingSpreadNumber(null);
+  }, []);
+
+  return {
+    ...mutation,
+    regeneratingSpreadNumber,
+    resetRegenerating,
+  };
 }
