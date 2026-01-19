@@ -123,41 +123,9 @@ class BibleGenerator(dspy.Module):
 
         bibles = self._parse_character_bibles(result.character_bibles)
 
-        # Copy aliases from extracted characters to their corresponding bibles
-        # This preserves name variants discovered during extraction
-        self._copy_aliases(bibles, extracted_characters)
-
         if debug:
             print(f"DEBUG Generated {len(bibles)} character bibles:", file=sys.stderr)
             for bible in bibles:
-                aliases_str = f", aliases: {bible.aliases}" if bible.aliases else ""
-                print(f"  - {bible.name}: {bible.to_prompt_string()[:50]}...{aliases_str}", file=sys.stderr)
+                print(f"  - {bible.name}: {bible.to_prompt_string()[:50]}...", file=sys.stderr)
 
         return bibles
-
-    def _copy_aliases(
-        self,
-        bibles: list[CharacterBible],
-        extracted_characters: list[ExtractedCharacter]
-    ) -> None:
-        """Copy aliases from extracted characters to their corresponding bibles.
-
-        Matches by normalized name to handle slight variations.
-        """
-        from ..types import _normalize_name
-
-        # Build lookup from normalized name -> ExtractedCharacter
-        extracted_lookup = {}
-        for char in extracted_characters:
-            norm_name = _normalize_name(char.name)
-            extracted_lookup[norm_name] = char
-            # Also index by aliases for robustness
-            for alias in (char.aliases or []):
-                extracted_lookup[_normalize_name(alias)] = char
-
-        # Copy aliases to matching bibles
-        for bible in bibles:
-            norm_bible_name = _normalize_name(bible.name)
-            if norm_bible_name in extracted_lookup:
-                extracted = extracted_lookup[norm_bible_name]
-                bible.aliases = extracted.aliases or []
