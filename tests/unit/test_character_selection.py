@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 from backend.core.modules.spread_illustrator import SpreadIllustrator, STOPWORDS
 from backend.core.types import (
     StorySpread,
-    StoryMetadata,
+    StoryOutline,
     CharacterBible,
     StyleDefinition,
     StoryReferenceSheets,
@@ -50,8 +50,13 @@ def clank_and_friends_outline(sample_style):
 
     This is the exact scenario from the bug report.
     """
-    return StoryMetadata(
+    return StoryOutline(
         title="Clank and the Green Thing",
+        characters="Clank, The Blue Bird, The Green Thing",
+        setting="A forest clearing",
+        plot_summary="Clank meets creatures",
+        spread_breakdown="Spread 1: Clank walks alone",
+        goal="Test character selection",
         character_bibles=[
             CharacterBible(
                 name="Clank",
