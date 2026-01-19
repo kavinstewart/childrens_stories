@@ -1,35 +1,41 @@
 """
-DSPy Module for generating character bibles from extracted characters.
+DSPy Module for generating character bibles from entity definitions.
 
-Story-first workflow: after extracting characters from the completed story,
-generate visual bibles for illustration consistency.
+Inline Entity Tagging workflow: after DirectStoryGenerator outputs entity
+definitions, generate visual bibles for character entities for illustration
+consistency. Bibles are keyed by entity ID for direct lookup.
 """
 
 import re
 import dspy
+from typing import Optional
 
-from ..types import CharacterBible
+from ..types import CharacterBible, EntityDefinition
 from ..signatures.character_bible import CharacterBibleSignature
-from .character_extractor import ExtractedCharacter
 
 
 class BibleGenerator(dspy.Module):
     """
-    Generate character visual bibles from extracted characters.
+    Generate character visual bibles from entity definitions.
 
-    Takes characters extracted from a completed story and generates
-    detailed visual descriptions for illustration consistency.
+    Takes entity definitions from DirectStoryGenerator and generates
+    detailed visual descriptions for character entities. Bibles are
+    keyed by entity ID for direct lookup during illustration.
     """
 
     def __init__(self):
         super().__init__()
         self.generate = dspy.ChainOfThought(CharacterBibleSignature)
 
-    def _format_extracted_characters(self, characters: list[ExtractedCharacter]) -> str:
-        """Format extracted characters for the signature input."""
+    def _format_entity_definitions(self, entity_definitions: dict[str, EntityDefinition]) -> str:
+        """Format entity definitions for the signature input.
+
+        Only includes character-type entities.
+        """
         lines = []
-        for char in characters:
-            lines.append(f"NAME: {char.name} | DETAILS: {char.details}")
+        for entity_id, entity in entity_definitions.items():
+            if entity.is_character:
+                lines.append(f"NAME: {entity.display_name} | DETAILS: {entity.brief_description}")
         return "\n".join(lines)
 
     def _parse_character_bibles(self, bibles_text: str) -> list[CharacterBible]:
@@ -84,36 +90,68 @@ class BibleGenerator(dspy.Module):
 
         return bibles
 
+    def _match_bibles_to_entity_ids(
+        self,
+        bibles: list[CharacterBible],
+        entity_definitions: dict[str, EntityDefinition],
+    ) -> dict[str, CharacterBible]:
+        """Match parsed bibles to entity IDs by display name.
+
+        Returns dict keyed by entity ID for direct lookup.
+        """
+        result = {}
+
+        # Build lookup from display name -> entity_id
+        name_to_entity_id = {}
+        for entity_id, entity in entity_definitions.items():
+            if entity.is_character:
+                # Normalize for matching
+                name_to_entity_id[entity.display_name.lower().strip()] = entity_id
+
+        for bible in bibles:
+            bible_name_lower = bible.name.lower().strip()
+            if bible_name_lower in name_to_entity_id:
+                entity_id = name_to_entity_id[bible_name_lower]
+                result[entity_id] = bible
+
+        return result
+
     def forward(
         self,
         title: str,
         story_text: str,
-        extracted_characters: list[ExtractedCharacter],
+        entity_definitions: dict[str, EntityDefinition],
         debug: bool = False
-    ) -> list[CharacterBible]:
+    ) -> dict[str, CharacterBible]:
         """
-        Generate character bibles from extracted characters.
+        Generate character bibles from entity definitions.
 
         Args:
             title: The story title
             story_text: The complete story text for context
-            extracted_characters: Characters extracted from the story
+            entity_definitions: Dict of entity_id -> EntityDefinition from DirectStoryGenerator
             debug: If True, print debug info
 
         Returns:
-            List of CharacterBible objects
+            Dict of entity_id -> CharacterBible (only character entities)
         """
         import sys
 
-        if not extracted_characters:
+        # Filter to only character entities
+        character_entities = {
+            eid: entity for eid, entity in entity_definitions.items()
+            if entity.is_character
+        }
+
+        if not character_entities:
             if debug:
-                print("DEBUG No characters to generate bibles for", file=sys.stderr)
-            return []
+                print("DEBUG No character entities to generate bibles for", file=sys.stderr)
+            return {}
 
         if debug:
-            print(f"DEBUG Generating bibles for {len(extracted_characters)} characters", file=sys.stderr)
+            print(f"DEBUG Generating bibles for {len(character_entities)} character entities", file=sys.stderr)
 
-        formatted_characters = self._format_extracted_characters(extracted_characters)
+        formatted_characters = self._format_entity_definitions(character_entities)
 
         result = self.generate(
             story_title=title,
@@ -123,41 +161,12 @@ class BibleGenerator(dspy.Module):
 
         bibles = self._parse_character_bibles(result.character_bibles)
 
-        # Copy aliases from extracted characters to their corresponding bibles
-        # This preserves name variants discovered during extraction
-        self._copy_aliases(bibles, extracted_characters)
+        # Match bibles to entity IDs
+        entity_bibles = self._match_bibles_to_entity_ids(bibles, character_entities)
 
         if debug:
-            print(f"DEBUG Generated {len(bibles)} character bibles:", file=sys.stderr)
-            for bible in bibles:
-                aliases_str = f", aliases: {bible.aliases}" if bible.aliases else ""
-                print(f"  - {bible.name}: {bible.to_prompt_string()[:50]}...{aliases_str}", file=sys.stderr)
+            print(f"DEBUG Generated {len(entity_bibles)} character bibles:", file=sys.stderr)
+            for entity_id, bible in entity_bibles.items():
+                print(f"  - {entity_id}: {bible.name} - {bible.to_prompt_string()[:50]}...", file=sys.stderr)
 
-        return bibles
-
-    def _copy_aliases(
-        self,
-        bibles: list[CharacterBible],
-        extracted_characters: list[ExtractedCharacter]
-    ) -> None:
-        """Copy aliases from extracted characters to their corresponding bibles.
-
-        Matches by normalized name to handle slight variations.
-        """
-        from ..types import _normalize_name
-
-        # Build lookup from normalized name -> ExtractedCharacter
-        extracted_lookup = {}
-        for char in extracted_characters:
-            norm_name = _normalize_name(char.name)
-            extracted_lookup[norm_name] = char
-            # Also index by aliases for robustness
-            for alias in (char.aliases or []):
-                extracted_lookup[_normalize_name(alias)] = char
-
-        # Copy aliases to matching bibles
-        for bible in bibles:
-            norm_bible_name = _normalize_name(bible.name)
-            if norm_bible_name in extracted_lookup:
-                extracted = extracted_lookup[norm_bible_name]
-                bible.aliases = extracted.aliases or []
+        return entity_bibles

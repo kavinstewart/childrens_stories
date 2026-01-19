@@ -423,3 +423,107 @@ Spread 1: George walked.
         assert len(entity_definitions) == 1
         # Non-@ names go to present_characters for backwards compatibility
         assert spreads[0].present_characters == ["George"]
+
+
+# =============================================================================
+# Test 7: BibleGenerator with Entity IDs
+# =============================================================================
+
+class TestBibleGeneratorEntityIds:
+    """Tests for BibleGenerator accepting and outputting entity IDs."""
+
+    @pytest.fixture
+    def bible_generator(self):
+        """BibleGenerator instance."""
+        from backend.core.modules.bible_generator import BibleGenerator
+        return BibleGenerator()
+
+    @pytest.fixture
+    def sample_entity_definitions(self):
+        """Sample entity definitions for testing."""
+        return {
+            "@e1": EntityDefinition("@e1", "George Washington", "character", "young boy exploring"),
+            "@e2": EntityDefinition("@e2", "The Wise Owl", "character", "elderly owl advisor"),
+            "@e3": EntityDefinition("@e3", "The Enchanted Forest", "location", "magical woods"),
+        }
+
+    def test_generate_bibles_for_character_entities(self, bible_generator, sample_entity_definitions):
+        """Should generate bibles only for character-type entities."""
+        with patch.object(bible_generator, 'generate') as mock_generate:
+            mock_generate.return_value = MagicMock(character_bibles="""
+CHARACTER: George Washington
+SPECIES: human
+AGE_APPEARANCE: young boy
+BODY: small and curious
+FACE: round cheeks
+
+CHARACTER: The Wise Owl
+SPECIES: owl
+AGE_APPEARANCE: elderly
+BODY: large feathered
+""")
+
+            story_text = "George walked into the forest and met the wise owl."
+            bibles = bible_generator.forward(
+                title="Test Story",
+                story_text=story_text,
+                entity_definitions=sample_entity_definitions,
+            )
+
+            # Should be keyed by entity ID, not name
+            assert isinstance(bibles, dict)
+            assert "@e1" in bibles
+            assert "@e2" in bibles
+            # Location entity should NOT have a bible
+            assert "@e3" not in bibles
+
+    def test_bible_output_keyed_by_entity_id(self, bible_generator, sample_entity_definitions):
+        """Bible output should be dict keyed by entity ID."""
+        with patch.object(bible_generator, 'generate') as mock_generate:
+            mock_generate.return_value = MagicMock(character_bibles="""
+CHARACTER: George Washington
+SPECIES: human
+""")
+
+            # Only character entities
+            char_entities = {k: v for k, v in sample_entity_definitions.items() if v.is_character}
+
+            bibles = bible_generator.forward(
+                title="Test",
+                story_text="Test story",
+                entity_definitions=char_entities,
+            )
+
+            # Result should be dict, not list
+            assert isinstance(bibles, dict)
+            # Can look up by entity ID
+            if "@e1" in bibles:
+                assert bibles["@e1"].name == "George Washington"
+
+    def test_filters_out_non_character_entities(self, bible_generator, sample_entity_definitions):
+        """Should only generate bibles for character-type entities."""
+        # The input has 2 characters and 1 location
+        # BibleGenerator should only process the 2 characters
+        with patch.object(bible_generator, 'generate') as mock_generate:
+            mock_generate.return_value = MagicMock(character_bibles="""
+CHARACTER: George Washington
+SPECIES: human
+
+CHARACTER: The Wise Owl
+SPECIES: owl
+""")
+
+            bibles = bible_generator.forward(
+                title="Test",
+                story_text="Test story",
+                entity_definitions=sample_entity_definitions,
+            )
+
+            # Only 2 bibles (characters), not 3 (which includes location)
+            assert len(bibles) <= 2
+
+    def test_no_copy_aliases_needed(self, bible_generator):
+        """With entity IDs, alias copying is no longer needed."""
+        # Entity IDs eliminate the need for name matching/aliases
+        # BibleGenerator should not have _copy_aliases anymore
+        assert not hasattr(bible_generator, '_copy_aliases')
