@@ -18,7 +18,7 @@ load_dotenv()
 
 from backend.api.services.story_generation import generate_story
 from backend.api.services.spread_regeneration import regenerate_spread
-from backend.api.database.repository import SpreadRegenJobRepository
+from backend.api.database.repository import SpreadRegenJobRepository, StoryRepository
 
 logger = logging.getLogger(__name__)
 
@@ -114,35 +114,49 @@ async def regenerate_spread_task(
 
 async def cleanup_stale_jobs_task(ctx: dict[str, Any]) -> dict[str, Any]:
     """
-    Cron task to clean up stale spread regeneration jobs.
+    Cron task to clean up stale jobs in Postgres.
 
     Runs every minute to mark jobs as failed if they've been:
     - pending for > 2 minutes
     - running for > 12 minutes
+
+    Cleans up both stories and spread regeneration jobs.
     """
     dsn = _get_database_dsn()
     if not dsn:
         logger.warning("DATABASE_URL not set, skipping stale job cleanup")
-        return {"cleaned": 0}
+        return {"cleaned_stories": 0, "cleaned_spreads": 0}
 
     try:
         conn = await asyncpg.connect(dsn)
         try:
+            # Clean up stale stories
+            story_repo = StoryRepository(conn)
+            story_count = await story_repo.cleanup_stale_stories()
+            if story_count > 0:
+                logger.info(f"Cleaned up {story_count} stale story job(s)")
+
+            # Clean up stale spread regeneration jobs
             regen_repo = SpreadRegenJobRepository(conn)
-            count = await regen_repo.cleanup_stale_jobs()
-            if count > 0:
-                logger.info(f"Cleaned up {count} stale spread regeneration job(s)")
-            return {"cleaned": count}
+            spread_count = await regen_repo.cleanup_stale_jobs()
+            if spread_count > 0:
+                logger.info(f"Cleaned up {spread_count} stale spread regeneration job(s)")
+
+            return {"cleaned_stories": story_count, "cleaned_spreads": spread_count}
         finally:
             await conn.close()
     except Exception as e:
         logger.error(f"Failed to cleanup stale jobs: {e}")
-        return {"cleaned": 0, "error": str(e)}
+        return {"cleaned_stories": 0, "cleaned_spreads": 0, "error": str(e)}
 
 
 async def startup(ctx: dict[str, Any]) -> None:
     """Called when worker starts up."""
     logger.info("ARQ worker starting up")
+
+    # Cleanup stale Redis keys from previous crash
+    # This prevents ghost jobs from blocking the worker
+    await _cleanup_stale_redis_keys(ctx)
 
     # Cleanup any jobs left in bad state from previous crash
     dsn = _get_database_dsn()
@@ -153,14 +167,57 @@ async def startup(ctx: dict[str, Any]) -> None:
     try:
         conn = await asyncpg.connect(dsn)
         try:
+            # Clean up stale stories
+            story_repo = StoryRepository(conn)
+            story_count = await story_repo.cleanup_stale_stories()
+            if story_count > 0:
+                logger.info(f"Startup cleanup: marked {story_count} stale story job(s) as failed")
+
+            # Clean up stale spread regeneration jobs
             regen_repo = SpreadRegenJobRepository(conn)
-            count = await regen_repo.cleanup_stale_jobs()
-            if count > 0:
-                logger.info(f"Startup cleanup: marked {count} stale job(s) as failed")
+            spread_count = await regen_repo.cleanup_stale_jobs()
+            if spread_count > 0:
+                logger.info(f"Startup cleanup: marked {spread_count} stale spread job(s) as failed")
         finally:
             await conn.close()
     except Exception as e:
         logger.error(f"Failed startup cleanup: {e}")
+
+
+async def _cleanup_stale_redis_keys(ctx: dict[str, Any]) -> None:
+    """Clean up stale in-progress keys from crashed workers.
+
+    On worker startup, clears arq:in-progress:* keys (except cron jobs) to allow
+    jobs that were running when the previous worker crashed to be picked up again.
+
+    NOTE: All ARQ keys (job, retry, result, in-progress) are STRING type - this is
+    correct. Do NOT delete keys based on type checks.
+    """
+    redis = ctx.get("redis")
+    if not redis:
+        logger.warning("Redis connection not available in context, skipping Redis cleanup")
+        return
+
+    try:
+        cleaned = 0
+
+        # Clean up stale in-progress keys (ghost jobs from crashed workers)
+        # These keys have TTL and indicate a job is "in progress" - if the worker
+        # crashed, these keys prevent the job from being picked up by a new worker
+        in_progress_keys = await redis.keys("arq:in-progress:*")
+        for key in in_progress_keys:
+            # Skip cron job keys (they use keep_cronjob_progress to prevent duplicates)
+            if b"cron:" in key:
+                continue
+            await redis.delete(key)
+            cleaned += 1
+            logger.debug(f"Deleted stale in-progress key: {key}")
+
+        if cleaned > 0:
+            logger.info(f"Startup Redis cleanup: removed {cleaned} stale in-progress key(s)")
+
+    except Exception as e:
+        logger.error(f"Failed Redis cleanup: {e}")
 
 
 async def shutdown(ctx: dict[str, Any]) -> None:

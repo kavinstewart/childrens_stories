@@ -396,6 +396,31 @@ class StoryRepository:
         # Result is like "DELETE 1" or "DELETE 0"
         return result.split()[-1] != "0"
 
+    async def cleanup_stale_stories(self) -> int:
+        """Mark stale pending/running stories as failed.
+
+        Stories are considered stale if:
+        - pending for > 2 minutes (should be picked up quickly by ARQ)
+        - running for > 12 minutes (job_timeout 600s + 2 min buffer)
+
+        Returns the number of stories marked as failed.
+        """
+        result = await self.conn.execute(
+            """
+            UPDATE stories
+            SET status = 'failed',
+                error_message = 'Job timed out (stale job cleanup)',
+                completed_at = NOW()
+            WHERE (
+                (status = 'pending' AND created_at <= NOW() - INTERVAL '2 minutes')
+                OR (status = 'running' AND started_at <= NOW() - INTERVAL '12 minutes')
+            )
+            """
+        )
+        # asyncpg returns "UPDATE N" string
+        count = int(result.split()[-1]) if result else 0
+        return count
+
     async def get_recommendations(
         self,
         exclude_story_id: str,
