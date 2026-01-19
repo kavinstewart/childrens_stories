@@ -6,6 +6,7 @@ and other entities throughout a story, eliminating the need for name-based match
 """
 
 import pytest
+from unittest.mock import patch, MagicMock
 
 from backend.core.types import (
     EntityDefinition,
@@ -16,6 +17,7 @@ from backend.core.types import (
     CharacterReferenceSheet,
     StyleDefinition,
 )
+from backend.core.modules.direct_story_generator import DirectStoryGenerator
 
 
 # =============================================================================
@@ -257,3 +259,167 @@ class TestStoryReferenceSheetsEntityIds:
 
         # Looking up by name should not work (keys are IDs now)
         assert "George Washington" not in sheets.character_sheets
+
+
+# =============================================================================
+# Test 6: DirectStoryGenerator Entity Parsing
+# =============================================================================
+
+class TestDirectStoryGeneratorEntityParsing:
+    """Tests for DirectStoryGenerator parsing [Entities] block and entity IDs."""
+
+    @pytest.fixture
+    def story_generator(self):
+        """DirectStoryGenerator instance."""
+        return DirectStoryGenerator(include_examples=False)
+
+    def test_parse_entities_block(self, story_generator):
+        """Should parse [Entities] block into entity definitions."""
+        raw_output = """
+[Entities]
+@e1: George Washington (character, young boy exploring the forest)
+@e2: The Wise Owl (character, elderly owl who gives advice)
+@e3: The Enchanted Forest (location, misty magical woods)
+
+TITLE: The Forest Adventure
+
+Spread 1: George walked into the forest.
+[Illustration: A young boy entering a misty forest]
+[Characters: @e1]
+
+Spread 2: He met the owl.
+[Illustration: Boy talking to an owl on a branch]
+[Characters: @e1, @e2]
+"""
+        title, spreads, entity_definitions = story_generator._parse_story_output(raw_output)
+
+        assert len(entity_definitions) == 3
+
+        assert "@e1" in entity_definitions
+        e1 = entity_definitions["@e1"]
+        assert e1.display_name == "George Washington"
+        assert e1.entity_type == "character"
+        assert e1.brief_description == "young boy exploring the forest"
+
+        assert "@e2" in entity_definitions
+        e2 = entity_definitions["@e2"]
+        assert e2.display_name == "The Wise Owl"
+        assert e2.entity_type == "character"
+
+        assert "@e3" in entity_definitions
+        e3 = entity_definitions["@e3"]
+        assert e3.display_name == "The Enchanted Forest"
+        assert e3.entity_type == "location"
+
+    def test_parse_characters_with_entity_ids(self, story_generator):
+        """Should parse [Characters: @e1, @e2] as entity ID list."""
+        raw_output = """
+[Entities]
+@e1: George (character, a boy)
+@e2: Owl (character, a wise owl)
+
+TITLE: Test
+
+Spread 1: George and the owl talked.
+[Illustration: Boy and owl]
+[Characters: @e1, @e2]
+
+Spread 2: Just George.
+[Illustration: Boy alone]
+[Characters: @e1]
+
+Spread 3: Empty room.
+[Illustration: An empty room]
+[Characters: none]
+"""
+        title, spreads, entity_definitions = story_generator._parse_story_output(raw_output)
+
+        assert len(spreads) == 3
+
+        # Spread 1: Both characters
+        assert spreads[0].present_entity_ids == ["@e1", "@e2"]
+
+        # Spread 2: Just George
+        assert spreads[1].present_entity_ids == ["@e1"]
+
+        # Spread 3: No characters
+        assert spreads[2].present_entity_ids == []
+
+    def test_parse_legacy_format_no_entities_block(self, story_generator):
+        """Should still work with legacy format (no [Entities] block)."""
+        raw_output = """
+TITLE: Old Story
+
+Spread 1: George walked.
+[Illustration: A boy walking]
+[Characters: George]
+"""
+        title, spreads, entity_definitions = story_generator._parse_story_output(raw_output)
+
+        # No entities block means empty entity_definitions
+        assert entity_definitions == {}
+
+        # Spreads should still work with legacy present_characters
+        assert spreads[0].present_characters == ["George"]
+        # No entity IDs in legacy format
+        assert spreads[0].present_entity_ids is None
+
+    def test_entity_id_format_validation(self, story_generator):
+        """Entity IDs should be in @eN format."""
+        raw_output = """
+[Entities]
+@e1: Valid Entity (character, description)
+@e10: Also Valid (character, description with number 10)
+
+TITLE: Test
+
+Spread 1: Text
+[Illustration: scene]
+[Characters: @e1, @e10]
+"""
+        title, spreads, entity_definitions = story_generator._parse_story_output(raw_output)
+
+        assert "@e1" in entity_definitions
+        assert "@e10" in entity_definitions
+
+        assert spreads[0].present_entity_ids == ["@e1", "@e10"]
+
+    def test_distinguishes_entity_ids_from_names(self, story_generator):
+        """Should distinguish @eN entity IDs from plain character names."""
+        raw_output = """
+[Entities]
+@e1: George (character, a boy)
+
+TITLE: Test
+
+Spread 1: George walked.
+[Illustration: A boy]
+[Characters: @e1]
+"""
+        title, spreads, entity_definitions = story_generator._parse_story_output(raw_output)
+
+        # This should be entity ID, not legacy name
+        assert spreads[0].present_entity_ids == ["@e1"]
+        # Legacy field should be None when using entity IDs
+        assert spreads[0].present_characters is None
+
+    def test_mixed_format_not_allowed(self, story_generator):
+        """Should not mix entity IDs and legacy names in same story."""
+        # If [Entities] block is present, all [Characters:] should use @eN format
+        raw_output = """
+[Entities]
+@e1: George (character, a boy)
+
+TITLE: Test
+
+Spread 1: George walked.
+[Illustration: A boy]
+[Characters: George]
+"""
+        # With entities block, "George" in [Characters:] should trigger warning
+        # but still parse (as legacy fallback during transition)
+        title, spreads, entity_definitions = story_generator._parse_story_output(raw_output)
+
+        assert len(entity_definitions) == 1
+        # Non-@ names go to present_characters for backwards compatibility
+        assert spreads[0].present_characters == ["George"]

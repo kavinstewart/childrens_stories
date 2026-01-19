@@ -50,24 +50,31 @@ class DirectStorySignature(dspy.Signature):
     - Natural rhythm when spoken
 
     OUTPUT FORMAT:
+    [Entities]
+    @e1: Character Name (character, brief description of role/appearance)
+    @e2: Another Character (character, brief description)
+    @e3: Location Name (location, brief description) [optional - for key locations]
+
     TITLE: [Your title]
 
     Spread 1: [text]
     [Illustration: what to draw]
-    [Characters: comma-separated names of characters VISIBLE in the illustration]
+    [Characters: @e1]
 
     Spread 2: [text]
     [Illustration: what to draw]
-    [Characters: comma-separated names of characters VISIBLE in the illustration]
+    [Characters: @e1, @e2]
 
     ... through Spread 12
 
-    CRITICAL - [Characters:] field is REQUIRED for EVERY spread:
+    CRITICAL - Entity IDs and [Characters:] fields:
+    - Start with an [Entities] block that assigns @e1, @e2, etc. to each character
+    - Use entity IDs (NOT names) in [Characters:] fields: [Characters: @e1, @e2]
     - You MUST include a [Characters: ...] line for every single spread
     - List ONLY characters who should be VISIBLE in the illustration
     - If a character hasn't appeared yet in the story, do NOT include them
     - If NO characters are visible (e.g., empty room, landscape), write: [Characters: none]
-    - Be precise: if the text says "soldiers grumbled" but the General hasn't arrived yet, don't list the General
+    - Be precise: if the text says "soldiers grumbled" but @e1 (the General) hasn't arrived yet, don't list @e1
     - Missing [Characters:] fields will cause illustration errors - do NOT skip this field
     """
 

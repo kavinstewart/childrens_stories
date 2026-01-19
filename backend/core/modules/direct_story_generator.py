@@ -4,12 +4,17 @@ DSPy Module for generating stories directly from a goal.
 Story-first workflow: generate the complete story in one shot,
 then extract characters afterward. This replaces the outline-first
 approach which invented characters before the story existed.
+
+Inline Entity Tagging:
+Stories now include an [Entities] block at the top that defines all entities
+with stable IDs (@e1, @e2, etc.). Spreads use these IDs in [Characters: @e1, @e2]
+instead of character names, eliminating the need for fuzzy name matching.
 """
 
 import re
 import dspy
 
-from ..types import StorySpread
+from ..types import StorySpread, EntityDefinition
 from ..signatures.direct_story import DirectStorySignature
 from ..reference_stories import get_random_examples
 
@@ -55,43 +60,134 @@ class DirectStoryGenerator(dspy.Module):
 
         return "\n".join(parts)
 
-    def _parse_characters_field(self, characters_str: str) -> list[str] | None:
+    def _parse_characters_field(self, characters_str: str, has_entities: bool = False) -> tuple[list[str] | None, list[str] | None]:
         """
-        Parse the [Characters: ...] field into a list of character names.
+        Parse the [Characters: ...] field into entity IDs or character names.
+
+        Args:
+            characters_str: Raw string from [Characters: ...] field
+            has_entities: Whether the story has an [Entities] block (use entity IDs)
 
         Returns:
-            List of character names, empty list if "none", or None if not parseable.
+            Tuple of (present_entity_ids, present_characters):
+            - If using entity IDs: (["@e1", "@e2"], None)
+            - If using legacy names: (None, ["George", "Owl"])
+            - If "none" or empty: ([], None) for entity mode, (None, []) for legacy
         """
         if not characters_str:
-            return None
+            return (None, None)
 
         characters_str = characters_str.strip()
 
         # Handle explicit "none" or empty
         if characters_str.lower() in ("none", "n/a", "no one", "nobody", "empty", ""):
-            return []
+            if has_entities:
+                return ([], None)  # Empty entity list
+            else:
+                return (None, [])  # Empty legacy list
 
         # Split by comma and clean up
-        names = [name.strip() for name in characters_str.split(",")]
-        # Filter out empty strings and "none" values
-        names = [n for n in names if n and n.lower() not in ("none", "n/a")]
+        items = [item.strip() for item in characters_str.split(",")]
+        items = [item for item in items if item and item.lower() not in ("none", "n/a")]
 
-        return names if names else []
+        if not items:
+            if has_entities:
+                return ([], None)
+            else:
+                return (None, [])
 
-    def _parse_story_output(self, raw_output: str) -> tuple[str, list[StorySpread]]:
+        # Separate entity IDs (@eN) from legacy names
+        entity_ids = [item for item in items if item.startswith("@")]
+        names = [item for item in items if not item.startswith("@")]
+
+        if has_entities and entity_ids:
+            # New format with entity IDs
+            return (entity_ids, None)
+        elif names:
+            # Legacy format with character names
+            return (None, names)
+        elif entity_ids and not has_entities:
+            # Entity IDs without [Entities] block - treat as entity IDs anyway
+            return (entity_ids, None)
+        else:
+            return (None, None)
+
+    def _parse_entities_block(self, raw_output: str) -> tuple[str, dict[str, EntityDefinition]]:
         """
-        Parse the raw LLM output into title and spreads.
+        Parse the [Entities] block from story output.
+
+        Format:
+        [Entities]
+        @e1: George Washington (character, young boy exploring the forest)
+        @e2: The Wise Owl (character, elderly owl who gives advice)
+        @e3: The Enchanted Forest (location, misty magical woods)
+
+        Args:
+            raw_output: Full story output text
+
+        Returns:
+            Tuple of (remaining_output, entity_definitions dict)
+        """
+        entity_definitions = {}
+
+        # Look for [Entities] block
+        entities_match = re.search(
+            r'\[Entities\]\s*(.*?)(?=\n\s*(?:TITLE:|Spread\s+\d+:))',
+            raw_output,
+            re.DOTALL | re.IGNORECASE
+        )
+
+        if not entities_match:
+            # No entities block - return original output
+            return raw_output, {}
+
+        entities_block = entities_match.group(1).strip()
+        remaining_output = raw_output[entities_match.end():]
+
+        # Parse each entity line: @e1: Display Name (type, description)
+        for line in entities_block.split('\n'):
+            line = line.strip()
+            if not line:
+                continue
+
+            # Match: @e1: Display Name (type, description)
+            entity_match = re.match(
+                r'(@e\d+):\s*(.+?)\s*\((\w+),\s*(.+?)\)\s*$',
+                line
+            )
+            if entity_match:
+                entity_id = entity_match.group(1)
+                display_name = entity_match.group(2).strip()
+                entity_type = entity_match.group(3).strip().lower()
+                brief_description = entity_match.group(4).strip()
+
+                entity_definitions[entity_id] = EntityDefinition(
+                    entity_id=entity_id,
+                    display_name=display_name,
+                    entity_type=entity_type,
+                    brief_description=brief_description,
+                )
+
+        return remaining_output, entity_definitions
+
+    def _parse_story_output(self, raw_output: str) -> tuple[str, list[StorySpread], dict[str, EntityDefinition]]:
+        """
+        Parse the raw LLM output into title, spreads, and entity definitions.
 
         Validates that [Characters:] field is present for each spread.
         Emits warnings for missing fields but continues with None (fallback path).
 
         Returns:
-            Tuple of (title, list of StorySpread objects)
+            Tuple of (title, list of StorySpread objects, entity_definitions dict)
         """
         import sys
 
+        # First, parse [Entities] block if present
+        remaining_output, entity_definitions = self._parse_entities_block(raw_output)
+        has_entities = len(entity_definitions) > 0
+
         # Extract title
-        title_match = re.search(r'TITLE:\s*(.+?)(?:\n|$)', raw_output, re.IGNORECASE)
+        title_match = re.search(r'TITLE:\s*(.+?)(?:\n|$)', remaining_output, re.IGNORECASE)
         title = title_match.group(1).strip() if title_match else "Untitled Story"
 
         # Parse spreads
@@ -99,7 +195,7 @@ class DirectStoryGenerator(dspy.Module):
         missing_characters_spreads = []  # Track spreads missing [Characters:] field
 
         # Split by "Spread N:" markers
-        parts = re.split(r'(?=Spread\s+\d+:)', raw_output, flags=re.IGNORECASE)
+        parts = re.split(r'(?=Spread\s+\d+:)', remaining_output, flags=re.IGNORECASE)
 
         for part in parts:
             part = part.strip()
@@ -123,10 +219,13 @@ class DirectStoryGenerator(dspy.Module):
                 content = content[:illust_match.start()] + content[illust_match.end():]
 
             # Extract present characters - REQUIRED field
+            present_entity_ids = None
             present_characters = None
             chars_match = re.search(r'\[Characters:\s*(.+?)\]', content, re.DOTALL)
             if chars_match:
-                present_characters = self._parse_characters_field(chars_match.group(1))
+                present_entity_ids, present_characters = self._parse_characters_field(
+                    chars_match.group(1), has_entities=has_entities
+                )
                 # Remove characters field from text
                 content = content[:chars_match.start()] + content[chars_match.end():]
             else:
@@ -141,6 +240,7 @@ class DirectStoryGenerator(dspy.Module):
                 word_count=len(text.split()),
                 illustration_prompt=illustration_prompt,
                 present_characters=present_characters,
+                present_entity_ids=present_entity_ids,
             ))
 
         # Sort by spread number
@@ -155,9 +255,9 @@ class DirectStoryGenerator(dspy.Module):
                 file=sys.stderr
             )
 
-        return title, spreads
+        return title, spreads, entity_definitions
 
-    def forward(self, goal: str, debug: bool = False) -> tuple[str, list[StorySpread]]:
+    def forward(self, goal: str, debug: bool = False) -> tuple[str, list[StorySpread], dict[str, EntityDefinition]]:
         """
         Generate a complete story from the given goal.
 
@@ -166,7 +266,7 @@ class DirectStoryGenerator(dspy.Module):
             debug: If True, print debug info
 
         Returns:
-            Tuple of (title, list of StorySpread objects)
+            Tuple of (title, list of StorySpread objects, entity_definitions dict)
         """
         import sys
 
@@ -183,15 +283,17 @@ class DirectStoryGenerator(dspy.Module):
         )
 
         # Parse the output
-        title, spreads = self._parse_story_output(result.story)
+        title, spreads, entity_definitions = self._parse_story_output(result.story)
 
         if debug:
             print(f"DEBUG Generated: '{title}' with {len(spreads)} spreads", file=sys.stderr)
             total_words = sum(s.word_count for s in spreads)
             print(f"DEBUG Total word count: {total_words}", file=sys.stderr)
+            if entity_definitions:
+                print(f"DEBUG Extracted {len(entity_definitions)} entities: {list(entity_definitions.keys())}", file=sys.stderr)
 
         # Validate we got 12 spreads
         if len(spreads) != 12:
             print(f"WARNING: Expected 12 spreads, got {len(spreads)}", file=sys.stderr)
 
-        return title, spreads
+        return title, spreads, entity_definitions
