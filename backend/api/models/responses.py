@@ -1,8 +1,8 @@
 """Pydantic models for API responses."""
 
 from uuid import UUID
-from pydantic import BaseModel, Field, computed_field
-from typing import Optional
+from pydantic import BaseModel, Field, computed_field, model_validator
+from typing import Literal, Optional
 from datetime import datetime
 
 from .enums import GenerationType, JobStatus
@@ -22,22 +22,17 @@ class StorySpreadResponse(BaseModel):
     page_turn_note: Optional[str] = None  # What makes reader want to turn
     illustration_prompt: Optional[str] = None
     illustration_url: Optional[str] = None
+    illustration_status: Literal["complete", "failed", "pending"] = "pending"
     illustration_updated_at: Optional[datetime] = None  # For cache busting after regeneration
     composed_prompt: Optional[str] = None  # Full prompt sent to image model (for dev editing)
 
-
-class QualityJudgmentResponse(BaseModel):
-    """Quality assessment of the story."""
-
-    overall_score: int
-    verdict: str
-    engagement_score: int
-    read_aloud_score: int
-    emotional_truth_score: int
-    coherence_score: int
-    chekhov_score: int
-    has_critical_failures: bool
-    specific_problems: str
+    @model_validator(mode="after")
+    def set_default_illustration_status(self) -> "StorySpreadResponse":
+        """Set default illustration_status based on illustration_url if not explicitly set."""
+        # If illustration_url is present and status is still default, set to complete
+        if self.illustration_url is not None and self.illustration_status == "pending":
+            object.__setattr__(self, "illustration_status", "complete")
+        return self
 
 
 class IllustrationStyleResponse(BaseModel):
@@ -50,14 +45,10 @@ class IllustrationStyleResponse(BaseModel):
     lighting_direction: str = ""
 
 
-class StoryOutlineResponse(BaseModel):
-    """Story outline metadata."""
+class StoryMetadataResponse(BaseModel):
+    """Story metadata for illustration: style, etc."""
 
     title: str
-    characters: str = ""
-    setting: str = ""
-    plot_summary: str = ""
-    spread_count: int = 12  # Number of spreads (typically 12)
     illustration_style: Optional[IllustrationStyleResponse] = None  # For regeneration consistency
 
 
@@ -67,12 +58,13 @@ class CharacterReferenceResponse(BaseModel):
     character_name: str
     character_description: Optional[str] = None
     reference_image_url: Optional[str] = None
+    bible: Optional[dict] = None  # Full CharacterBible for editing
 
 
 class StoryProgressResponse(BaseModel):
     """Progress tracking for story generation."""
 
-    stage: str  # outline, spreads, quality, character_refs, illustrations, failed
+    stage: str  # outline, spreads, character_refs, illustrations, failed
     stage_detail: str  # Human-readable message
     percentage: int  # 0-100, weighted by stage
 
@@ -81,9 +73,6 @@ class StoryProgressResponse(BaseModel):
     characters_completed: Optional[int] = None
     spreads_total: Optional[int] = None
     spreads_completed: Optional[int] = None
-    quality_attempt: Optional[int] = None
-    quality_attempts_max: Optional[int] = None
-    quality_score: Optional[int] = None
 
     # Error context
     warnings: list[str] = Field(default_factory=list)
@@ -110,9 +99,8 @@ class StoryResponse(BaseModel):
     spread_count: Optional[int] = None  # Number of spreads (typically 12)
     attempts: Optional[int] = None
 
-    outline: Optional[StoryOutlineResponse] = None
+    metadata: Optional[StoryMetadataResponse] = None
     spreads: Optional[list[StorySpreadResponse]] = None
-    judgment: Optional[QualityJudgmentResponse] = None
     character_references: Optional[list[CharacterReferenceResponse]] = None
 
     # Progress tracking (populated while running)
@@ -173,3 +161,14 @@ class RegenerateSpreadResponse(BaseModel):
     message: str = Field(
         default="Spread regeneration started. Poll GET /stories/{story_id} for updated illustration."
     )
+
+
+class RegenerateStatusResponse(BaseModel):
+    """Response for regeneration job status."""
+
+    job_id: str
+    status: str  # pending, running, completed, failed
+    created_at: datetime
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    error_message: Optional[str] = None
