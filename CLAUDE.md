@@ -1,86 +1,137 @@
-# Children's Story Generator
+# Children's Story Generator - Claude Guide
 
-AI agent that generates illustrated children's picture books from brief goals/themes. Built with DSPy and FastAPI.
+## Project Overview
+An AI agent that generates high-quality children's picture books from brief goals/themes (e.g., "teach about feedback as a gift" or "explain arteriosclerosis to kids"). Built with DSPy and optimized using GEPA (Reflective Prompt Evolution).
 
-## Tech Stack
-- **Backend**: Python, FastAPI, DSPy, Poetry
-- **Frontend**: React Native (Expo), TypeScript
-- **LLM**: Qwen3-235B via Cerebras (`backend/config/`)
-- **Database**: PostgreSQL with asyncpg
-
-## Commands
-
-```bash
-# Backend
-poetry run pytest tests/unit/ -v          # Unit tests
-poetry run pytest tests/integration/ -v   # Integration tests (requires services)
-poetry add <package>                      # Add dependency (never pip install)
-
-# Frontend
-cd frontend && npx playwright test        # E2E tests (requires APP_PIN in .env)
-```
+## Core Architecture
+- **DSPy Framework**: Modular signatures and programs for story generation
+- **GEPA Optimization**: Reflective prompt evolution on each pipeline component
+- **Multi-stage Pipeline**: Outline → Pages → Quality Judge → Iterate
 
 ## Project Structure
-- `backend/api/` - FastAPI routes, services, database
-- `backend/core/` - DSPy modules, programs, types
-- `backend/metrics/` - Quality evaluation metrics
-- `frontend/app/` - Expo Router screens
-- `tests/unit/`, `tests/integration/` - Test suites
-- `cli/` - CLI entry points
-
-## Key Conventions
-- **API keys**: Use `load_dotenv()`, never read `.env` directly
-- **Dependencies**: Use Poetry (`poetry add`), never pip
-- **Task tracking**: Use `bd` for all planning (not TodoWrite)
-- **Testing**: Run relevant tests before closing implementation work
-
-## Services (systemd)
-
-All services run as **user-level systemd** units (not system-level):
-
-```bash
-# List services
-systemctl --user list-units --type=service | grep -E "stories|expo"
-
-# Manage services
-systemctl --user restart expo-frontend.service
-systemctl --user status stories-backend.service
-journalctl --user -u expo-frontend.service -f  # Follow logs
+```
+childrens_stories/
+├── backend/                  # Python backend
+│   ├── api/                  # FastAPI HTTP layer
+│   │   ├── routes/
+│   │   ├── models/
+│   │   ├── services/
+│   │   └── database/
+│   ├── core/                 # Domain logic (DSPy)
+│   │   ├── signatures/       # DSPy Signatures (inputs/outputs)
+│   │   ├── modules/          # DSPy Modules (reusable components)
+│   │   ├── programs/         # DSPy Programs (composed pipelines)
+│   │   └── types.py          # Domain types
+│   ├── config/               # LLM and image configuration
+│   ├── metrics/              # Evaluation metrics with feedback for GEPA
+│   └── optimization/         # GEPA optimization scripts
+├── frontend/                 # React Native app (Expo) - iPad + web
+│   ├── app/                  # Expo Router screens
+│   ├── components/           # UI components
+│   ├── features/             # Feature modules (data layer)
+│   └── lib/                  # Utilities
+├── cli/                      # CLI entry points
+│   ├── generate_story.py
+│   ├── run_api.py
+│   └── debug_page.py
+├── tests/                    # All tests
+│   ├── unit/                 # Fast unit tests
+│   └── integration/          # Slow LLM integration tests
+├── data/                     # Runtime data (database, stories)
+├── docs/                     # Documentation
+│   └── prototypes/           # UI prototypes (JSX mockups)
+└── output/                   # Generated story outputs
 ```
 
-| Service | Description |
-|---------|-------------|
-| `expo-frontend.service` | Metro bundler + Expo tunnel (port 8081) |
-| `stories-backend.service` | FastAPI backend |
-| `stories-worker.service` | ARQ background worker |
+## Environment & API Keys
+- **IMPORTANT**: API keys are stored in `.env` file at project root
+- **NEVER read `.env` directly** - always use `load_dotenv()` from `python-dotenv`
+- **Primary**: `CEREBRAS_API_KEY` - Uses Qwen3-235B Instruct via Cerebras (fastest, ~1400 tok/s)
+- **Fallbacks**: `OPENROUTER_API_KEY`, `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY`
 
-Service files: `~/.config/systemd/user/*.service`
-
-## Task Tracking with `bd`
-```bash
-bd create --title="..." --type=task|bug|feature
-bd list --status open
-bd ready                    # Next unblocked task
-bd close <id> --reason "..."
+```python
+# Correct way to load API keys
+from dotenv import load_dotenv
+load_dotenv()
+# Keys are now available via os.getenv("CEREBRAS_API_KEY"), etc.
 ```
 
-## Detailed Documentation
-For task-specific guidance, see:
-- `docs/agent/dspy-patterns.md` - DSPy/GEPA optimization patterns
-- `docs/agent/frontend-development.md` - Frontend dev, ports, E2E tests
-- `docs/agent/story-standards.md` - Children's book requirements
+## LLM Configuration
+- **Model**: `qwen-3-235b-a22b-instruct-2507` (pure instruct, no thinking mode)
+- **Provider**: Cerebras Inference (https://inference-docs.cerebras.ai/)
+- **Why Cerebras**: 11x faster than GPU clouds, no thinking mode parsing issues
+- **Note**: If using OpenRouter with Qwen3 thinking models, add `/no_think` to signature docstrings
 
-## Proactive Issue Tracking
+## Children's Book Standards
+- **Spread count**: 12 spreads (a spread = two facing pages; fixed structural requirement)
+- **Word count**: 400-600 words total (ideal), 300-800 acceptable
+- **Per-spread words**: 35-50 words per spread
+- **Structure**: Three-act (25% beginning, 50% middle, 25% end)
+- **Source of truth**: `backend/metrics/story_quality.py` defines scoring; signatures align to it
 
-When you notice bugs, type errors, or issues while working on other tasks, you MUST:
-1. Create a bead for each issue using `bd create --type=bug --title="..."`
-2. Call out the issue to the user in your response
-3. Do NOT ignore issues just because they're "unrelated" or "pre-existing"
+## DSPy & GEPA Patterns
 
-This applies to: TypeScript errors, broken tests, missing dependencies, dead code, security issues, or anything that would break the build or degrade quality.
+### Dual-LM Architecture
+- **Inference LM**: Qwen3-235B Instruct via Cerebras (fast, high-quality creative writing)
+- **Reflection LM**: Strong model for GEPA analysis (gpt-4.1, claude-opus)
 
-## Prohibited
-- Reading `.env` directly (use `load_dotenv()`)
-- Hardcoding API keys
-- Creating stories over 1000 words
-- Using TodoWrite (use `bd` instead)
+### Metric Functions for GEPA
+GEPA requires metrics that return both score AND textual feedback:
+```python
+def metric_with_feedback(example, prediction, trace=None, pred_name=None, pred_trace=None):
+    score = calculate_score(example, prediction)
+    feedback = generate_feedback(example, prediction)
+    return dspy.Prediction(score=score, feedback=feedback)
+```
+
+### Optimization Pattern
+```python
+optimizer = dspy.GEPA(
+    metric=metric_with_feedback,
+    auto="medium",
+    reflection_lm=reflection_lm,
+    track_stats=True
+)
+optimized = optimizer.compile(program, trainset=train, valset=val)
+```
+
+## Absolute Planning Rules
+- **Use `bd` for every task, plan, and follow-up.** No ad-hoc TODO lists, side documents, or checklists.
+- Do NOT use the TodoWrite tool - use `bd` instead for all task tracking.
+- Keep issue titles concise; put detail in descriptions and comments.
+- Break work into dependency-linked issues so `bd ready` always reflects the next unblocked step.
+
+## Essential `bd` Commands
+- Create work: `bd create --title="..." --type=task|bug|feature` (add `-d "description"` for context)
+- Show work: `bd list --status open`, `bd show <id>`, `bd ready`
+- Maintain state: `bd update <id> --status in_progress|open|blocked`, `bd close <id> --reason "..."`
+- Model dependencies: `bd dep add <parent> <child>`, inspect with `bd dep tree <id>`
+
+## Package Management
+- **IMPORTANT**: This project uses Poetry for dependency management
+- Always use `poetry add <package>` to add dependencies (never `pip install`)
+- Run Python code with `poetry run python <script>` or `poetry run pytest`
+- Check dependencies with `poetry show`
+
+## Development Workflow
+1. **Implement baseline** - Get end-to-end pipeline working without optimization
+2. **Create training data** - Goals + reference stories for optimization
+3. **Build metrics** - Feedback-rich metrics for each component
+4. **Run GEPA** - Optimize each component separately
+5. **Compose & test** - Integrate optimized modules
+
+## Key Files to Know
+- `backend/core/signatures/` - Define input/output contracts
+- `backend/core/types.py` - Domain types (Story, Page, etc.)
+- `backend/metrics/` - Quality metrics with feedback for GEPA
+- `backend/api/` - FastAPI routes and services
+- `cli/` - Command-line entry points
+- `.env` - API keys (never read directly!)
+
+## Prohibited Behaviors
+- Do not read `.env` file directly - use `load_dotenv()`
+- Do not hardcode API keys anywhere
+- Do not skip GEPA optimization setup (structure code for it from the start)
+- Do not create stories over 1000 words (industry standard limit)
+- Do not use TodoWrite or maintain parallel planning docs, spreadsheets, or checklists - use `bd` exclusively
+- Do not proceed on assumptions when a high-signal question can resolve uncertainty

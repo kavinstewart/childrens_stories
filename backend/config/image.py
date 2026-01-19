@@ -2,68 +2,15 @@
 Image generation configuration for the Children's Story Generator.
 
 Uses Nano Banana Pro (Gemini 3 Pro Image) for illustration generation.
-
-Includes:
-- Retry with exponential backoff for transient errors (network + API)
 """
 
-import logging
 import os
-
 from dotenv import find_dotenv, load_dotenv
 from google import genai
-from google.genai.errors import ClientError, ServerError
 from google.genai.types import GenerateContentConfig, Modality
-from tenacity import (
-    retry,
-    stop_after_attempt,
-    wait_exponential,
-    retry_if_exception_type,
-    retry_if_exception,
-    before_sleep_log,
-)
 
-# Load environment variables from .env file.
-# Entry points (main.py, worker.py) also call load_dotenv() before importing this module.
-# This call is a safety net for direct imports (e.g., in tests or scripts).
-# load_dotenv() is idempotent so multiple calls are harmless.
+# Load environment variables from .env file (find_dotenv searches parent directories)
 load_dotenv(find_dotenv())
-
-# Logging for retry attempts
-logger = logging.getLogger(__name__)
-
-# Errors that should trigger retry
-RETRYABLE_EXCEPTIONS = (
-    # Network errors
-    ConnectionError,
-    TimeoutError,
-    BrokenPipeError,
-    OSError,  # Catches [Errno 32] Broken pipe
-    # API server errors (503 UNAVAILABLE, etc.)
-    ServerError,
-)
-
-
-def _is_retryable_client_error(exception: BaseException) -> bool:
-    """Check if a ClientError should be retried (only 429 rate limit errors)."""
-    if isinstance(exception, ClientError):
-        # Retry on 429 RESOURCE_EXHAUSTED (rate limit)
-        # ClientError uses 'code' attribute, not 'status'
-        return getattr(exception, "code", None) == 429
-    return False
-
-
-# Retry decorator for image API calls with transient errors
-image_retry = retry(
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=2, min=2, max=10),
-    retry=(
-        retry_if_exception_type(RETRYABLE_EXCEPTIONS)
-        | retry_if_exception(_is_retryable_client_error)
-    ),
-    before_sleep=before_sleep_log(logger, logging.WARNING),
-    reraise=True,
-)
 
 # Image generation constants
 IMAGE_CONSTANTS = {

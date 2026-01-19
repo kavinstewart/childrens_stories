@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 from backend.core.modules.spread_illustrator import SpreadIllustrator
 from backend.core.types import (
     StorySpread,
-    StoryMetadata,
+    StoryOutline,
     StoryReferenceSheets,
     CharacterReferenceSheet,
     CharacterBible,
@@ -62,9 +62,14 @@ def sample_style():
 
 @pytest.fixture
 def sample_outline(sample_character_bible, sample_style):
-    """Story metadata with character bibles."""
-    return StoryMetadata(
+    """A story outline with character bibles."""
+    return StoryOutline(
         title="Luna and the Stars",
+        characters="Luna - a curious 7-year-old girl",
+        setting="A backyard on a summer night",
+        plot_summary="Luna learns to find constellations",
+        spread_breakdown="Spread 1: Luna looks at the sky",
+        goal="Teach about stars",
         character_bibles=[sample_character_bible],
         illustration_style=sample_style,
         style_rationale="Watercolor suits the dreamy night theme",

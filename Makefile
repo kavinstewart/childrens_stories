@@ -4,7 +4,7 @@
 #
 # This Makefile serves as executable documentation for common operations.
 
-.PHONY: help setup run run-fast run-illustrated debug optimize test clean api
+.PHONY: help run run-fast run-illustrated debug optimize test clean api
 
 # Default target - show help
 help:
@@ -19,9 +19,6 @@ help:
 	@echo ""
 	@echo "API:"
 	@echo "  api                  Start the FastAPI server"
-	@echo ""
-	@echo "Setup:"
-	@echo "  setup                Install deps and configure git hooks (run after clone)"
 	@echo ""
 	@echo "Development:"
 	@echo "  debug                Debug page generation"
@@ -67,7 +64,7 @@ print(f'Saved to: {paths[\"output_dir\"]}')"
 
 # Run the FastAPI server
 api:
-	poetry run uvicorn backend.api.main:app --host 0.0.0.0 --port 8000
+	poetry run python cli/run_api.py
 
 # Debug page generation
 debug:
@@ -89,12 +86,6 @@ clean:
 # Install dependencies
 install:
 	poetry install
-
-# Full setup (run after cloning)
-setup: install
-	@echo "Configuring git hooks..."
-	git config core.hooksPath scripts/hooks
-	@echo "Setup complete!"
 
 # Show current configuration
 config:

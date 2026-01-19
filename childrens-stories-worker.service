@@ -7,7 +7,7 @@ Type=simple
 User=kavin
 WorkingDirectory=/home/kavin/childrens_stories
 Environment="PATH=/home/kavin/.cache/pypoetry/virtualenvs/childrens-stories-6rIxPkgJ-py3.12/bin:/usr/local/bin:/usr/bin:/bin"
-ExecStart=/home/kavin/.local/bin/poetry run arq backend.worker.WorkerSettings
+ExecStart=/home/kavin/.cache/pypoetry/virtualenvs/childrens-stories-6rIxPkgJ-py3.12/bin/python cli/run_worker.py
 Restart=always
 RestartSec=5
 
