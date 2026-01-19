@@ -15,18 +15,25 @@ if echo "$CHANGED" | grep -qE "^backend/(worker\.py|api/services/|core/modules/)
   echo ""
   echo "=== Worker code changed, restarting workers ==="
 
-  # Kill existing workers (including orphans)
-  pkill -f "arq backend.worker" 2>/dev/null || true
-  pkill -f "run_worker" 2>/dev/null || true
-  sleep 2
+  # Kill any orphaned workers not managed by systemd
+  # (Don't kill the systemd-managed one - systemctl restart handles that)
+  for pid in $(pgrep -f "arq backend.worker" 2>/dev/null); do
+    # Check if this PID is the systemd-managed worker
+    systemd_pid=$(systemctl --user show -p MainPID --value stories-worker.service 2>/dev/null)
+    if [ "$pid" != "$systemd_pid" ]; then
+      kill "$pid" 2>/dev/null || true
+      echo "Killed orphan worker (PID: $pid)"
+    fi
+  done
+  sleep 1
 
-  # Restart via systemd if available, otherwise start directly
-  if systemctl is-active --quiet childrens-stories-worker 2>/dev/null; then
-    systemctl restart childrens-stories-worker 2>/dev/null && \
-      echo "Workers restarted via systemd" || \
+  # Restart via user-level systemd (the correct service name)
+  if systemctl --user is-active --quiet stories-worker.service 2>/dev/null; then
+    systemctl --user restart stories-worker.service && \
+      echo "Workers restarted via systemd --user" || \
       echo "Warning: Failed to restart workers via systemd"
   else
-    echo "Starting worker directly..."
+    echo "Warning: stories-worker.service not active, starting directly..."
     cd /home/kavin/childrens_stories
     nohup poetry run arq backend.worker.WorkerSettings > /tmp/worker.log 2>&1 &
     echo "Worker started (PID: $!)"
