@@ -12,6 +12,41 @@ from io import BytesIO
 
 
 # =============================================================================
+# Entity Definition Types (Inline Entity Tagging System)
+# =============================================================================
+
+
+@dataclass
+class EntityDefinition:
+    """
+    Definition of an entity extracted from story generation.
+
+    Entity IDs (e.g., @e1, @e2) provide stable, unambiguous references
+    to characters, locations, and other entities throughout a story.
+    """
+
+    entity_id: str  # e.g., "@e1", "@e2"
+    display_name: str  # e.g., "George Washington", "The Wise Owl"
+    entity_type: str  # "character", "location", "object", etc.
+    brief_description: str  # Brief context from story generation
+
+    @property
+    def is_character(self) -> bool:
+        """Check if this entity is a character."""
+        return self.entity_type == "character"
+
+    def __eq__(self, other):
+        if not isinstance(other, EntityDefinition):
+            return False
+        return (
+            self.entity_id == other.entity_id
+            and self.display_name == other.display_name
+            and self.entity_type == other.entity_type
+            and self.brief_description == other.brief_description
+        )
+
+
+# =============================================================================
 # Character Name Matching Helpers
 # =============================================================================
 
@@ -293,6 +328,7 @@ class CharacterReferenceSheet:
     prompt_used: str = ""
     character_description: str = ""  # Age, physical features, etc. from character bible
     bible: Optional["CharacterBible"] = None  # Full character bible for editing
+    entity_id: Optional[str] = None  # Entity ID for new stories (e.g., "@e1")
 
     def to_pil_image(self) -> "Image.Image":
         """Convert to PIL Image for passing to Nano Banana Pro."""
@@ -302,29 +338,43 @@ class CharacterReferenceSheet:
 
 @dataclass
 class StoryReferenceSheets:
-    """All reference sheets for a story."""
+    """All reference sheets for a story.
+
+    For new stories with entity tagging, character_sheets is keyed by entity ID (e.g., "@e1").
+    For legacy stories, it's keyed by character name.
+    """
 
     story_title: str
     character_sheets: dict[str, CharacterReferenceSheet] = field(default_factory=dict)
 
-    def get_sheet(self, character_name: str) -> Optional[CharacterReferenceSheet]:
-        """Get reference sheet by character name.
+    def get_sheet(self, entity_id_or_name: str) -> Optional[CharacterReferenceSheet]:
+        """Get reference sheet by entity ID or character name.
 
-        Uses exact matching with normalization and article-stripping.
-        Also checks aliases stored in the character bible.
-        Does NOT use substring matching to avoid false positives.
+        For new stories: direct dict lookup by entity ID (e.g., "@e1").
+        For legacy stories: name-based matching with aliases.
 
         Args:
-            character_name: Name to search for (e.g., "George Washington" matches "George" if aliased)
+            entity_id_or_name: Entity ID (e.g., "@e1") or character name
 
         Returns:
             CharacterReferenceSheet if found, None otherwise
         """
-        for name, sheet in self.character_sheets.items():
-            # Get aliases from the bible attached to this sheet
-            aliases = getattr(sheet.bible, 'aliases', []) if sheet.bible else []
-            if _names_match(character_name, name, aliases=aliases):
-                return sheet
+        # First, try direct lookup (works for both entity IDs and exact name matches)
+        if entity_id_or_name in self.character_sheets:
+            return self.character_sheets[entity_id_or_name]
+
+        # Fall back to name-based matching for legacy stories (non-@ keys)
+        # Only do this if the query is not an entity ID
+        if not entity_id_or_name.startswith("@"):
+            for key, sheet in self.character_sheets.items():
+                # Skip entity ID keys - they use direct lookup only
+                if key.startswith("@"):
+                    continue
+                # Get aliases from the bible attached to this sheet
+                aliases = getattr(sheet.bible, 'aliases', []) if sheet.bible else []
+                if _names_match(entity_id_or_name, key, aliases=aliases):
+                    return sheet
+
         return None
 
     def get_all_pil_images(self) -> list[tuple[str, "Image.Image"]]:
@@ -356,28 +406,40 @@ class StoryMetadata:
     - Character visual descriptions (bibles) for consistent illustration
     - Selected illustration style
     - Title for reference
+
+    For new stories using entity tagging:
+    - entity_definitions: map of entity ID -> EntityDefinition (all entities)
+    - entity_bibles: map of entity ID -> CharacterBible (character entities only)
     """
 
     title: str
+    # DEPRECATED: Use entity_bibles instead for new stories
     character_bibles: list[CharacterBible] = field(default_factory=list)
     illustration_style: Optional[StyleDefinition] = None
     style_rationale: str = ""
+    # New entity tagging fields (entity ID -> definition)
+    entity_definitions: dict[str, "EntityDefinition"] = field(default_factory=dict)
+    entity_bibles: dict[str, CharacterBible] = field(default_factory=dict)
 
-    def get_character_bible(self, name: str) -> Optional[CharacterBible]:
-        """Find a character bible by name.
+    def get_character_bible(self, name_or_entity_id: str) -> Optional[CharacterBible]:
+        """Find a character bible by entity ID or name.
 
-        Uses exact matching with normalization and article-stripping.
-        Also checks character aliases for flexible matching.
-        Does NOT use substring matching to avoid false positives.
+        For new stories with entity tagging: looks up by entity ID (e.g., "@e1").
+        For legacy stories: uses name-based matching with aliases.
 
         Args:
-            name: Name to search for (e.g., "George Washington" matches "George" if aliased)
+            name_or_entity_id: Entity ID (e.g., "@e1") or character name
 
         Returns:
             CharacterBible if found, None otherwise
         """
+        # First, try entity ID lookup (new system)
+        if name_or_entity_id.startswith("@") and name_or_entity_id in self.entity_bibles:
+            return self.entity_bibles[name_or_entity_id]
+
+        # Fall back to name-based lookup for legacy stories
         for bible in self.character_bibles:
-            if _names_match(name, bible.name, aliases=bible.aliases):
+            if _names_match(name_or_entity_id, bible.name, aliases=bible.aliases):
                 return bible
         return None
 
@@ -398,8 +460,11 @@ class StorySpread:
     illustration_image: Optional[bytes] = None  # Generated illustration for this spread
     was_revised: bool = False  # Backwards compatibility
     # Characters visually present in this spread's illustration (explicit from LLM)
-    # Required for illustration - DirectStoryGenerator must populate this field
+    # DEPRECATED: Use present_entity_ids instead
     present_characters: Optional[list[str]] = None
+    # Entity IDs visually present in this spread's illustration (e.g., ["@e1", "@e2"])
+    # Required for illustration with entity tagging system
+    present_entity_ids: Optional[list[str]] = None
 
     @property
     def page_number(self) -> int:

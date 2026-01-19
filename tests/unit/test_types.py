@@ -29,7 +29,7 @@ class TestBuildIllustrationPrompt:
         assert "Scene: A fox dancing in a meadow" in result
         assert "Lighting: golden hour sunlight." in result
         assert "Wide shot framing with space at bottom for text overlay" in result
-        assert "Maintain exact character identity from reference images above" in result
+        assert "CRITICAL: Any named character in this scene MUST match their reference image EXACTLY" in result
 
     def test_uses_default_style_prefix(self):
         """Should work with default style prefix constant."""
