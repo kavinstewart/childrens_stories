@@ -527,3 +527,84 @@ SPECIES: owl
         # Entity IDs eliminate the need for name matching/aliases
         # BibleGenerator should not have _copy_aliases anymore
         assert not hasattr(bible_generator, '_copy_aliases')
+
+
+# =============================================================================
+# Test 8: CharacterSheetGenerator with Entity IDs
+# =============================================================================
+
+class TestCharacterSheetGeneratorEntityIds:
+    """Tests for CharacterSheetGenerator producing entity ID keyed output."""
+
+    @pytest.fixture
+    def sample_style(self):
+        """Sample illustration style for testing."""
+        return StyleDefinition(
+            name="Watercolor",
+            description="Soft watercolor style",
+            prompt_prefix="Watercolor illustration",
+            best_for=["nature"],
+            lighting_direction="soft daylight",
+        )
+
+    @pytest.fixture
+    def sample_entity_bibles(self):
+        """Sample character bibles keyed by entity ID."""
+        return {
+            "@e1": CharacterBible(
+                name="George Washington",
+                species="human",
+                age_appearance="young boy",
+                body="small and curious",
+            ),
+            "@e2": CharacterBible(
+                name="The Wise Owl",
+                species="owl",
+                age_appearance="elderly",
+                body="large feathered",
+            ),
+        }
+
+    def test_generate_for_story_with_entity_bibles(self, sample_style, sample_entity_bibles):
+        """Should generate reference sheets keyed by entity ID."""
+        from backend.core.modules.character_sheet_generator import CharacterSheetGenerator
+
+        with patch.object(CharacterSheetGenerator, '_generate_image', return_value=b'fake_image'):
+            generator = CharacterSheetGenerator()
+
+            metadata = StoryMetadata(
+                title="Test Story",
+                entity_bibles=sample_entity_bibles,
+                illustration_style=sample_style,
+            )
+
+            sheets = generator.generate_for_story(metadata)
+
+            # Sheets should be keyed by entity ID
+            assert "@e1" in sheets.character_sheets
+            assert "@e2" in sheets.character_sheets
+
+            # Each sheet should have the entity_id field set
+            assert sheets.character_sheets["@e1"].entity_id == "@e1"
+            assert sheets.character_sheets["@e2"].entity_id == "@e2"
+
+    def test_sheet_lookup_by_entity_id(self, sample_style, sample_entity_bibles):
+        """Should look up sheets by entity ID."""
+        from backend.core.modules.character_sheet_generator import CharacterSheetGenerator
+
+        with patch.object(CharacterSheetGenerator, '_generate_image', return_value=b'fake_image'):
+            generator = CharacterSheetGenerator()
+
+            metadata = StoryMetadata(
+                title="Test Story",
+                entity_bibles=sample_entity_bibles,
+                illustration_style=sample_style,
+            )
+
+            sheets = generator.generate_for_story(metadata)
+
+            # Direct lookup by entity ID
+            sheet = sheets.get_sheet("@e1")
+            assert sheet is not None
+            assert sheet.character_name == "George Washington"
+            assert sheet.entity_id == "@e1"

@@ -70,8 +70,22 @@ Layout: Front view, 3/4 view, side profile (all full body), plus 4 expression he
         )
         return extract_image_from_response(response)
 
-    def generate_reference(self, bible: CharacterBible, illustration_style: StyleDefinition) -> CharacterReferenceSheet:
-        """Generate a character model sheet reference image."""
+    def generate_reference(
+        self,
+        bible: CharacterBible,
+        illustration_style: StyleDefinition,
+        entity_id: str = None,
+    ) -> CharacterReferenceSheet:
+        """Generate a character model sheet reference image.
+
+        Args:
+            bible: Character visual description
+            illustration_style: Style to use for generation
+            entity_id: Optional entity ID (e.g., "@e1") for new entity system
+
+        Returns:
+            CharacterReferenceSheet with generated image
+        """
         if not illustration_style:
             raise ValueError("illustration_style is required")
 
@@ -91,6 +105,7 @@ Layout: Front view, 3/4 view, side profile (all full body), plus 4 expression he
             prompt_used=prompt,
             character_description=description,
             bible=bible,  # Store full bible for editing (story-37l6)
+            entity_id=entity_id,  # Entity ID for new entity tagging system
         )
 
     def generate_for_story(
@@ -101,6 +116,9 @@ Layout: Front view, 3/4 view, side profile (all full body), plus 4 expression he
     ) -> StoryReferenceSheets:
         """
         Generate reference images for all characters in a story (in parallel).
+
+        Uses entity_bibles (new system, keyed by entity ID) if populated,
+        otherwise falls back to character_bibles (legacy, keyed by name).
 
         Args:
             outline: Story outline containing character bibles
@@ -117,7 +135,23 @@ Layout: Front view, 3/4 view, side profile (all full body), plus 4 expression he
 
         # Use the illustration style from the outline
         illustration_style = outline.illustration_style
-        total_characters = len(outline.character_bibles)
+
+        # Check if using new entity_bibles system or legacy character_bibles
+        use_entity_ids = bool(outline.entity_bibles)
+
+        if use_entity_ids:
+            # New system: entity_bibles is dict[entity_id, CharacterBible]
+            bibles_to_generate = list(outline.entity_bibles.items())
+            total_characters = len(bibles_to_generate)
+        else:
+            # Legacy: character_bibles is list[CharacterBible]
+            bibles_to_generate = [(None, bible) for bible in outline.character_bibles]
+            total_characters = len(bibles_to_generate)
+
+        if total_characters == 0:
+            if debug:
+                print("No characters to generate references for", file=sys.stderr)
+            return sheets
 
         if debug and illustration_style:
             print(f"Using illustration style: {illustration_style.name}", file=sys.stderr)
@@ -125,33 +159,37 @@ Layout: Front view, 3/4 view, side profile (all full body), plus 4 expression he
         if on_progress:
             on_progress("character_refs", f"Generating {total_characters} character references...", 0, total_characters)
 
-        def generate_one(bible):
+        def generate_one(entity_id_and_bible):
             """Generate reference for a single character."""
+            entity_id, bible = entity_id_and_bible
             try:
-                sheet = self.generate_reference(bible, illustration_style)
-                return bible.name, sheet, None
+                sheet = self.generate_reference(bible, illustration_style, entity_id=entity_id)
+                # Key by entity_id if available, otherwise by name
+                key = entity_id if entity_id else bible.name
+                return key, sheet, None
             except Exception as e:
-                return bible.name, None, e
+                key = entity_id if entity_id else bible.name
+                return key, None, e
 
         # Generate all character references in parallel
         with concurrent.futures.ThreadPoolExecutor(max_workers=min(total_characters, 4)) as executor:
-            futures = {executor.submit(generate_one, bible): bible for bible in outline.character_bibles}
+            futures = {executor.submit(generate_one, item): item for item in bibles_to_generate}
 
             completed = 0
             for future in concurrent.futures.as_completed(futures):
-                name, sheet, error = future.result()
+                key, sheet, error = future.result()
                 completed += 1
 
                 if sheet:
-                    sheets.character_sheets[name] = sheet
+                    sheets.character_sheets[key] = sheet
                     if debug:
-                        print(f"  Done ({completed}/{total_characters}): {name} ({len(sheet.reference_image)} bytes)", file=sys.stderr)
+                        print(f"  Done ({completed}/{total_characters}): {key} ({len(sheet.reference_image)} bytes)", file=sys.stderr)
                 else:
                     if debug:
-                        print(f"  FAILED ({completed}/{total_characters}): {name} - {error}", file=sys.stderr)
+                        print(f"  FAILED ({completed}/{total_characters}): {key} - {error}", file=sys.stderr)
 
                 if on_progress:
-                    on_progress("character_refs", f"Created {name}", completed, total_characters)
+                    on_progress("character_refs", f"Created {key}", completed, total_characters)
 
         # Final progress update
         if on_progress:
