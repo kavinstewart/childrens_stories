@@ -608,3 +608,167 @@ class TestCharacterSheetGeneratorEntityIds:
             assert sheet is not None
             assert sheet.character_name == "George Washington"
             assert sheet.entity_id == "@e1"
+
+
+# =============================================================================
+# Test 9: SpreadIllustrator with Entity IDs
+# =============================================================================
+
+class TestSpreadIllustratorEntityIds:
+    """Tests for SpreadIllustrator using direct entity ID lookup."""
+
+    @pytest.fixture
+    def sample_style(self):
+        """Sample illustration style."""
+        return StyleDefinition(
+            name="Watercolor",
+            description="Soft watercolor style",
+            prompt_prefix="Watercolor illustration",
+            best_for=["nature"],
+            lighting_direction="soft daylight",
+        )
+
+    @pytest.fixture
+    def sample_entity_definitions(self):
+        """Sample entity definitions."""
+        return {
+            "@e1": EntityDefinition("@e1", "George Washington", "character", "young boy"),
+            "@e2": EntityDefinition("@e2", "The Wise Owl", "character", "elderly owl"),
+        }
+
+    @pytest.fixture
+    def sample_entity_bibles(self):
+        """Sample character bibles keyed by entity ID."""
+        return {
+            "@e1": CharacterBible(
+                name="George Washington",
+                species="human",
+                age_appearance="young boy",
+            ),
+            "@e2": CharacterBible(
+                name="The Wise Owl",
+                species="owl",
+                age_appearance="elderly",
+            ),
+        }
+
+    @pytest.fixture
+    def sample_reference_sheets(self, sample_entity_bibles):
+        """Sample reference sheets keyed by entity ID."""
+        # Create a valid PNG image (1x1 white pixel)
+        from PIL import Image
+        import io
+        img = Image.new('RGB', (100, 100), color='white')
+        img_bytes = io.BytesIO()
+        img.save(img_bytes, format='PNG')
+        fake_png = img_bytes.getvalue()
+
+        sheets = StoryReferenceSheets(story_title="Test Story")
+        sheets.character_sheets["@e1"] = CharacterReferenceSheet(
+            character_name="George Washington",
+            reference_image=fake_png,
+            entity_id="@e1",
+            bible=sample_entity_bibles["@e1"],
+        )
+        sheets.character_sheets["@e2"] = CharacterReferenceSheet(
+            character_name="The Wise Owl",
+            reference_image=fake_png,
+            entity_id="@e2",
+            bible=sample_entity_bibles["@e2"],
+        )
+        return sheets
+
+    def test_get_characters_for_spread_with_entity_ids(
+        self, sample_style, sample_entity_definitions, sample_entity_bibles
+    ):
+        """Should use present_entity_ids for direct lookup."""
+        from backend.core.modules.spread_illustrator import SpreadIllustrator
+
+        spread = StorySpread(
+            spread_number=1,
+            text="George met the owl.",
+            word_count=4,
+            present_entity_ids=["@e1", "@e2"],  # New entity ID field
+        )
+
+        metadata = StoryMetadata(
+            title="Test",
+            entity_definitions=sample_entity_definitions,
+            entity_bibles=sample_entity_bibles,
+            illustration_style=sample_style,
+        )
+
+        illustrator = SpreadIllustrator()
+        characters = illustrator._get_characters_for_spread(spread, metadata)
+
+        # Should return the entity IDs directly
+        assert characters == ["@e1", "@e2"]
+
+    def test_get_characters_fallback_for_legacy_spread(
+        self, sample_style
+    ):
+        """Should fall back to text-based detection for legacy spreads."""
+        from backend.core.modules.spread_illustrator import SpreadIllustrator
+
+        # Legacy spread without entity IDs
+        spread = StorySpread(
+            spread_number=1,
+            text="George met the owl.",
+            word_count=4,
+            present_characters=["George", "Owl"],  # Legacy field
+            present_entity_ids=None,
+        )
+
+        # Legacy metadata without entity_bibles
+        metadata = StoryMetadata(
+            title="Test",
+            character_bibles=[
+                CharacterBible(name="George", species="human"),
+                CharacterBible(name="Owl", species="owl"),
+            ],
+            illustration_style=sample_style,
+        )
+
+        illustrator = SpreadIllustrator()
+        characters = illustrator._get_characters_for_spread(spread, metadata)
+
+        # Should fall back to present_characters for legacy
+        assert "George" in characters
+        assert "Owl" in characters
+
+    def test_build_contents_with_entity_ids(
+        self, sample_style, sample_entity_definitions, sample_entity_bibles, sample_reference_sheets
+    ):
+        """Should build contents using entity ID lookup."""
+        from backend.core.modules.spread_illustrator import SpreadIllustrator
+        from PIL import Image
+
+        spread = StorySpread(
+            spread_number=1,
+            text="George met the owl.",
+            word_count=4,
+            illustration_prompt="Boy meeting an owl",
+            present_entity_ids=["@e1", "@e2"],
+        )
+
+        metadata = StoryMetadata(
+            title="Test",
+            entity_definitions=sample_entity_definitions,
+            entity_bibles=sample_entity_bibles,
+            illustration_style=sample_style,
+        )
+
+        illustrator = SpreadIllustrator()
+        prompt = "Test prompt"
+
+        contents = illustrator._build_contents(spread, metadata, sample_reference_sheets, prompt)
+
+        # Should include reference images for @e1 and @e2
+        # Contents is a list with text and PIL images
+        image_count = sum(1 for c in contents if isinstance(c, Image.Image))
+        text_count = sum(1 for c in contents if isinstance(c, str))
+
+        # Should have at least 2 images (one per character reference)
+        assert image_count >= 2
+        # Should have at least 1 text block (the prompt)
+        assert text_count >= 1

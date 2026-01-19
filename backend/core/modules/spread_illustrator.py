@@ -276,19 +276,25 @@ class SpreadIllustrator:
         Determine which characters should have reference images included for this spread.
 
         Priority:
-        1. Use spread.present_characters if populated (from LLM [Characters:] field)
-        2. Fall back to safe text-based detection (word-boundary matching only)
+        1. Use spread.present_entity_ids if populated (new entity tagging system)
+        2. Use spread.present_characters if populated (legacy [Characters:] field)
+        3. Fall back to safe text-based detection (word-boundary matching only)
 
         Returns:
-            List of canonical character names to include reference images for
+            List of entity IDs (e.g., "@e1") or character names to include reference images for
         """
-        # Priority 1: Use explicit present_characters if available
+        # Priority 1: Use explicit present_entity_ids if available (new entity tagging)
+        if spread.present_entity_ids is not None:
+            # With entity tagging, the IDs are already the keys to use for lookup
+            return spread.present_entity_ids
+
+        # Priority 2: Use explicit present_characters if available (legacy)
         if spread.present_characters is not None:
             return self._resolve_present_characters(
                 spread.present_characters, outline.character_bibles
             )
 
-        # Priority 2: Fallback to text-based detection with SAFE matching
+        # Priority 3: Fallback to text-based detection with SAFE matching
         # WARNING: This path means [Characters:] was missing from story generation
         print(
             f"WARNING: Spread {spread.spread_number} has no present_characters. "
