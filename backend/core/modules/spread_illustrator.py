@@ -16,12 +16,8 @@ import re
 import sys
 from typing import TYPE_CHECKING, Optional, Tuple
 
-from backend.config import get_image_client, get_image_model, get_image_config, IMAGE_CONSTANTS, extract_image_from_response, image_retry
-from ..types import (
-    StoryMetadata, StorySpread, StoryReferenceSheets,
-    build_illustration_prompt, DEFAULT_LIGHTING,
-    _normalize_name, _strip_leading_article, build_character_lookup, name_matches_in_text,
-)
+from backend.config import get_image_client, get_image_model, get_image_config, IMAGE_CONSTANTS, extract_image_from_response
+from ..types import StoryOutline, StorySpread, StoryReferenceSheets
 
 # Stopwords that should never be used for character matching
 # These are common words that appear in text but are not character names
@@ -55,10 +51,79 @@ class SpreadIllustrator:
         self.model = get_image_model()
         self.config = get_image_config()
 
+    # =========================================================================
+    # Character Matching Helpers (Bead 1 & 2 fixes)
+    # =========================================================================
+
+    @staticmethod
+    def _normalize(s: str) -> str:
+        """Normalize a string for matching: lowercase, strip, collapse whitespace."""
+        return " ".join(s.lower().strip().split())
+
+    @staticmethod
+    def _strip_leading_article(s: str) -> str:
+        """Remove leading 'the ', 'a ', 'an ' from a string."""
+        normalized = s.lower().strip()
+        for article in ("the ", "a ", "an "):
+            if normalized.startswith(article):
+                return normalized[len(article):].strip()
+        return normalized
+
+    def _build_character_lookup(self, character_bibles: list) -> dict[str, str]:
+        """
+        Build a lookup dict mapping normalized names (and variants) to canonical names.
+
+        Returns:
+            Dict mapping normalized name variants -> canonical character name
+        """
+        lookup = {}
+        for bible in character_bibles:
+            canonical = bible.name
+            # Add normalized canonical name
+            normalized = self._normalize(canonical)
+            lookup[normalized] = canonical
+            # Add article-stripped variant
+            stripped = self._strip_leading_article(canonical)
+            if stripped != normalized:
+                lookup[stripped] = canonical
+        return lookup
+
+    def _name_matches_in_text(self, character_name: str, text: str) -> bool:
+        """
+        Check if a character name (or article-stripped variant) appears as whole word(s) in text.
+
+        Uses word-boundary regex matching to avoid false positives like "He" matching "The".
+        For multi-word names, matches the whole phrase as a unit.
+
+        Args:
+            character_name: The canonical character name (e.g., "The Blue Bird")
+            text: The text to search in
+
+        Returns:
+            True if the name appears as whole word(s), False otherwise
+        """
+        text_lower = text.lower()
+        name_normalized = self._normalize(character_name)
+
+        # Try matching the full name with word boundaries
+        # \b ensures we match whole words only
+        pattern = r'\b' + re.escape(name_normalized) + r'\b'
+        if re.search(pattern, text_lower):
+            return True
+
+        # Try matching article-stripped version (e.g., "Blue Bird" for "The Blue Bird")
+        name_stripped = self._strip_leading_article(character_name)
+        if name_stripped != name_normalized:
+            pattern_stripped = r'\b' + re.escape(name_stripped) + r'\b'
+            if re.search(pattern_stripped, text_lower):
+                return True
+
+        return False
+
     def _build_scene_prompt(
         self,
         spread: StorySpread,
-        outline: StoryMetadata,
+        outline: StoryOutline,
     ) -> str:
         """
         Build scene prompt optimized for Nano Banana Pro.
@@ -69,21 +134,29 @@ class SpreadIllustrator:
         - Clear style specification without conflicts
         - Identity locking for character consistency
         """
-        # Get style info (style is always set by StoryGenerator)
+        # Get style info (style is always set by OutlineGenerator)
         if not outline.illustration_style:
-            raise ValueError("illustration_style is required - StoryGenerator should always set this")
+            raise ValueError("illustration_style is required - OutlineGenerator should always set this")
 
         style = outline.illustration_style
-        return build_illustration_prompt(
-            illustration_prompt=spread.illustration_prompt,
-            style_prefix=style.prompt_prefix,
-            lighting=style.lighting_direction or DEFAULT_LIGHTING,
-        )
+        style_direction = style.prompt_prefix
+        lighting = style.lighting_direction or "soft diffused natural light with gentle shadows"
+
+        # Build concise, narrative prompt (Nano Banana Pro prefers <25 words for core direction)
+        prompt = f"""{style_direction}, 16:9 double-page spread composition.
+
+Scene: {spread.illustration_prompt}
+
+Setting: {outline.setting}. Lighting: {lighting}.
+
+Wide shot framing with space at bottom for text overlay. Maintain exact character identity from reference images above."""
+
+        return prompt
 
     def illustrate_spread(
         self,
         spread: StorySpread,
-        outline: StoryMetadata,
+        outline: StoryOutline,
         reference_sheets: Optional[StoryReferenceSheets] = None,
         debug: bool = False,
         custom_prompt: Optional[str] = None,
@@ -105,6 +178,8 @@ class SpreadIllustrator:
         Returns:
             PNG/JPEG image bytes
         """
+        import sys
+
         # Use custom prompt if provided, otherwise build from template
         if custom_prompt:
             scene_prompt = custom_prompt
@@ -127,7 +202,7 @@ class SpreadIllustrator:
     def illustrate_story(
         self,
         spreads: list[StorySpread],
-        outline: StoryMetadata,
+        outline: StoryOutline,
         reference_sheets: Optional[StoryReferenceSheets] = None,
         debug: bool = False,
         on_progress: callable = None,
@@ -145,6 +220,7 @@ class SpreadIllustrator:
         Returns:
             List of StorySpread objects with illustration_image populated
         """
+        import sys
         import concurrent.futures
 
         total_spreads = len(spreads)
@@ -220,7 +296,7 @@ class SpreadIllustrator:
         """
         Resolve present_characters names to canonical character bible names.
 
-        Uses normalization, article-stripping, and alias matching for flexible resolution.
+        Uses normalization and article-stripping for flexible matching.
         Unknown names are logged and skipped (no fuzzy/substring matching).
 
         Args:
@@ -230,35 +306,20 @@ class SpreadIllustrator:
         Returns:
             List of canonical character names that were successfully resolved
         """
-        from ..types import _names_match
-
-        lookup = build_character_lookup(character_bibles)
+        lookup = self._build_character_lookup(character_bibles)
         resolved = []
 
         for name in present_characters:
-            # Try normalized name in lookup (includes exact alias matches)
-            normalized = _normalize_name(name)
+            # Try normalized name
+            normalized = self._normalize(name)
             if normalized in lookup:
                 resolved.append(lookup[normalized])
                 continue
 
             # Try article-stripped version
-            stripped = _strip_leading_article(name)
+            stripped = self._strip_leading_article(name)
             if stripped in lookup:
                 resolved.append(lookup[stripped])
-                continue
-
-            # Try matching against each character bible using _names_match with aliases
-            # This handles cases where query is a variant not in the exact alias list
-            # e.g., "George Washington" matching alias "General George Washington"
-            found = False
-            for bible in character_bibles:
-                if _names_match(name, bible.name, aliases=bible.aliases):
-                    resolved.append(bible.name)
-                    found = True
-                    break
-
-            if found:
                 continue
 
             # Unknown character - log and skip (no fuzzy matching!)
@@ -271,7 +332,7 @@ class SpreadIllustrator:
 
         return resolved
 
-    def _get_characters_for_spread(self, spread: StorySpread, outline: StoryMetadata) -> list[str]:
+    def _get_characters_for_spread(self, spread: StorySpread, outline: StoryOutline) -> list[str]:
         """
         Determine which characters should have reference images included for this spread.
 
@@ -302,7 +363,7 @@ class SpreadIllustrator:
 
         for bible in outline.character_bibles:
             # Use safe word-boundary matching (NOT substring matching!)
-            if name_matches_in_text(bible.name, combined_text):
+            if self._name_matches_in_text(bible.name, combined_text):
                 matched_characters.append(bible.name)
 
         return matched_characters
@@ -310,7 +371,7 @@ class SpreadIllustrator:
     def _build_contents(
         self,
         spread: StorySpread,
-        outline: StoryMetadata,
+        outline: StoryOutline,
         reference_sheets: Optional[StoryReferenceSheets],
         scene_prompt: str,
     ) -> list:
@@ -351,7 +412,6 @@ class SpreadIllustrator:
         contents.append(scene_prompt)
         return contents
 
-    @image_retry
     def _generate_image(self, contents: list) -> bytes:
         """Generate image from multimodal contents."""
         response = self.client.models.generate_content(
@@ -364,7 +424,7 @@ class SpreadIllustrator:
     def illustrate_spread_with_qa(
         self,
         spread: StorySpread,
-        outline: StoryMetadata,
+        outline: StoryOutline,
         reference_sheets: Optional[StoryReferenceSheets] = None,
         max_attempts: int = 3,
         debug: bool = False,
@@ -382,6 +442,7 @@ class SpreadIllustrator:
         Returns:
             Tuple of (image_bytes, qa_result)
         """
+        import sys
         from .image_qa import ImageQA, QAVerdict
 
         qa = ImageQA(max_regeneration_attempts=max_attempts)
@@ -439,7 +500,7 @@ class SpreadIllustrator:
     def illustrate_story_with_qa(
         self,
         spreads: list[StorySpread],
-        outline: StoryMetadata,
+        outline: StoryOutline,
         reference_sheets: Optional[StoryReferenceSheets] = None,
         max_attempts_per_spread: int = 3,
         debug: bool = False,
@@ -459,6 +520,7 @@ class SpreadIllustrator:
         Returns:
             Tuple of (spreads with illustrations, qa_summary dict)
         """
+        import sys
         import concurrent.futures
         import threading
         from .image_qa import QAVerdict
