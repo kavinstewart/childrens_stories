@@ -1,14 +1,14 @@
 """
-Module for generating character reference images using Nano Banana Pro.
+Module for generating entity reference images using Nano Banana Pro.
 
-Generates character model sheets (turnarounds) for each character to ensure
+Generates entity model sheets (turnarounds) for each entity to ensure
 visual consistency across all story illustrations. Optimized for Nano Banana Pro
 following Google's recommended prompting practices.
 """
 
 from backend.config import get_image_client, get_image_model, get_image_config, extract_image_from_response, image_retry
 from ..types import (
-    CharacterBible,
+    EntityBible,
     StoryMetadata,
     StyleDefinition,
     CharacterReferenceSheet,
@@ -18,10 +18,10 @@ from ..types import (
 
 class CharacterSheetGenerator:
     """
-    Generate character reference images using Nano Banana Pro.
+    Generate entity reference images using Nano Banana Pro.
 
     Creates model sheet turnarounds that serve as visual anchors
-    for consistent character appearance across all story illustrations.
+    for consistent entity appearance across all story illustrations.
     """
 
     def __init__(self):
@@ -29,7 +29,7 @@ class CharacterSheetGenerator:
         self.model = get_image_model()
         self.config = get_image_config()
 
-    def _build_reference_prompt(self, bible: CharacterBible, illustration_style: StyleDefinition) -> str:
+    def _build_reference_prompt(self, bible: EntityBible, illustration_style: StyleDefinition) -> str:
         """
         Build concise prompt for character model sheet, optimized for Nano Banana Pro.
 
@@ -72,16 +72,16 @@ Layout: Front view, 3/4 view, side profile (all full body), plus 4 expression he
 
     def generate_reference(
         self,
-        bible: CharacterBible,
+        bible: EntityBible,
         illustration_style: StyleDefinition,
         entity_id: str = None,
     ) -> CharacterReferenceSheet:
-        """Generate a character model sheet reference image.
+        """Generate an entity model sheet reference image.
 
         Args:
-            bible: Character visual description
+            bible: Entity visual description
             illustration_style: Style to use for generation
-            entity_id: Optional entity ID (e.g., "@e1") for new entity system
+            entity_id: Optional entity ID (e.g., "@e1") for entity system
 
         Returns:
             CharacterReferenceSheet with generated image
@@ -115,18 +115,18 @@ Layout: Front view, 3/4 view, side profile (all full body), plus 4 expression he
         on_progress: callable = None,
     ) -> StoryReferenceSheets:
         """
-        Generate reference images for all characters in a story (in parallel).
+        Generate reference images for all entities in a story (in parallel).
 
         Uses entity_bibles (new system, keyed by entity ID) if populated,
         otherwise falls back to character_bibles (legacy, keyed by name).
 
         Args:
-            outline: Story outline containing character bibles
+            outline: Story outline containing entity bibles
             debug: Print progress info
             on_progress: Optional callback(stage, detail, completed, total) for progress updates
 
         Returns:
-            StoryReferenceSheets containing all character reference images
+            StoryReferenceSheets containing all entity reference images
         """
         import sys
         import concurrent.futures
@@ -140,27 +140,27 @@ Layout: Front view, 3/4 view, side profile (all full body), plus 4 expression he
         use_entity_ids = bool(outline.entity_bibles)
 
         if use_entity_ids:
-            # New system: entity_bibles is dict[entity_id, CharacterBible]
+            # New system: entity_bibles is dict[entity_id, EntityBible]
             bibles_to_generate = list(outline.entity_bibles.items())
-            total_characters = len(bibles_to_generate)
+            total_entities = len(bibles_to_generate)
         else:
-            # Legacy: character_bibles is list[CharacterBible]
+            # Legacy: character_bibles is list[EntityBible]
             bibles_to_generate = [(None, bible) for bible in outline.character_bibles]
-            total_characters = len(bibles_to_generate)
+            total_entities = len(bibles_to_generate)
 
-        if total_characters == 0:
+        if total_entities == 0:
             if debug:
-                print("No characters to generate references for", file=sys.stderr)
+                print("No entities to generate references for", file=sys.stderr)
             return sheets
 
         if debug and illustration_style:
             print(f"Using illustration style: {illustration_style.name}", file=sys.stderr)
 
         if on_progress:
-            on_progress("character_refs", f"Generating {total_characters} character references...", 0, total_characters)
+            on_progress("entity_refs", f"Generating {total_entities} entity references...", 0, total_entities)
 
         def generate_one(entity_id_and_bible):
-            """Generate reference for a single character."""
+            """Generate reference for a single entity."""
             entity_id, bible = entity_id_and_bible
             try:
                 sheet = self.generate_reference(bible, illustration_style, entity_id=entity_id)
@@ -171,8 +171,8 @@ Layout: Front view, 3/4 view, side profile (all full body), plus 4 expression he
                 key = entity_id if entity_id else bible.name
                 return key, None, e
 
-        # Generate all character references in parallel
-        with concurrent.futures.ThreadPoolExecutor(max_workers=min(total_characters, 4)) as executor:
+        # Generate all entity references in parallel
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(total_entities, 4)) as executor:
             futures = {executor.submit(generate_one, item): item for item in bibles_to_generate}
 
             completed = 0
@@ -183,16 +183,16 @@ Layout: Front view, 3/4 view, side profile (all full body), plus 4 expression he
                 if sheet:
                     sheets.character_sheets[key] = sheet
                     if debug:
-                        print(f"  Done ({completed}/{total_characters}): {key} ({len(sheet.reference_image)} bytes)", file=sys.stderr)
+                        print(f"  Done ({completed}/{total_entities}): {key} ({len(sheet.reference_image)} bytes)", file=sys.stderr)
                 else:
                     if debug:
-                        print(f"  FAILED ({completed}/{total_characters}): {key} - {error}", file=sys.stderr)
+                        print(f"  FAILED ({completed}/{total_entities}): {key} - {error}", file=sys.stderr)
 
                 if on_progress:
-                    on_progress("character_refs", f"Created {key}", completed, total_characters)
+                    on_progress("entity_refs", f"Created {key}", completed, total_entities)
 
         # Final progress update
         if on_progress:
-            on_progress("character_refs", "Character references complete", total_characters, total_characters)
+            on_progress("entity_refs", "Entity references complete", total_entities, total_entities)
 
         return sheets

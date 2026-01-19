@@ -1,8 +1,8 @@
 """
-DSPy Module for generating character bibles from entity definitions.
+DSPy Module for generating entity bibles from entity definitions.
 
 Inline Entity Tagging workflow: after DirectStoryGenerator outputs entity
-definitions, generate visual bibles for character entities for illustration
+definitions, generate visual bibles for entities for illustration
 consistency. Bibles are keyed by entity ID for direct lookup.
 """
 
@@ -10,36 +10,32 @@ import re
 import dspy
 from typing import Optional
 
-from ..types import CharacterBible, EntityDefinition
-from ..signatures.character_bible import CharacterBibleSignature
+from ..types import EntityBible, EntityDefinition
+from ..signatures.entity_bible import EntityBibleSignature
 
 
 class BibleGenerator(dspy.Module):
     """
-    Generate character visual bibles from entity definitions.
+    Generate entity visual bibles from entity definitions.
 
     Takes entity definitions from DirectStoryGenerator and generates
-    detailed visual descriptions for character entities. Bibles are
-    keyed by entity ID for direct lookup during illustration.
+    detailed visual descriptions for entities. Bibles are keyed by
+    entity ID for direct lookup during illustration.
     """
 
     def __init__(self):
         super().__init__()
-        self.generate = dspy.ChainOfThought(CharacterBibleSignature)
+        self.generate = dspy.ChainOfThought(EntityBibleSignature)
 
     def _format_entity_definitions(self, entity_definitions: dict[str, EntityDefinition]) -> str:
-        """Format entity definitions for the signature input.
-
-        Only includes character-type entities.
-        """
+        """Format entity definitions for the signature input."""
         lines = []
         for entity_id, entity in entity_definitions.items():
-            if entity.is_character:
-                lines.append(f"NAME: {entity.display_name} | DETAILS: {entity.brief_description}")
+            lines.append(f"NAME: {entity.display_name} | DETAILS: {entity.brief_description}")
         return "\n".join(lines)
 
-    def _parse_character_bibles(self, bibles_text: str) -> list[CharacterBible]:
-        """Parse the raw character bibles text into structured CharacterBible objects."""
+    def _parse_entity_bibles(self, bibles_text: str) -> list[EntityBible]:
+        """Parse the raw entity bibles text into structured EntityBible objects."""
         bibles = []
         if not bibles_text:
             return bibles
@@ -51,7 +47,7 @@ class BibleGenerator(dspy.Module):
             if not section.strip():
                 continue
 
-            bible = CharacterBible(name="Unknown")
+            bible = EntityBible(name="Unknown")
 
             for line in section.split('\n'):
                 line = line.strip()
@@ -92,9 +88,9 @@ class BibleGenerator(dspy.Module):
 
     def _match_bibles_to_entity_ids(
         self,
-        bibles: list[CharacterBible],
+        bibles: list[EntityBible],
         entity_definitions: dict[str, EntityDefinition],
-    ) -> dict[str, CharacterBible]:
+    ) -> dict[str, EntityBible]:
         """Match parsed bibles to entity IDs by display name.
 
         Returns dict keyed by entity ID for direct lookup.
@@ -104,9 +100,8 @@ class BibleGenerator(dspy.Module):
         # Build lookup from display name -> entity_id
         name_to_entity_id = {}
         for entity_id, entity in entity_definitions.items():
-            if entity.is_character:
-                # Normalize for matching
-                name_to_entity_id[entity.display_name.lower().strip()] = entity_id
+            # Normalize for matching
+            name_to_entity_id[entity.display_name.lower().strip()] = entity_id
 
         for bible in bibles:
             bible_name_lower = bible.name.lower().strip()
@@ -122,9 +117,9 @@ class BibleGenerator(dspy.Module):
         story_text: str,
         entity_definitions: dict[str, EntityDefinition],
         debug: bool = False
-    ) -> dict[str, CharacterBible]:
+    ) -> dict[str, EntityBible]:
         """
-        Generate character bibles from entity definitions.
+        Generate entity bibles from entity definitions.
 
         Args:
             title: The story title
@@ -133,39 +128,33 @@ class BibleGenerator(dspy.Module):
             debug: If True, print debug info
 
         Returns:
-            Dict of entity_id -> CharacterBible (only character entities)
+            Dict of entity_id -> EntityBible
         """
         import sys
 
-        # Filter to only character entities
-        character_entities = {
-            eid: entity for eid, entity in entity_definitions.items()
-            if entity.is_character
-        }
-
-        if not character_entities:
+        if not entity_definitions:
             if debug:
-                print("DEBUG No character entities to generate bibles for", file=sys.stderr)
+                print("DEBUG No entities to generate bibles for", file=sys.stderr)
             return {}
 
         if debug:
-            print(f"DEBUG Generating bibles for {len(character_entities)} character entities", file=sys.stderr)
+            print(f"DEBUG Generating bibles for {len(entity_definitions)} entities", file=sys.stderr)
 
-        formatted_characters = self._format_entity_definitions(character_entities)
+        formatted_entities = self._format_entity_definitions(entity_definitions)
 
         result = self.generate(
             story_title=title,
             story_text=story_text,
-            extracted_characters=formatted_characters,
+            extracted_entities=formatted_entities,
         )
 
-        bibles = self._parse_character_bibles(result.character_bibles)
+        bibles = self._parse_entity_bibles(result.entity_bibles)
 
         # Match bibles to entity IDs
-        entity_bibles = self._match_bibles_to_entity_ids(bibles, character_entities)
+        entity_bibles = self._match_bibles_to_entity_ids(bibles, entity_definitions)
 
         if debug:
-            print(f"DEBUG Generated {len(entity_bibles)} character bibles:", file=sys.stderr)
+            print(f"DEBUG Generated {len(entity_bibles)} entity bibles:", file=sys.stderr)
             for entity_id, bible in entity_bibles.items():
                 print(f"  - {entity_id}: {bible.name} - {bible.to_prompt_string()[:50]}...", file=sys.stderr)
 

@@ -450,7 +450,7 @@ class TestBibleGeneratorEntityIds:
     def test_generate_bibles_for_character_entities(self, bible_generator, sample_entity_definitions):
         """Should generate bibles only for character-type entities."""
         with patch.object(bible_generator, 'generate') as mock_generate:
-            mock_generate.return_value = MagicMock(character_bibles="""
+            mock_generate.return_value = MagicMock(entity_bibles="""
 CHARACTER: George Washington
 SPECIES: human
 AGE_APPEARANCE: young boy
@@ -480,7 +480,7 @@ BODY: large feathered
     def test_bible_output_keyed_by_entity_id(self, bible_generator, sample_entity_definitions):
         """Bible output should be dict keyed by entity ID."""
         with patch.object(bible_generator, 'generate') as mock_generate:
-            mock_generate.return_value = MagicMock(character_bibles="""
+            mock_generate.return_value = MagicMock(entity_bibles="""
 CHARACTER: George Washington
 SPECIES: human
 """)
@@ -505,7 +505,7 @@ SPECIES: human
         # The input has 2 characters and 1 location
         # BibleGenerator should only process the 2 characters
         with patch.object(bible_generator, 'generate') as mock_generate:
-            mock_generate.return_value = MagicMock(character_bibles="""
+            mock_generate.return_value = MagicMock(entity_bibles="""
 CHARACTER: George Washington
 SPECIES: human
 

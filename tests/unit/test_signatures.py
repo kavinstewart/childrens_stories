@@ -7,7 +7,7 @@ from backend.core.signatures import (
     DirectStorySignature,
     IllustrationStyleSignature,
     CharacterExtractorSignature,
-    CharacterBibleSignature,
+    EntityBibleSignature,
 )
 
 
@@ -81,18 +81,18 @@ class TestCharacterExtractorSignature:
         assert "DETAILS:" in docstring
 
 
-class TestCharacterBibleSignature:
-    """Tests for CharacterBibleSignature."""
+class TestEntityBibleSignature:
+    """Tests for EntityBibleSignature."""
 
     def test_has_required_fields(self):
-        """Should have extracted_characters input and character_bibles output."""
-        fields = CharacterBibleSignature.model_fields
-        assert "extracted_characters" in fields
-        assert "character_bibles" in fields
+        """Should have extracted_entities input and entity_bibles output."""
+        fields = EntityBibleSignature.model_fields
+        assert "extracted_entities" in fields
+        assert "entity_bibles" in fields
 
     def test_docstring_has_visual_format(self):
         """Should explain the visual bible format."""
-        docstring = CharacterBibleSignature.__doc__
+        docstring = EntityBibleSignature.__doc__
         assert "CHARACTER:" in docstring
         assert "SPECIES:" in docstring
         assert "COLOR_PALETTE:" in docstring

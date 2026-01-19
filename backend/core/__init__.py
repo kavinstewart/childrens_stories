@@ -3,7 +3,8 @@
 # Re-export types for convenient access
 from .types import (
     StyleDefinition,
-    CharacterBible,
+    EntityBible,
+    CharacterBible,  # Deprecated alias for EntityBible
     CharacterReferenceSheet,
     StoryReferenceSheets,
     StoryMetadata,
@@ -13,7 +14,8 @@ from .types import (
 
 __all__ = [
     "StyleDefinition",
-    "CharacterBible",
+    "EntityBible",
+    "CharacterBible",  # Deprecated alias
     "CharacterReferenceSheet",
     "StoryReferenceSheets",
     "StoryMetadata",

@@ -117,20 +117,20 @@ def _names_match(query: str, canonical: str, aliases: list[str] = None) -> bool:
     return False
 
 
-def build_character_lookup(character_bibles: list) -> dict[str, str]:
+def build_entity_lookup(entity_bibles: list) -> dict[str, str]:
     """
     Build a lookup dict mapping normalized names (and variants) to canonical names.
 
     Includes both canonical names and aliases for flexible lookup.
 
     Args:
-        character_bibles: List of CharacterBible objects
+        entity_bibles: List of EntityBible objects
 
     Returns:
-        Dict mapping normalized name variants -> canonical character name
+        Dict mapping normalized name variants -> canonical entity name
     """
     lookup = {}
-    for bible in character_bibles:
+    for bible in entity_bibles:
         canonical = bible.name
         # Add normalized canonical name
         normalized = _normalize_name(canonical)
@@ -248,8 +248,8 @@ CRITICAL: Any named character in this scene MUST match their reference image EXA
 
 
 @dataclass
-class CharacterBible:
-    """Visual definition for a single character."""
+class EntityBible:
+    """Visual definition for a single entity (character, location, or object)."""
 
     name: str
     species: str = ""
@@ -301,7 +301,7 @@ class CharacterBible:
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> "CharacterBible":
+    def from_dict(cls, data: dict) -> "EntityBible":
         """Reconstruct from stored dict data."""
         return cls(
             name=data.get("name", ""),
@@ -327,7 +327,7 @@ class CharacterReferenceSheet:
     reference_image: bytes  # PNG/JPEG bytes of the reference portrait
     prompt_used: str = ""
     character_description: str = ""  # Age, physical features, etc. from character bible
-    bible: Optional["CharacterBible"] = None  # Full character bible for editing
+    bible: Optional["EntityBible"] = None  # Full entity bible for editing
     entity_id: Optional[str] = None  # Entity ID for new stories (e.g., "@e1")
 
     def to_pil_image(self) -> "Image.Image":
@@ -399,39 +399,39 @@ class StoryReferenceSheets:
 
 @dataclass
 class StoryMetadata:
-    """Metadata for story illustration: style and characters.
+    """Metadata for story illustration: style and entities.
 
     This is NOT an outline - the story-first workflow generates the complete
     story directly. This container holds metadata needed for illustration:
-    - Character visual descriptions (bibles) for consistent illustration
+    - Entity visual descriptions (bibles) for consistent illustration
     - Selected illustration style
     - Title for reference
 
     For new stories using entity tagging:
     - entity_definitions: map of entity ID -> EntityDefinition (all entities)
-    - entity_bibles: map of entity ID -> CharacterBible (character entities only)
+    - entity_bibles: map of entity ID -> EntityBible (all entities with bibles)
     """
 
     title: str
     # DEPRECATED: Use entity_bibles instead for new stories
-    character_bibles: list[CharacterBible] = field(default_factory=list)
+    character_bibles: list[EntityBible] = field(default_factory=list)
     illustration_style: Optional[StyleDefinition] = None
     style_rationale: str = ""
     # New entity tagging fields (entity ID -> definition)
     entity_definitions: dict[str, "EntityDefinition"] = field(default_factory=dict)
-    entity_bibles: dict[str, CharacterBible] = field(default_factory=dict)
+    entity_bibles: dict[str, EntityBible] = field(default_factory=dict)
 
-    def get_character_bible(self, name_or_entity_id: str) -> Optional[CharacterBible]:
-        """Find a character bible by entity ID or name.
+    def get_entity_bible(self, name_or_entity_id: str) -> Optional[EntityBible]:
+        """Find an entity bible by entity ID or name.
 
         For new stories with entity tagging: looks up by entity ID (e.g., "@e1").
         For legacy stories: uses name-based matching with aliases.
 
         Args:
-            name_or_entity_id: Entity ID (e.g., "@e1") or character name
+            name_or_entity_id: Entity ID (e.g., "@e1") or entity name
 
         Returns:
-            CharacterBible if found, None otherwise
+            EntityBible if found, None otherwise
         """
         # First, try entity ID lookup (new system)
         if name_or_entity_id.startswith("@") and name_or_entity_id in self.entity_bibles:
@@ -442,6 +442,11 @@ class StoryMetadata:
             if _names_match(name_or_entity_id, bible.name, aliases=bible.aliases):
                 return bible
         return None
+
+    # Backwards-compatible alias (deprecated)
+    def get_character_bible(self, name_or_entity_id: str) -> Optional[EntityBible]:
+        """Deprecated: Use get_entity_bible instead."""
+        return self.get_entity_bible(name_or_entity_id)
 
 
 @dataclass
@@ -554,3 +559,16 @@ class GeneratedStory:
                 lines.append(f"Style rationale: {self.metadata.style_rationale}")
 
         return "\n".join(lines)
+
+
+# =============================================================================
+# Backwards-Compatible Aliases (Deprecated)
+# =============================================================================
+
+# Alias for EntityBible (deprecated, use EntityBible instead)
+CharacterBible = EntityBible
+
+# Alias for build_entity_lookup (deprecated, use build_entity_lookup instead)
+def build_character_lookup(character_bibles: list) -> dict[str, str]:
+    """Deprecated: Use build_entity_lookup instead."""
+    return build_entity_lookup(character_bibles)
