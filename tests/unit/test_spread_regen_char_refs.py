@@ -3,6 +3,7 @@
 These tests verify:
 1. story-cd55: Entity ID to filename matching (@e1 -> _e1_reference.png)
 2. story-95zk: Character bibles are populated in StoryMetadata during regeneration
+3. Text-based fallback in _get_characters_for_spread uses entity_bibles
 """
 
 import tempfile
@@ -316,3 +317,166 @@ class TestRegenerateSpreadCharacterBibles:
             assert captured_metadata is not None
             # @e1 should not be in entity_bibles since it had no bible
             assert "@e1" not in captured_metadata.entity_bibles
+
+
+class TestGetCharactersForSpreadFallback:
+    """Tests for _get_characters_for_spread text-based fallback (story-0db5).
+
+    Bug: The text-based fallback only checked outline.character_bibles (legacy list,
+    empty for new stories) and ignored outline.entity_bibles (new dict format).
+    This meant character references were never included in regenerated spreads
+    even when entity_bibles was properly populated.
+    """
+
+    def test_fallback_uses_entity_bibles_when_present_entity_ids_is_none(self):
+        """When present_entity_ids is None, fallback should check entity_bibles."""
+        from backend.core.modules.spread_illustrator import SpreadIllustrator
+        from backend.core.types import StorySpread, StoryMetadata, EntityBible
+
+        illustrator = SpreadIllustrator()
+
+        # Create spread WITHOUT present_entity_ids (simulates regeneration)
+        spread = StorySpread(
+            spread_number=10,
+            text="Leo sat quietly. Mama Lion looked at him.",
+            word_count=7,
+            illustration_prompt="A lion cub sitting with adult lioness",
+            present_entity_ids=None,  # Not set - triggers fallback
+            present_characters=None,
+        )
+
+        # Create metadata with entity_bibles (new format)
+        metadata = StoryMetadata(
+            title="Lion Story",
+            entity_bibles={
+                "@e1": EntityBible(name="Leo", species="lion cub"),
+                "@e2": EntityBible(name="Mama Lion", species="adult lioness"),
+                "@e3": EntityBible(name="The Zebras", species="zebra"),
+            },
+            character_bibles=[],  # Empty - legacy format not used
+        )
+
+        # Call the method directly
+        result = illustrator._get_characters_for_spread(spread, metadata)
+
+        # Should return entity IDs for characters mentioned in text
+        assert "@e1" in result, "Should find Leo (@e1) in text"
+        assert "@e2" in result, "Should find Mama Lion (@e2) in text"
+        assert "@e3" not in result, "Should NOT find The Zebras (@e3) - not in text"
+
+    def test_fallback_returns_empty_when_no_names_match(self):
+        """Fallback should return empty list when no entity names appear in text."""
+        from backend.core.modules.spread_illustrator import SpreadIllustrator
+        from backend.core.types import StorySpread, StoryMetadata, EntityBible
+
+        illustrator = SpreadIllustrator()
+
+        spread = StorySpread(
+            spread_number=1,
+            text="The sun set over the savannah.",
+            word_count=6,
+            illustration_prompt="A sunset over grasslands",
+            present_entity_ids=None,
+            present_characters=None,
+        )
+
+        metadata = StoryMetadata(
+            title="Lion Story",
+            entity_bibles={
+                "@e1": EntityBible(name="Leo", species="lion"),
+                "@e2": EntityBible(name="Mama Lion", species="lioness"),
+            },
+        )
+
+        result = illustrator._get_characters_for_spread(spread, metadata)
+
+        assert result == [], "Should return empty list when no names match"
+
+    def test_fallback_matches_in_illustration_prompt_too(self):
+        """Fallback should check both text and illustration_prompt."""
+        from backend.core.modules.spread_illustrator import SpreadIllustrator
+        from backend.core.types import StorySpread, StoryMetadata, EntityBible
+
+        illustrator = SpreadIllustrator()
+
+        spread = StorySpread(
+            spread_number=5,
+            text="The dust settled.",  # No character names here
+            word_count=3,
+            illustration_prompt="Leo looking sad in the grass",  # Leo is here
+            present_entity_ids=None,
+            present_characters=None,
+        )
+
+        metadata = StoryMetadata(
+            title="Lion Story",
+            entity_bibles={
+                "@e1": EntityBible(name="Leo", species="lion"),
+            },
+        )
+
+        result = illustrator._get_characters_for_spread(spread, metadata)
+
+        assert "@e1" in result, "Should find Leo in illustration_prompt"
+
+    def test_uses_present_entity_ids_when_available(self):
+        """When present_entity_ids is set, should use it directly (no fallback)."""
+        from backend.core.modules.spread_illustrator import SpreadIllustrator
+        from backend.core.types import StorySpread, StoryMetadata, EntityBible
+
+        illustrator = SpreadIllustrator()
+
+        spread = StorySpread(
+            spread_number=5,
+            text="Leo and Mama Lion and The Zebras all together.",
+            word_count=8,
+            illustration_prompt="All characters together",
+            present_entity_ids=["@e1"],  # Only Leo specified
+            present_characters=None,
+        )
+
+        metadata = StoryMetadata(
+            title="Lion Story",
+            entity_bibles={
+                "@e1": EntityBible(name="Leo", species="lion"),
+                "@e2": EntityBible(name="Mama Lion", species="lioness"),
+                "@e3": EntityBible(name="The Zebras", species="zebra"),
+            },
+        )
+
+        result = illustrator._get_characters_for_spread(spread, metadata)
+
+        # Should only return what's in present_entity_ids, not all mentioned
+        assert result == ["@e1"], "Should use present_entity_ids directly"
+
+    def test_legacy_character_bibles_still_works(self):
+        """Legacy stories with character_bibles should still work."""
+        from backend.core.modules.spread_illustrator import SpreadIllustrator
+        from backend.core.types import StorySpread, StoryMetadata, EntityBible
+
+        illustrator = SpreadIllustrator()
+
+        spread = StorySpread(
+            spread_number=5,
+            text="Crow flew over Otto's head.",
+            word_count=5,
+            illustration_prompt="A crow flying over an otter",
+            present_entity_ids=None,
+            present_characters=None,
+        )
+
+        metadata = StoryMetadata(
+            title="Old Story",
+            entity_bibles={},  # Empty - old story
+            character_bibles=[
+                EntityBible(name="Crow", species="crow"),
+                EntityBible(name="Otto", species="otter"),
+                EntityBible(name="Fox", species="fox"),
+            ],
+        )
+
+        result = illustrator._get_characters_for_spread(spread, metadata)
+
+        assert "Crow" in result, "Should find Crow in text"
+        assert "Otto" in result, "Should find Otto in text"
+        assert "Fox" not in result, "Should NOT find Fox - not in text"

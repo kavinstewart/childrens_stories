@@ -306,8 +306,19 @@ class SpreadIllustrator:
         combined_text = spread.illustration_prompt + ' ' + spread.text
         matched_characters = []
 
+        # IMPORTANT: Stories use ONE system, not both. Check entity_bibles first.
+        # If entity_bibles has any entries, this is a new-system story - use it exclusively.
+        # Only fall back to character_bibles for legacy stories where entity_bibles is empty.
+        # This prevents mixing/duplicating character references from both systems.
+        if len(outline.entity_bibles) > 0:
+            # New entity tagging system - return entity IDs (e.g., "@e1")
+            for entity_id, bible in outline.entity_bibles.items():
+                if name_matches_in_text(bible.name, combined_text):
+                    matched_characters.append(entity_id)
+            return matched_characters
+
+        # Legacy system - return character names
         for bible in outline.character_bibles:
-            # Use safe word-boundary matching (NOT substring matching!)
             if name_matches_in_text(bible.name, combined_text):
                 matched_characters.append(bible.name)
 
