@@ -1,11 +1,10 @@
 """
 Main DSPy Program for generating children's stories.
 
-Story-first workflow:
-1. Generate the complete story directly from the goal (one LLM call)
-2. Extract characters from what was written
-3. Generate character bibles for illustration consistency
-4. Select illustration style
+Inline Entity Tagging workflow:
+1. Generate the complete story with entity definitions (one LLM call)
+2. Generate character bibles from entity definitions
+3. Select illustration style
 
 A spread = two facing pages when the book is open. A 32-page picture book
 has 12 spreads of story content.
@@ -18,7 +17,6 @@ import dspy
 from backend.config import llm_retry
 from ..types import GeneratedStory, StoryMetadata, StorySpread
 from ..modules.direct_story_generator import DirectStoryGenerator
-from ..modules.character_extractor import CharacterExtractor
 from ..modules.bible_generator import BibleGenerator
 from ..modules.character_sheet_generator import CharacterSheetGenerator
 from ..modules.spread_illustrator import SpreadIllustrator
@@ -33,13 +31,15 @@ def _format_spreads_for_llm(spreads: list[StorySpread]) -> str:
 
 class StoryGenerator(dspy.Module):
     """
-    Complete story generation pipeline using story-first workflow.
+    Complete story generation pipeline using inline entity tagging.
 
     Pipeline:
-    1. Generate complete story from goal (title + 12 spreads in one call)
-    2. Extract characters from the written story
-    3. Generate character bibles for illustration consistency
-    4. Select illustration style based on story content
+    1. Generate complete story from goal (title + 12 spreads + entity definitions)
+    2. Generate character bibles from entity definitions
+    3. Select illustration style based on story content
+
+    Inline entity tagging: DirectStoryGenerator now outputs entity definitions
+    (@e1, @e2, etc.) directly, eliminating the need for character extraction.
 
     Args:
         lm: Optional explicit LM to use. If provided, bypasses global
@@ -62,7 +62,6 @@ class StoryGenerator(dspy.Module):
             include_examples=include_examples,
             example_count=example_count,
         )
-        self.character_extractor = CharacterExtractor()
         self.bible_generator = BibleGenerator()
         self.style_selector = dspy.ChainOfThought(IllustrationStyleSignature)
         self._lm = lm  # Store explicit LM if provided
@@ -93,31 +92,29 @@ class StoryGenerator(dspy.Module):
         """Internal method that does the actual generation."""
         import sys
 
-        # Step 1: Generate complete story (with retry for network errors)
-        title, spreads = llm_retry(self.story_generator)(
+        # Step 1: Generate complete story with entity definitions (with retry)
+        title, spreads, entity_definitions = llm_retry(self.story_generator)(
             goal=goal,
             debug=True,
         )
 
+        if entity_definitions:
+            print(f"DEBUG Extracted {len(entity_definitions)} entities: {list(entity_definitions.keys())}", file=sys.stderr)
+        else:
+            print("WARNING: No entity definitions returned - story may use legacy format", file=sys.stderr)
+
         # Compile story text for downstream processing
         story_text = _format_spreads_for_llm(spreads)
 
-        # Step 2: Extract characters from the story
-        extracted_characters = llm_retry(self.character_extractor)(
+        # Step 2: Generate character bibles from entity definitions
+        entity_bibles = llm_retry(self.bible_generator)(
             title=title,
             story_text=story_text,
+            entity_definitions=entity_definitions,
             debug=True,
         )
 
-        # Step 3: Generate character bibles
-        character_bibles = llm_retry(self.bible_generator)(
-            title=title,
-            story_text=story_text,
-            extracted_characters=extracted_characters,
-            debug=True,
-        )
-
-        # Step 4: Select illustration style
+        # Step 3: Select illustration style
         story_summary = f"{title}. {story_text[:500]}..."
         style_result = llm_retry(self.style_selector)(
             story_summary=story_summary,
@@ -129,10 +126,11 @@ class StoryGenerator(dspy.Module):
 
         print(f"DEBUG Selected style: {selected_style_name}", file=sys.stderr)
 
-        # Build metadata for illustration
+        # Build metadata for illustration (using entity_bibles, not character_bibles)
         metadata = StoryMetadata(
             title=title,
-            character_bibles=character_bibles,
+            entity_definitions=entity_definitions,
+            entity_bibles=entity_bibles,
             illustration_style=illustration_style,
             style_rationale=style_result.style_rationale,
         )
@@ -195,8 +193,9 @@ class StoryGenerator(dspy.Module):
             print(f"  Rationale: {story.metadata.style_rationale}", file=sys.stderr)
 
         # Step 4: Generate character reference images
+        num_characters = len(story.metadata.entity_bibles) or len(story.metadata.character_bibles)
         if debug:
-            print(f"Step 2: Generating reference images for {len(story.metadata.character_bibles)} characters...", file=sys.stderr)
+            print(f"Step 2: Generating reference images for {num_characters} characters...", file=sys.stderr)
 
         sheet_generator = CharacterSheetGenerator()
         reference_sheets = sheet_generator.generate_for_story(

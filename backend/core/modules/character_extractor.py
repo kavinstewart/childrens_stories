@@ -1,12 +1,21 @@
 """
-DSPy Module for extracting characters from a completed story.
+DEPRECATED: CharacterExtractor is no longer used in the main story generation pipeline.
 
-Story-first workflow: after the story is written, extract what characters
-appeared so we can generate visual bibles for illustration consistency.
+This module has been replaced by inline entity tagging in DirectStoryGenerator.
+Entities (@e1, @e2, etc.) are now defined at story generation time, eliminating
+the need to extract characters afterward.
+
+This module is kept for backwards compatibility with:
+- Existing tests that verify alias extraction
+- Legacy code paths during the transition period
+- Migration script that may need to process old stories
+
+It will be removed in a future version after migration is complete.
 """
 
 import re
 import dspy
+import warnings
 from dataclasses import dataclass
 
 from ..signatures.character_extractor import CharacterExtractorSignature
