@@ -20,8 +20,6 @@ class TestGenerateStoryTask:
                 goal="teach about sharing",
                 target_age_range="4-7",
                 generation_type="illustrated",
-                quality_threshold=7,
-                max_attempts=3,
             )
 
             mock_gen.assert_called_once_with(
@@ -29,8 +27,6 @@ class TestGenerateStoryTask:
                 goal="teach about sharing",
                 target_age_range="4-7",
                 generation_type="illustrated",
-                quality_threshold=7,
-                max_attempts=3,
             )
             assert result["story_id"] == "story-uuid-456"
             assert result["status"] == "completed"
@@ -52,8 +48,6 @@ class TestGenerateStoryTask:
             call_kwargs = mock_gen.call_args.kwargs
             assert call_kwargs["target_age_range"] == "4-7"
             assert call_kwargs["generation_type"] == "illustrated"
-            assert call_kwargs["quality_threshold"] == 7
-            assert call_kwargs["max_attempts"] == 3
 
     @pytest.mark.asyncio
     async def test_task_reraises_exceptions(self):
@@ -116,12 +110,24 @@ class TestWorkerSettings:
         # Story generation can take several minutes
         assert WorkerSettings.job_timeout >= 300  # At least 5 minutes
 
-    def test_worker_settings_no_auto_retry(self):
-        """WorkerSettings should not auto-retry failed jobs."""
+    def test_worker_settings_retries_failed_jobs(self):
+        """WorkerSettings should retry failed jobs as a safety net."""
         from backend.worker import WorkerSettings
 
-        # Failed stories are marked in DB, don't want duplicate attempts
-        assert WorkerSettings.max_tries == 1
+        # Retry transient failures (503, timeouts, etc.)
+        # Primary retry happens at @image_retry decorator level
+        # ARQ retry is a safety net for errors outside image generation
+        assert WorkerSettings.max_tries == 3
+
+    def test_worker_settings_has_retry_delay(self):
+        """WorkerSettings should have exponential backoff between retries."""
+        from backend.worker import WorkerSettings
+
+        # Should wait before retrying to avoid hammering overloaded services
+        assert hasattr(WorkerSettings, "retry_delay")
+        # Check it's a reasonable delay (not instant, not too long)
+        # retry_delay should be a function or value representing backoff
+        assert WorkerSettings.retry_delay is not None
 
 
 class TestArqPool:

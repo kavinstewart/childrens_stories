@@ -1,8 +1,8 @@
-import { View, Text, TextInput, Pressable, ScrollView, ActivityIndicator, StyleProp, ViewStyle } from 'react-native';
-import { useRouter } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { View, Text, TextInput, ScrollView, ActivityIndicator, StyleProp, ViewStyle, Pressable } from 'react-native';
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -61,7 +61,7 @@ function WiggleButton({ children, enabled, onPress, style }: {
 }
 
 // Helper to shuffle and pick N items from an array, assigning colors
-function pickRandomWithColors<T>(arr: T[], colors: typeof pillColors, count: number): (T & { color: typeof pillColors[0] })[] {
+function pickRandomWithColors<T>(arr: readonly T[], colors: typeof pillColors, count: number): (T & { color: (typeof pillColors)[number] })[] {
   const shuffled = [...arr].sort(() => Math.random() - 0.5);
   return shuffled.slice(0, count).map((item, index) => ({
     ...item,
@@ -69,13 +69,34 @@ function pickRandomWithColors<T>(arr: T[], colors: typeof pillColors, count: num
   }));
 }
 
+// Valid fallback messages (whitelist for security)
+const VALID_FALLBACK_MESSAGES = new Set([
+  'Voice unavailable - microphone permission denied',
+  'Voice unavailable - connection failed',
+  'Voice unavailable - connection timeout',
+]);
+
 export default function NewStory() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const { fallback } = useLocalSearchParams<{ fallback?: string }>();
   const [prompt, setPrompt] = useState('');
+
+  // Only show banner if fallback is a valid whitelisted message
+  const validFallbackMessage = fallback && VALID_FALLBACK_MESSAGES.has(fallback) ? fallback : null;
+  const [showFallbackBanner, setShowFallbackBanner] = useState(!!validFallbackMessage);
   // Pick 4 random inspiration prompts on mount with colors
   const [visiblePrompts] = useState(() => pickRandomWithColors(inspirationPrompts, pillColors, 4));
 
   const createStory = useCreateStory();
+
+  // Auto-dismiss fallback banner after 5 seconds
+  useEffect(() => {
+    if (showFallbackBanner) {
+      const timer = setTimeout(() => setShowFallbackBanner(false), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [showFallbackBanner]);
 
   const canCreate = prompt.trim().length > 0;
 
@@ -112,8 +133,37 @@ export default function NewStory() {
         <Text style={{ fontSize: 20, opacity: 0.25 }}>💫</Text>
       </FloatingElement>
 
-      <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right']}>
+      <View style={{ flex: 1, paddingTop: insets.top, paddingLeft: insets.left, paddingRight: insets.right }}>
         <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 24 }}>
+          {/* Voice Fallback Banner */}
+          {showFallbackBanner && validFallbackMessage && (
+            <Pressable
+              onPress={() => setShowFallbackBanner(false)}
+              style={{
+                backgroundColor: 'rgba(124, 58, 237, 0.1)',
+                borderRadius: 12,
+                paddingHorizontal: 16,
+                paddingVertical: 12,
+                marginBottom: 16,
+                flexDirection: 'row',
+                alignItems: 'center',
+              }}
+            >
+              <Text style={{ fontSize: 18, marginRight: 8 }}>🎤</Text>
+              <Text
+                style={{
+                  fontFamily: fontFamily.nunito,
+                  fontSize: 14,
+                  color: '#6B7280',
+                  flex: 1,
+                }}
+              >
+                {validFallbackMessage}
+              </Text>
+              <Text style={{ fontSize: 14, color: '#9CA3AF' }}>✕</Text>
+            </Pressable>
+          )}
+
           {/* Header */}
           <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 24 }}>
             <Pressable
@@ -323,8 +373,26 @@ export default function NewStory() {
               Tell me about your story or tap an idea above
             </Text>
           )}
+
+          {/* Switch to voice input link */}
+          <Pressable
+            onPress={() => router.replace('/new-voice')}
+            style={{ marginTop: 16, alignItems: 'center', paddingBottom: insets.bottom }}
+          >
+            <Text
+              style={{
+                fontFamily: fontFamily.nunito,
+                fontSize: 14,
+                color: '#7C3AED',
+                textDecorationLine: 'underline',
+              }}
+            >
+              Or use your voice instead 🎤
+            </Text>
+          </Pressable>
+
         </ScrollView>
-      </SafeAreaView>
+      </View>
     </LinearGradient>
   );
 }
