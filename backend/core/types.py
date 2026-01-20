@@ -263,6 +263,7 @@ class EntityBible:
     color_palette: list[str] = field(default_factory=list)
     style_tags: list[str] = field(default_factory=list)
     aliases: list[str] = field(default_factory=list)  # Alternative names for this character
+    entity_id: Optional[str] = None  # Entity ID from LLM output (e.g., "@e1")
 
     def to_prompt_string(self) -> str:
         """Convert to a string suitable for image generation prompts."""
@@ -298,6 +299,7 @@ class EntityBible:
             "color_palette": self.color_palette,
             "style_tags": self.style_tags,
             "aliases": self.aliases,
+            "entity_id": self.entity_id,
         }
 
     @classmethod
@@ -316,6 +318,7 @@ class EntityBible:
             color_palette=data.get("color_palette", []),
             style_tags=data.get("style_tags", []),
             aliases=data.get("aliases", []),
+            entity_id=data.get("entity_id"),
         )
 
 

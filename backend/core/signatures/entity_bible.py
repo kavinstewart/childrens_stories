@@ -15,6 +15,7 @@ class EntityBibleSignature(dspy.Signature):
 
     OUTPUT FORMAT (one entity per section, separated by blank lines):
     ```
+    ENTITY_ID: [the @eN ID from the input - REQUIRED, copy exactly]
     CHARACTER: [Name]
     SPECIES: [human/animal type - be specific]
     AGE_APPEARANCE: [specific age or age range, e.g., "7 years old" or "elderly"]
@@ -29,11 +30,13 @@ class EntityBibleSignature(dspy.Signature):
     ```
 
     IMPORTANT:
+    - ENTITY_ID is REQUIRED - copy the @eN ID exactly from the input for each entity
     - Be SPECIFIC. Not "brown hair" but "chin-length wavy auburn hair with a cowlick on the left"
     - Clothing colors must be exact: "mustard yellow raincoat" not "yellow coat"
     - Include ONE signature item that makes the entity instantly recognizable
     - All entities in a story should share the same STYLE_TAGS for visual consistency
     - ONLY create bibles for entities listed in extracted_entities
+    - You MUST create a bible for EVERY entity in extracted_entities
     """
 
     story_title: str = dspy.InputField(desc="The title of the story")
@@ -43,9 +46,9 @@ class EntityBibleSignature(dspy.Signature):
     )
 
     extracted_entities: str = dspy.InputField(
-        desc="Entities extracted from the story: 'NAME: [name] | DETAILS: [description]' format, one per line"
+        desc="Entities with IDs: '@eN: [name] | DETAILS: [description]' format, one per line. Echo the @eN ID in your ENTITY_ID field."
     )
 
     entity_bibles: str = dspy.OutputField(
-        desc="Detailed visual bibles for each extracted entity following the exact format above. One entity per section, blank line between entities."
+        desc="Detailed visual bibles for each extracted entity. MUST include ENTITY_ID field with the @eN ID from input. One entity per section, blank line between entities."
     )
