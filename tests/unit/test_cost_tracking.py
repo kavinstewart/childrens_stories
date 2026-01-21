@@ -316,3 +316,105 @@ class TestContextIsolation:
         results = dict(asyncio.run(run_tasks()))
         assert results["task1"] == 100
         assert results["task2"] == 200
+
+
+class TestCopyContextSharing:
+    """Tests for copy_context() sharing UsageData across ThreadPoolExecutor workers."""
+
+    def setup_method(self):
+        """Clear tracking before each test."""
+        clear_tracking()
+
+    def teardown_method(self):
+        """Clear tracking after each test."""
+        clear_tracking()
+
+    def test_copy_context_shares_usage_across_workers(self):
+        """Verify copy_context() shares UsageData across ThreadPoolExecutor workers."""
+        import contextvars
+
+        start_tracking()
+        ctx = contextvars.copy_context()
+
+        def worker():
+            record_image_generation(model="test-model")
+
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            futures = [executor.submit(ctx.run, worker) for _ in range(10)]
+            for f in futures:
+                f.result()
+
+        usage = get_current_usage()
+        assert usage.image_count == 10  # All 10 recorded to shared UsageData
+
+    def test_copy_context_thread_safe_under_contention(self):
+        """Verify thread-safe counting under high contention."""
+        import contextvars
+
+        start_tracking()
+        ctx = contextvars.copy_context()
+
+        def worker():
+            # Multiple operations per worker to increase contention
+            for _ in range(10):
+                record_image_generation(model="test-model")
+
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            futures = [executor.submit(ctx.run, worker) for _ in range(20)]
+            for f in futures:
+                f.result()
+
+        usage = get_current_usage()
+        assert usage.image_count == 200  # 20 workers * 10 ops each
+
+
+class TestUsageDataThreadSafety:
+    """Tests for UsageData thread-safety and serialization."""
+
+    def test_to_dict_excludes_lock(self):
+        """to_dict() should not include _lock field."""
+        usage = UsageData(
+            llm_input_tokens=100,
+            image_count=5,
+        )
+        result = usage.to_dict()
+        assert "_lock" not in result
+        assert "lock" not in result
+
+    def test_from_dict_creates_lock(self):
+        """from_dict() should create a working lock automatically."""
+        data = {"llm_input_tokens": 100, "image_count": 5}
+        usage = UsageData.from_dict(data)
+
+        # Verify lock exists and is functional
+        assert hasattr(usage, "_lock")
+
+        # Verify lock can be acquired and released (proves it's a real lock)
+        acquired = usage._lock.acquire(blocking=False)
+        assert acquired
+        usage._lock.release()
+
+    def test_equality_ignores_lock(self):
+        """Two UsageData instances with same values should be equal."""
+        u1 = UsageData(llm_input_tokens=100, image_count=5)
+        u2 = UsageData(llm_input_tokens=100, image_count=5)
+
+        # They have different lock objects
+        assert u1._lock is not u2._lock
+
+        # But should still be equal
+        assert u1 == u2
+
+    def test_equality_detects_differences(self):
+        """UsageData with different values should not be equal."""
+        u1 = UsageData(llm_input_tokens=100, image_count=5)
+        u2 = UsageData(llm_input_tokens=100, image_count=6)
+
+        assert u1 != u2
+
+    def test_lock_not_in_repr(self):
+        """Lock should not appear in repr output."""
+        usage = UsageData(image_count=5)
+        repr_str = repr(usage)
+        assert "_lock" not in repr_str
+        assert "Lock" not in repr_str

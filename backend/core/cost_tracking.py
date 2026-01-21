@@ -6,6 +6,7 @@ This module provides the data collection layer - see cost_calculator.py
 for computing costs from usage data.
 """
 
+import threading
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Optional
@@ -13,7 +14,11 @@ from typing import Optional
 
 @dataclass
 class UsageData:
-    """Tracks resource usage for a single generation job."""
+    """Tracks resource usage for a single generation job.
+
+    Thread-safe: uses internal lock for concurrent mutations when shared
+    across ThreadPoolExecutor workers via copy_context().
+    """
 
     llm_input_tokens: int = 0
     llm_output_tokens: int = 0
@@ -23,8 +28,21 @@ class UsageData:
     image_model: str = ""
     image_retries: int = 0
 
+    # Lock for thread-safe mutations (excluded from repr/compare/serialization)
+    _lock: threading.Lock = field(
+        default_factory=threading.Lock, repr=False, compare=False
+    )
+
+    def add_image(self, model: str, was_retry: bool = False) -> None:
+        """Thread-safe image count increment."""
+        with self._lock:
+            self.image_count += 1
+            self.image_model = model
+            if was_retry:
+                self.image_retries += 1
+
     def to_dict(self) -> dict:
-        """Serialize to dict for JSON storage."""
+        """Serialize to dict for JSON storage. Excludes _lock."""
         return {
             "llm_input_tokens": self.llm_input_tokens,
             "llm_output_tokens": self.llm_output_tokens,
@@ -37,7 +55,7 @@ class UsageData:
 
     @classmethod
     def from_dict(cls, data: dict) -> "UsageData":
-        """Create from dict (e.g., from JSON storage)."""
+        """Create from dict (e.g., from JSON storage). Lock created automatically."""
         return cls(
             llm_input_tokens=data.get("llm_input_tokens", 0),
             llm_output_tokens=data.get("llm_output_tokens", 0),
@@ -108,6 +126,8 @@ def record_image_generation(model: str, was_retry: bool = False) -> None:
     """
     Record an image generation for the current context.
 
+    Thread-safe: uses UsageData.add_image() for concurrent access.
+
     Args:
         model: Model identifier (e.g., "gemini-3-pro-image-preview")
         was_retry: True if this was a retry attempt
@@ -118,10 +138,7 @@ def record_image_generation(model: str, was_retry: bool = False) -> None:
     if usage is None:
         return
 
-    usage.image_count += 1
-    usage.image_model = model
-    if was_retry:
-        usage.image_retries += 1
+    usage.add_image(model, was_retry)
 
 
 # Context var to track last processed history index for each LM

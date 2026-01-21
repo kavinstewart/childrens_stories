@@ -6,6 +6,8 @@ visual consistency across all story illustrations. Optimized for Nano Banana Pro
 following Google's recommended prompting practices.
 """
 
+import contextvars
+
 from backend.config import get_image_client, get_image_model, get_image_config, extract_image_from_response, image_retry
 from backend.core.cost_tracking import record_image_generation
 from ..types import (
@@ -174,9 +176,12 @@ Layout: Front view, 3/4 view, side profile (all full body), plus 4 expression he
                 key = entity_id if entity_id else bible.name
                 return key, None, e
 
+        # Copy context so workers share the same UsageData for cost tracking
+        ctx = contextvars.copy_context()
+
         # Generate all entity references in parallel
         with concurrent.futures.ThreadPoolExecutor(max_workers=min(total_entities, 4)) as executor:
-            futures = {executor.submit(generate_one, item): item for item in bibles_to_generate}
+            futures = {executor.submit(ctx.run, generate_one, item): item for item in bibles_to_generate}
 
             completed = 0
             for future in concurrent.futures.as_completed(futures):

@@ -16,6 +16,8 @@ import re
 import sys
 from typing import TYPE_CHECKING, Optional, Tuple
 
+import contextvars
+
 from backend.config import get_image_client, get_image_model, get_image_config, IMAGE_CONSTANTS, extract_image_from_response, image_retry
 from backend.core.cost_tracking import record_image_generation
 from ..types import (
@@ -166,10 +168,13 @@ class SpreadIllustrator:
             except Exception as e:
                 return spread.spread_number, None, e
 
+        # Copy context so workers share the same UsageData for cost tracking
+        ctx = contextvars.copy_context()
+
         # Generate all spread illustrations in parallel
         # Use up to 6 workers to avoid overwhelming the API
         with concurrent.futures.ThreadPoolExecutor(max_workers=min(total_spreads, 6)) as executor:
-            futures = {executor.submit(illustrate_one, spread): spread for spread in spreads}
+            futures = {executor.submit(ctx.run, illustrate_one, spread): spread for spread in spreads}
 
             completed = 0
             for future in concurrent.futures.as_completed(futures):
@@ -520,10 +525,13 @@ class SpreadIllustrator:
             except Exception as e:
                 return spread.spread_number, None, None, e
 
+        # Copy context so workers share the same UsageData for cost tracking
+        ctx = contextvars.copy_context()
+
         # Generate all spread illustrations in parallel with QA
         # Use up to 6 workers to avoid overwhelming the API
         with concurrent.futures.ThreadPoolExecutor(max_workers=min(total_spreads, 6)) as executor:
-            futures = {executor.submit(illustrate_one_with_qa, spread): spread for spread in spreads}
+            futures = {executor.submit(ctx.run, illustrate_one_with_qa, spread): spread for spread in spreads}
 
             completed = 0
             for future in concurrent.futures.as_completed(futures):
