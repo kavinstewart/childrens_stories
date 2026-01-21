@@ -13,8 +13,10 @@ AI agent that generates illustrated children's picture books from brief goals/th
 
 ```bash
 # Backend
-poetry run pytest tests/unit/ -v          # Unit tests
-poetry run pytest tests/integration/ -v   # Integration tests (requires services)
+poetry run pytest tests/unit/ -v          # Unit tests (fast, mocked, always free)
+poetry run pytest tests/integration/ -v   # Integration tests (requires Redis/PostgreSQL)
+poetry run pytest tests/costly/ -v        # Costly API tests (requires GOOGLE_API_KEY, costs money)
+poetry run pytest tests/llm_eval/ -v      # LLM evaluations (requires API keys, costs money)
 poetry add <package>                      # Add dependency (never pip install)
 
 # Frontend
@@ -26,7 +28,10 @@ cd frontend && npx playwright test        # E2E tests (requires APP_PIN in .env)
 - `backend/core/` - DSPy modules, programs, types
 - `backend/metrics/` - Quality evaluation metrics
 - `frontend/app/` - Expo Router screens
-- `tests/unit/`, `tests/integration/` - Test suites
+- `tests/unit/` - Fast, mocked unit tests (always safe to run)
+- `tests/integration/` - Integration tests requiring local services (Redis, PostgreSQL)
+- `tests/costly/` - Tests that make external API calls (cost money, excluded by default)
+- `tests/llm_eval/` - LLM model evaluations (cost money, excluded by default)
 - `cli/` - CLI entry points
 
 ## Key Conventions

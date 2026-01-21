@@ -41,8 +41,8 @@ ruff = "^0.14.10"
 pythonpath = ["."]
 testpaths = ["tests"]
 asyncio_mode = "auto"
-# Exclude LLM eval tests from default runs (require API key, cost money)
-addopts = "--ignore=tests/llm_eval"
+# Exclude costly tests from default runs (require API key, cost money)
+addopts = "--ignore=tests/costly --ignore=tests/llm_eval"
 
 [tool.mypy]
 python_version = "3.11"
