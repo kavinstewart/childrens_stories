@@ -20,13 +20,14 @@ from backend.core.types import (
 
 @pytest.fixture
 def sample_spread():
-    """A story spread with illustration prompt."""
+    """A story spread with illustration prompt and explicit character list."""
     return StorySpread(
         spread_number=1,
         text="Luna looked up at the stars and smiled.",
         word_count=8,
         was_revised=False,
         illustration_prompt="A young girl looking up at a starry night sky, filled with wonder.",
+        present_characters=["Luna"],  # Explicit character list (no text-based fallback)
     )
 
 

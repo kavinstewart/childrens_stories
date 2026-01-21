@@ -170,50 +170,58 @@ class TestFalsePositivePrevention:
 # Test 2: Article-Stripped Matching
 # =============================================================================
 
-class TestArticleStrippedMatching:
-    """Tests that article-stripped names match correctly."""
+class TestNoTextBasedFallback:
+    """Tests that text-based fallback is disabled (story-huqf).
 
-    def test_blue_bird_matches_the_blue_bird(self, illustrator, clank_and_friends_outline):
-        """'blue bird' (no 'The') should match 'The Blue Bird'."""
+    The text-based character detection was removed because it caused issues
+    with settings/locations not appearing in text. Without explicit
+    present_entity_ids or present_characters, the result is an empty list.
+    """
+
+    def test_no_text_based_matching_without_present_characters(self, illustrator, clank_and_friends_outline):
+        """Without present_characters, should return empty list (no text-based fallback)."""
         spread = StorySpread(
             spread_number=2,
-            text="The blue bird flew overhead.",
+            text="The blue bird flew overhead.",  # Contains character name
             word_count=5,
             illustration_prompt="A blue bird in the sky",
-            present_characters=None,
+            present_characters=None,  # No explicit characters
         )
 
         characters = illustrator._get_characters_for_spread(spread, clank_and_friends_outline)
 
-        assert "The Blue Bird" in characters
+        # Should return empty - no text-based fallback
+        assert characters == []
 
-    def test_green_thing_matches_the_green_thing(self, illustrator, clank_and_friends_outline):
-        """'green thing' (no 'The') should match 'The Green Thing'."""
+    def test_no_text_based_matching_for_illustration_prompt(self, illustrator, clank_and_friends_outline):
+        """Should NOT do text-based matching even with names in illustration_prompt."""
         spread = StorySpread(
             spread_number=3,
-            text="A strange green thing appeared.",
-            word_count=5,
-            illustration_prompt="A mysterious green creature",
+            text="Something appeared.",
+            word_count=2,
+            illustration_prompt="A mysterious green creature with The Green Thing",  # Name in prompt
             present_characters=None,
         )
 
         characters = illustrator._get_characters_for_spread(spread, clank_and_friends_outline)
 
-        assert "The Green Thing" in characters
+        # Should return empty - no text-based fallback
+        assert characters == []
 
-    def test_full_name_with_article_matches(self, illustrator, clank_and_friends_outline):
-        """'The Blue Bird' (full name) should match."""
+    def test_present_characters_required_for_character_matching(self, illustrator, clank_and_friends_outline):
+        """Explicit present_characters is required to get character references."""
         spread = StorySpread(
             spread_number=4,
-            text="The Blue Bird sang a song.",
+            text="The Blue Bird sang a song.",  # Contains exact name
             word_count=6,
             illustration_prompt="Bird singing",
-            present_characters=None,
+            present_characters=None,  # But no explicit list
         )
 
         characters = illustrator._get_characters_for_spread(spread, clank_and_friends_outline)
 
-        assert "The Blue Bird" in characters
+        # Should return empty - requires explicit present_characters
+        assert characters == []
 
 
 # =============================================================================

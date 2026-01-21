@@ -20,7 +20,7 @@ from backend.config import get_image_client, get_image_model, get_image_config, 
 from ..types import (
     StoryMetadata, StorySpread, StoryReferenceSheets,
     build_illustration_prompt, DEFAULT_LIGHTING,
-    _normalize_name, _strip_leading_article, build_character_lookup, name_matches_in_text,
+    _normalize_name, _strip_leading_article, build_character_lookup,
 )
 
 # Stopwords that should never be used for character matching
@@ -278,7 +278,12 @@ class SpreadIllustrator:
         Priority:
         1. Use spread.present_entity_ids if populated (new entity tagging system)
         2. Use spread.present_characters if populated (legacy format)
-        3. Fall back to safe text-based detection (word-boundary matching only)
+        3. Return empty list - no text-based fallback (removed in story-huqf)
+
+        Note: Text-based detection was removed because it causes issues with settings/locations
+        that don't appear literally in text. With present_entity_ids now persisted (story-v0qr),
+        the fallback is no longer needed for new stories. Legacy stories without present_characters
+        will not get character references, which is preferable to incorrect guessing.
 
         Returns:
             List of entity IDs (e.g., "@e1") or character names to include reference images for
@@ -294,35 +299,16 @@ class SpreadIllustrator:
                 spread.present_characters, outline.character_bibles
             )
 
-        # Priority 3: Fallback to text-based detection with SAFE matching
-        # WARNING: This path means [Entities:] was missing from story generation
+        # No explicit entity data available - return empty list
+        # This is preferable to text-based guessing which caused issues with
+        # settings/locations (e.g., "womb" in shark story) not appearing in text.
         print(
-            f"WARNING: Spread {spread.spread_number} has no present entities. "
-            "Falling back to text-based entity detection. "
-            "Consider regenerating story with [Entities:] field.",
+            f"WARNING: Spread {spread.spread_number} has no present_entity_ids or "
+            "present_characters. No character references will be included. "
+            "For new stories, ensure present_entity_ids is persisted (story-v0qr).",
             file=sys.stderr
         )
-
-        combined_text = spread.illustration_prompt + ' ' + spread.text
-        matched_characters = []
-
-        # IMPORTANT: Stories use ONE system, not both. Check entity_bibles first.
-        # If entity_bibles has any entries, this is a new-system story - use it exclusively.
-        # Only fall back to character_bibles for legacy stories where entity_bibles is empty.
-        # This prevents mixing/duplicating character references from both systems.
-        if len(outline.entity_bibles) > 0:
-            # New entity tagging system - return entity IDs (e.g., "@e1")
-            for entity_id, bible in outline.entity_bibles.items():
-                if name_matches_in_text(bible.name, combined_text):
-                    matched_characters.append(entity_id)
-            return matched_characters
-
-        # Legacy system - return character names
-        for bible in outline.character_bibles:
-            if name_matches_in_text(bible.name, combined_text):
-                matched_characters.append(bible.name)
-
-        return matched_characters
+        return []
 
     def _build_contents(
         self,

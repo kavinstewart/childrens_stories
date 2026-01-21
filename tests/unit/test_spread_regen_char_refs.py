@@ -3,7 +3,7 @@
 These tests verify:
 1. story-cd55: Entity ID to filename matching (@e1 -> _e1_reference.png)
 2. story-95zk: Character bibles are populated in StoryMetadata during regeneration
-3. Text-based fallback in _get_characters_for_spread uses entity_bibles
+3. story-huqf: No text-based fallback - returns empty list when no explicit entity data
 """
 
 import tempfile
@@ -319,29 +319,28 @@ class TestRegenerateSpreadCharacterBibles:
             assert "@e1" not in captured_metadata.entity_bibles
 
 
-class TestGetCharactersForSpreadFallback:
-    """Tests for _get_characters_for_spread text-based fallback (story-0db5).
+class TestGetCharactersForSpreadNoFallback:
+    """Tests for _get_characters_for_spread after text-based fallback removal (story-huqf).
 
-    Bug: The text-based fallback only checked outline.character_bibles (legacy list,
-    empty for new stories) and ignored outline.entity_bibles (new dict format).
-    This meant character references were never included in regenerated spreads
-    even when entity_bibles was properly populated.
+    The text-based fallback was removed because it caused issues with settings/locations
+    (e.g., "womb" in shark story) that don't appear literally in text. With present_entity_ids
+    now persisted (story-v0qr), spreads without explicit entity data return an empty list.
     """
 
-    def test_fallback_uses_entity_bibles_when_present_entity_ids_is_none(self):
-        """When present_entity_ids is None, fallback should check entity_bibles."""
+    def test_returns_empty_when_present_entity_ids_is_none(self):
+        """When present_entity_ids is None, should return empty list (no text-based fallback)."""
         from backend.core.modules.spread_illustrator import SpreadIllustrator
         from backend.core.types import StorySpread, StoryMetadata, EntityBible
 
         illustrator = SpreadIllustrator()
 
-        # Create spread WITHOUT present_entity_ids (simulates regeneration)
+        # Create spread WITHOUT present_entity_ids
         spread = StorySpread(
             spread_number=10,
             text="Leo sat quietly. Mama Lion looked at him.",
             word_count=7,
             illustration_prompt="A lion cub sitting with adult lioness",
-            present_entity_ids=None,  # Not set - triggers fallback
+            present_entity_ids=None,  # Not set
             present_characters=None,
         )
 
@@ -359,13 +358,11 @@ class TestGetCharactersForSpreadFallback:
         # Call the method directly
         result = illustrator._get_characters_for_spread(spread, metadata)
 
-        # Should return entity IDs for characters mentioned in text
-        assert "@e1" in result, "Should find Leo (@e1) in text"
-        assert "@e2" in result, "Should find Mama Lion (@e2) in text"
-        assert "@e3" not in result, "Should NOT find The Zebras (@e3) - not in text"
+        # Should return empty list - no text-based fallback
+        assert result == [], "Should return empty list without text-based fallback"
 
-    def test_fallback_returns_empty_when_no_names_match(self):
-        """Fallback should return empty list when no entity names appear in text."""
+    def test_returns_empty_when_no_explicit_entity_data(self):
+        """Should return empty list when no entity data is provided."""
         from backend.core.modules.spread_illustrator import SpreadIllustrator
         from backend.core.types import StorySpread, StoryMetadata, EntityBible
 
@@ -390,10 +387,10 @@ class TestGetCharactersForSpreadFallback:
 
         result = illustrator._get_characters_for_spread(spread, metadata)
 
-        assert result == [], "Should return empty list when no names match"
+        assert result == [], "Should return empty list when no explicit entity data"
 
-    def test_fallback_matches_in_illustration_prompt_too(self):
-        """Fallback should check both text and illustration_prompt."""
+    def test_no_text_based_matching_even_with_names_in_prompt(self):
+        """Should NOT do text-based matching even if names appear in illustration_prompt."""
         from backend.core.modules.spread_illustrator import SpreadIllustrator
         from backend.core.types import StorySpread, StoryMetadata, EntityBible
 
@@ -403,8 +400,8 @@ class TestGetCharactersForSpreadFallback:
             spread_number=5,
             text="The dust settled.",  # No character names here
             word_count=3,
-            illustration_prompt="Leo looking sad in the grass",  # Leo is here
-            present_entity_ids=None,
+            illustration_prompt="Leo looking sad in the grass",  # Leo IS here
+            present_entity_ids=None,  # But no explicit entity IDs
             present_characters=None,
         )
 
@@ -417,7 +414,8 @@ class TestGetCharactersForSpreadFallback:
 
         result = illustrator._get_characters_for_spread(spread, metadata)
 
-        assert "@e1" in result, "Should find Leo in illustration_prompt"
+        # Should NOT find Leo because we don't do text-based fallback
+        assert result == [], "Should NOT do text-based matching"
 
     def test_uses_present_entity_ids_when_available(self):
         """When present_entity_ids is set, should use it directly (no fallback)."""
@@ -449,8 +447,13 @@ class TestGetCharactersForSpreadFallback:
         # Should only return what's in present_entity_ids, not all mentioned
         assert result == ["@e1"], "Should use present_entity_ids directly"
 
-    def test_legacy_character_bibles_still_works(self):
-        """Legacy stories with character_bibles should still work."""
+    def test_legacy_stories_without_present_characters_return_empty(self):
+        """Legacy stories without present_characters should return empty list.
+
+        With text-based fallback removed (story-huqf), legacy stories that have
+        neither present_entity_ids nor present_characters will not get character
+        references. This is preferable to unreliable text-based guessing.
+        """
         from backend.core.modules.spread_illustrator import SpreadIllustrator
         from backend.core.types import StorySpread, StoryMetadata, EntityBible
 
@@ -461,8 +464,8 @@ class TestGetCharactersForSpreadFallback:
             text="Crow flew over Otto's head.",
             word_count=5,
             illustration_prompt="A crow flying over an otter",
-            present_entity_ids=None,
-            present_characters=None,
+            present_entity_ids=None,  # No entity IDs
+            present_characters=None,  # No legacy character list
         )
 
         metadata = StoryMetadata(
@@ -477,6 +480,5 @@ class TestGetCharactersForSpreadFallback:
 
         result = illustrator._get_characters_for_spread(spread, metadata)
 
-        assert "Crow" in result, "Should find Crow in text"
-        assert "Otto" in result, "Should find Otto in text"
-        assert "Fox" not in result, "Should NOT find Fox - not in text"
+        # Should return empty list - no text-based fallback
+        assert result == [], "Should return empty without text-based fallback"

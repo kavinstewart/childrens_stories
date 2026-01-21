@@ -768,18 +768,18 @@ class TestSpreadIllustratorEntityIds:
         # Should return the entity IDs directly
         assert characters == ["@e1", "@e2"]
 
-    def test_get_characters_fallback_for_legacy_spread(
+    def test_get_characters_uses_present_characters_for_legacy_spread(
         self, sample_style
     ):
-        """Should fall back to text-based detection for legacy spreads."""
+        """Should use present_characters for legacy spreads (Priority 2 path)."""
         from backend.core.modules.spread_illustrator import SpreadIllustrator
 
-        # Legacy spread without entity IDs
+        # Legacy spread with present_characters but no entity IDs
         spread = StorySpread(
             spread_number=1,
             text="George met the owl.",
             word_count=4,
-            present_characters=["George", "Owl"],  # Legacy field
+            present_characters=["George", "Owl"],  # Legacy field (Priority 2)
             present_entity_ids=None,
         )
 
@@ -796,7 +796,7 @@ class TestSpreadIllustratorEntityIds:
         illustrator = SpreadIllustrator()
         characters = illustrator._get_characters_for_spread(spread, metadata)
 
-        # Should fall back to present_characters for legacy
+        # Should use present_characters for legacy (Priority 2)
         assert "George" in characters
         assert "Owl" in characters
 
