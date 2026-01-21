@@ -217,12 +217,14 @@ export default function NewVoiceStory() {
   // Fix 2 (story-2irr): Debounce interim updates to 150ms
   // Fix 3 (story-hfrs): Use useRef for interim text to avoid re-renders
   const handleTranscript = useCallback((data: STTTranscript) => {
+    console.log(`[Voice] Transcript received: final=${data.isFinal} speechFinal=${data.speechFinal} "${data.transcript.substring(0, 30)}${data.transcript.length > 30 ? '...' : ''}"`);
     if (data.isFinal) {
       // Final transcripts: update immediately
       transcriptRef.current = appendText(transcriptRef.current, data.transcript);
       interimRef.current = '';
       setTranscript(transcriptRef.current);
       clearDebounce();
+      console.log(`[Voice] Accumulated transcript: "${transcriptRef.current.substring(0, 50)}${transcriptRef.current.length > 50 ? '...' : ''}"`);
     } else {
       // Interim transcripts: store in ref, debounce state updates
       interimRef.current = data.transcript;
@@ -302,43 +304,60 @@ export default function NewVoiceStory() {
     isListening,
   } = useSTT({
     onTranscript: handleTranscript,
-    onSpeechStarted: () => setIsSpeaking(true),
-    onUtteranceEnd: () => setIsSpeaking(false),
+    onSpeechStarted: () => {
+      console.log('[Voice] onSpeechStarted callback fired');
+      setIsSpeaking(true);
+    },
+    onUtteranceEnd: () => {
+      console.log('[Voice] onUtteranceEnd callback fired');
+      setIsSpeaking(false);
+    },
     onSilenceTimeout: handleSilenceTimeout,
     silenceTimeoutMs: SILENCE_TIMEOUT_MS,
     onNoActivityTimeout: handleNoActivityTimeout,
     noActivityTimeoutMs: NO_ACTIVITY_TIMEOUT_MS,
     onError: handleError,
+    onStatusChange: (newStatus) => {
+      console.log(`[Voice] STT status changed: ${newStatus}`);
+    },
   });
 
   // Handle mic button press based on current state
   const handleMicPress = async () => {
+    console.log(`[Voice] Mic button pressed in state: ${voiceState}`);
     switch (voiceState) {
       case 'idle':
         // Start recording
+        console.log('[Voice] Starting recording from idle state');
         resetTranscript();
         setError(null);
         setVoiceState('recording');
         await startListening();
+        console.log('[Voice] startListening() completed');
         break;
 
       case 'recording':
         // Stop recording and process
+        console.log('[Voice] Stopping recording from recording state');
         await stopListening();
+        console.log('[Voice] stopListening() completed, processing transcript');
         await processTranscript();
         break;
 
       case 'confirming':
         // User wants to re-record
+        console.log('[Voice] Re-recording from confirming state');
         tts.stop();
         setExtractedGoal('');
         setConfirmationText('');
         resetTranscript();
         setVoiceState('recording');
         await startListening();
+        console.log('[Voice] Re-recording startListening() completed');
         break;
 
       default:
+        console.log(`[Voice] Mic press ignored in state: ${voiceState}`);
         break;
     }
   };
