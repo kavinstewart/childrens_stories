@@ -227,25 +227,22 @@ export default function EditPromptScreen() {
           Edit Prompt - Spread {spreadNumber}
         </Text>
 
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
-          {hasChanges && !isRegenerating && (
-            <Pressable onPress={handleReset}>
-              <Text
-                style={{
-                  color: '#FBBF24',
-                  fontSize: 17,
-                  fontFamily: fontFamily.nunitoSemiBold,
-                }}
-              >
-                Reset
-              </Text>
-            </Pressable>
-          )}
-          <Pressable
-            onPress={handleDelete}
-            disabled={isRegenerating}
-            style={{ opacity: isRegenerating ? 0.5 : 1 }}
-          >
+        {isRegenerating ? (
+          <View style={{ width: 50 }} />
+        ) : hasChanges ? (
+          <Pressable onPress={handleReset}>
+            <Text
+              style={{
+                color: '#FBBF24',
+                fontSize: 17,
+                fontFamily: fontFamily.nunitoSemiBold,
+              }}
+            >
+              Reset
+            </Text>
+          </Pressable>
+        ) : (
+          <Pressable onPress={handleDelete}>
             <Text
               style={{
                 color: '#DC2626',
@@ -256,7 +253,7 @@ export default function EditPromptScreen() {
               Delete
             </Text>
           </Pressable>
-        </View>
+        )}
       </View>
 
       {/* Content */}
