@@ -1,4 +1,4 @@
-import { View, Text, TextInput, ActivityIndicator, Pressable } from 'react-native';
+import { View, Text, TextInput, ActivityIndicator, Pressable, Alert } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState, useRef, useEffect } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -6,7 +6,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import * as Haptics from 'expo-haptics';
 import { fontFamily } from '@/lib/fonts';
-import { useRegenerateSpread, storyKeys } from '@/features/stories/hooks';
+import { useRegenerateSpread, useDeleteStory, useStory, storyKeys } from '@/features/stories/hooks';
 import { api } from '@/lib/api';
 import { useQueryClient } from '@tanstack/react-query';
 import { StoryCacheManager } from '@/lib/story-cache';
@@ -35,6 +35,8 @@ export default function EditPromptScreen() {
   const [error, setError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState('Regenerating illustration...');
   const regenerateSpread = useRegenerateSpread();
+  const deleteStory = useDeleteStory();
+  const { data: story } = useStory(storyId);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -153,6 +155,31 @@ export default function EditPromptScreen() {
     setPrompt(initialPrompt);
   };
 
+  const handleDelete = () => {
+    const storyTitle = story?.title || 'this story';
+    Alert.alert(
+      `Delete '${storyTitle}'?`,
+      'This will permanently delete the story and all illustrations.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            if (!storyId) return;
+            try {
+              await deleteStory.mutateAsync(storyId);
+              await StoryCacheManager.invalidateStory(storyId);
+              router.replace('/');
+            } catch (err) {
+              Alert.alert('Error', 'Failed to delete story. Please try again.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   return (
     <View
       style={{
@@ -200,21 +227,36 @@ export default function EditPromptScreen() {
           Edit Prompt - Spread {spreadNumber}
         </Text>
 
-        {hasChanges && !isRegenerating ? (
-          <Pressable onPress={handleReset}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
+          {hasChanges && !isRegenerating && (
+            <Pressable onPress={handleReset}>
+              <Text
+                style={{
+                  color: '#FBBF24',
+                  fontSize: 17,
+                  fontFamily: fontFamily.nunitoSemiBold,
+                }}
+              >
+                Reset
+              </Text>
+            </Pressable>
+          )}
+          <Pressable
+            onPress={handleDelete}
+            disabled={isRegenerating}
+            style={{ opacity: isRegenerating ? 0.5 : 1 }}
+          >
             <Text
               style={{
-                color: '#FBBF24',
+                color: '#DC2626',
                 fontSize: 17,
                 fontFamily: fontFamily.nunitoSemiBold,
               }}
             >
-              Reset
+              Delete
             </Text>
           </Pressable>
-        ) : (
-          <View style={{ width: 50 }} />
-        )}
+        </View>
       </View>
 
       {/* Content */}
