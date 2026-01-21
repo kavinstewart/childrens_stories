@@ -330,17 +330,17 @@ class TestCopyContextSharing:
         clear_tracking()
 
     def test_copy_context_shares_usage_across_workers(self):
-        """Verify copy_context() shares UsageData across ThreadPoolExecutor workers."""
-        import contextvars
+        """Verify per-submission copy_context() shares UsageData across ThreadPoolExecutor workers."""
+        from contextvars import copy_context
 
         start_tracking()
-        ctx = contextvars.copy_context()
 
         def worker():
             record_image_generation(model="test-model")
 
+        # Per-submission copy_context() - each worker gets its own Context but shares UsageData
         with ThreadPoolExecutor(max_workers=4) as executor:
-            futures = [executor.submit(ctx.run, worker) for _ in range(10)]
+            futures = [executor.submit(copy_context().run, worker) for _ in range(10)]
             for f in futures:
                 f.result()
 
@@ -349,23 +349,49 @@ class TestCopyContextSharing:
 
     def test_copy_context_thread_safe_under_contention(self):
         """Verify thread-safe counting under high contention."""
-        import contextvars
+        from contextvars import copy_context
 
         start_tracking()
-        ctx = contextvars.copy_context()
 
         def worker():
             # Multiple operations per worker to increase contention
             for _ in range(10):
                 record_image_generation(model="test-model")
 
+        # Per-submission copy_context() avoids Context reentrance issues
         with ThreadPoolExecutor(max_workers=8) as executor:
-            futures = [executor.submit(ctx.run, worker) for _ in range(20)]
+            futures = [executor.submit(copy_context().run, worker) for _ in range(20)]
             for f in futures:
                 f.result()
 
         usage = get_current_usage()
         assert usage.image_count == 200  # 20 workers * 10 ops each
+
+    def test_copy_context_with_slow_operations(self):
+        """Verify per-submission copy_context works with slow operations.
+
+        Regression test for Context reentrance bug (story-lhyh).
+        With a shared Context object, slow operations would cause:
+        RuntimeError: cannot enter context: <Context object> is already entered
+        """
+        from contextvars import copy_context
+        import time
+
+        start_tracking()
+
+        def slow_worker():
+            time.sleep(0.05)  # 50ms - enough to cause overlap with 4 workers
+            record_image_generation(model="test-model")
+
+        # Per-submission copy_context() is REQUIRED for slow operations
+        # Using a shared ctx would fail with "cannot enter context" error
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            futures = [executor.submit(copy_context().run, slow_worker) for _ in range(8)]
+            for f in futures:
+                f.result()
+
+        usage = get_current_usage()
+        assert usage.image_count == 8
 
 
 class TestUsageDataThreadSafety:
