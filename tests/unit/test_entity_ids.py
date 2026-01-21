@@ -94,6 +94,60 @@ class TestStorySpreadEntityIds:
         )
         assert spread.present_entity_ids == []
 
+    def test_from_db_record_with_entity_ids(self):
+        """StorySpread.from_db_record should populate present_entity_ids from JSONB."""
+        db_record = {
+            "spread_number": 3,
+            "text": "George and the owl walked together.",
+            "word_count": 6,
+            "was_revised": True,
+            "page_turn_note": "What will they find?",
+            "illustration_prompt": "A boy and owl walking in forest",
+            "present_entity_ids": ["@e1", "@e2"],
+        }
+
+        spread = StorySpread.from_db_record(db_record)
+
+        assert spread.spread_number == 3
+        assert spread.text == "George and the owl walked together."
+        assert spread.word_count == 6
+        assert spread.was_revised is True
+        assert spread.page_turn_note == "What will they find?"
+        assert spread.illustration_prompt == "A boy and owl walking in forest"
+        assert spread.present_entity_ids == ["@e1", "@e2"]
+
+    def test_from_db_record_with_null_entity_ids(self):
+        """StorySpread.from_db_record should handle NULL present_entity_ids (legacy stories)."""
+        db_record = {
+            "spread_number": 1,
+            "text": "A story begins.",
+            "word_count": 3,
+            "was_revised": False,
+            "page_turn_note": None,
+            "illustration_prompt": "A sunny day",
+            "present_entity_ids": None,  # NULL in database for legacy stories
+        }
+
+        spread = StorySpread.from_db_record(db_record)
+
+        assert spread.present_entity_ids is None
+
+    def test_from_db_record_with_empty_list(self):
+        """StorySpread.from_db_record should preserve empty list for no-entity spreads."""
+        db_record = {
+            "spread_number": 5,
+            "text": "An empty landscape.",
+            "word_count": 3,
+            "was_revised": False,
+            "page_turn_note": "",
+            "illustration_prompt": "Empty landscape",
+            "present_entity_ids": [],  # Explicit empty list
+        }
+
+        spread = StorySpread.from_db_record(db_record)
+
+        assert spread.present_entity_ids == []
+
 
 # =============================================================================
 # Test 3: StoryMetadata with entity_definitions and entity_bibles

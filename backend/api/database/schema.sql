@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS story_spreads (
     illustration_prompt TEXT,
     illustration_path TEXT,
     illustration_updated_at TIMESTAMPTZ,  -- When illustration was last regenerated (for cache busting)
+    present_entity_ids JSONB,  -- Entity IDs visually present (e.g., ["@e1", "@e2"]). NULL = legacy, [] = no entities.
     PRIMARY KEY (story_id, spread_number)
 );
 

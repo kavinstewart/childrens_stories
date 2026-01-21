@@ -167,6 +167,8 @@ async def _save_story(
             "page_turn_note": getattr(spread, "page_turn_note", ""),
             "illustration_prompt": spread.illustration_prompt,
             "illustration_path": None,
+            # Persist entity IDs for consistent illustration regeneration
+            "present_entity_ids": spread.present_entity_ids,
         }
 
         # Save illustration if present

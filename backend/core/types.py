@@ -474,6 +474,29 @@ class StorySpread:
     # Required for illustration with entity tagging system
     present_entity_ids: Optional[list[str]] = None
 
+    @classmethod
+    def from_db_record(cls, record: dict) -> "StorySpread":
+        """Construct a StorySpread from a database record.
+
+        This is the single source of truth for DB -> domain mapping.
+        Used by both story_generation.py (save) and spread_regeneration.py (load).
+
+        Args:
+            record: Dict-like database record (asyncpg.Record or dict)
+
+        Returns:
+            StorySpread instance with all fields populated from record
+        """
+        return cls(
+            spread_number=record["spread_number"],
+            text=record["text"],
+            word_count=record.get("word_count", 0) or 0,
+            was_revised=record.get("was_revised", False) or False,
+            page_turn_note=record.get("page_turn_note", "") or "",
+            illustration_prompt=record.get("illustration_prompt", "") or "",
+            present_entity_ids=record.get("present_entity_ids"),
+        )
+
     @property
     def page_number(self) -> int:
         """Alias for spread_number (backwards compatibility)."""

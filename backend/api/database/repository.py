@@ -298,6 +298,8 @@ class StoryRepository:
                     s.get("page_turn_note"),
                     s.get("illustration_prompt"),
                     s.get("illustration_path"),
+                    # JSONB column requires json.dumps() for INSERT
+                    json.dumps(s["present_entity_ids"]) if s.get("present_entity_ids") is not None else None,
                 )
                 for s in spreads
             ]
@@ -305,8 +307,8 @@ class StoryRepository:
                 """
                 INSERT INTO story_spreads
                     (story_id, spread_number, text, word_count, was_revised,
-                     page_turn_note, illustration_prompt, illustration_path)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                     page_turn_note, illustration_prompt, illustration_path, present_entity_ids)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                 """,
                 spread_data,
             )

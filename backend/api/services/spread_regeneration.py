@@ -74,13 +74,8 @@ async def regenerate_spread(
             if not spread_data:
                 raise ValueError(f"Spread {spread_number} not found in story {story_id}")
 
-        # Build spread object for illustrator
-        spread = StorySpread(
-            spread_number=spread_number,
-            text=spread_data["text"],
-            word_count=spread_data.get("word_count", 0),
-            illustration_prompt=spread_data.get("illustration_prompt", ""),
-        )
+        # Build spread object for illustrator using centralized DB->domain mapping
+        spread = StorySpread.from_db_record(spread_data)
 
         # Build metadata from story data
         # Use stored illustration style if available, otherwise fall back to default
