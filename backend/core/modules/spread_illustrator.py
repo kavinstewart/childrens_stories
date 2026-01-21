@@ -17,6 +17,7 @@ import sys
 from typing import TYPE_CHECKING, Optional, Tuple
 
 from backend.config import get_image_client, get_image_model, get_image_config, IMAGE_CONSTANTS, extract_image_from_response, image_retry
+from backend.core.cost_tracking import record_image_generation
 from ..types import (
     StoryMetadata, StorySpread, StoryReferenceSheets,
     build_illustration_prompt, DEFAULT_LIGHTING,
@@ -385,6 +386,8 @@ class SpreadIllustrator:
             contents=contents,
             config=self.config,
         )
+        # Record the API call for cost tracking (each call is billable)
+        record_image_generation(model=self.model)
         return extract_image_from_response(response)
 
     def illustrate_spread_with_qa(

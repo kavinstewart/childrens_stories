@@ -17,6 +17,7 @@ from ..models.responses import (
     StoryRecommendationItem,
     StoryResponse,
     StorySpreadResponse,
+    UsageResponse,
 )
 
 
@@ -120,15 +121,21 @@ class SpreadRegenJobRepository:
         started_at: Optional[datetime] = None,
         completed_at: Optional[datetime] = None,
         error_message: Optional[str] = None,
+        usage_json: Optional[str] = None,
+        cost_usd: Optional[float] = None,
     ) -> None:
         """Update spread regeneration job status."""
+        from decimal import Decimal
+
         await self.conn.execute(
             """
             UPDATE spread_regen_jobs
             SET status = $2,
                 started_at = COALESCE($3, started_at),
                 completed_at = COALESCE($4, completed_at),
-                error_message = COALESCE($5, error_message)
+                error_message = COALESCE($5, error_message),
+                usage_json = COALESCE($6, usage_json),
+                cost_usd = COALESCE($7, cost_usd)
             WHERE id = $1
             """,
             job_id,
@@ -136,6 +143,8 @@ class SpreadRegenJobRepository:
             started_at,
             completed_at,
             error_message,
+            usage_json,
+            Decimal(str(cost_usd)) if cost_usd is not None else None,
         )
 
     async def update_progress(
@@ -258,8 +267,12 @@ class StoryRepository:
         judgment_json: Optional[str],
         spreads: list[dict],
         character_refs: Optional[list[dict]] = None,
+        usage_json: Optional[str] = None,
+        cost_usd: Optional[float] = None,
     ) -> None:
         """Save completed story data in a transaction."""
+        from decimal import Decimal
+
         async with self.conn.transaction():
             # Update main story record
             await self.conn.execute(
@@ -273,7 +286,9 @@ class StoryRepository:
                     outline_json = $7,
                     judgment_json = $8,
                     status = 'completed',
-                    completed_at = $9
+                    completed_at = $9,
+                    usage_json = $10,
+                    cost_usd = $11
                 WHERE id = $1
                 """,
                 story_id,
@@ -285,6 +300,8 @@ class StoryRepository:
                 outline_json,
                 judgment_json,
                 datetime.now(timezone.utc),
+                usage_json,
+                Decimal(str(cost_usd)) if cost_usd is not None else None,
             )
 
             # Batch insert spreads
@@ -555,6 +572,16 @@ class StoryRepository:
             )
         return responses
 
+    def _parse_usage(self, story: asyncpg.Record) -> Optional[UsageResponse]:
+        """Parse usage_json into UsageResponse."""
+        if not story.get("usage_json"):
+            return None
+        usage_data = story["usage_json"]
+        # Handle both string and dict (asyncpg may auto-parse JSONB)
+        if isinstance(usage_data, str):
+            usage_data = json.loads(usage_data)
+        return UsageResponse(**usage_data)
+
     def _record_to_response(
         self,
         story: asyncpg.Record,
@@ -564,6 +591,7 @@ class StoryRepository:
         """Convert asyncpg Record to response model."""
         metadata = self._parse_metadata(story)
         progress = self._parse_progress(story)
+        usage = self._parse_usage(story)
 
         spread_responses = (
             self._build_spread_responses(
@@ -575,6 +603,11 @@ class StoryRepository:
             self._build_character_ref_responses(story["id"], char_refs)
             if char_refs else None
         )
+
+        # Get cost_usd, converting from Decimal if necessary
+        cost_usd = story.get("cost_usd")
+        if cost_usd is not None:
+            cost_usd = float(cost_usd)
 
         return StoryResponse(
             id=story["id"],
@@ -594,5 +627,7 @@ class StoryRepository:
             spreads=spread_responses,
             character_references=char_ref_responses,
             progress=progress,
+            usage=usage,
+            cost_usd=cost_usd,
             error_message=story["error_message"],
         )

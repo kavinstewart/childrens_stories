@@ -7,6 +7,7 @@ following Google's recommended prompting practices.
 """
 
 from backend.config import get_image_client, get_image_model, get_image_config, extract_image_from_response, image_retry
+from backend.core.cost_tracking import record_image_generation
 from ..types import (
     EntityBible,
     StoryMetadata,
@@ -68,6 +69,8 @@ Layout: Front view, 3/4 view, side profile (all full body), plus 4 expression he
             contents=prompt,
             config=self.config,
         )
+        # Record the API call for cost tracking (each call is billable)
+        record_image_generation(model=self.model)
         return extract_image_from_response(response)
 
     def generate_reference(

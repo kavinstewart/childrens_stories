@@ -19,6 +19,14 @@ from ..config import get_dsn, STORIES_DIR
 from ..logging import story_logger
 from ..database.repository import StoryRepository
 from .progress_tracker import ProgressTracker
+from backend.core.cost_tracking import (
+    start_tracking,
+    get_current_usage,
+    clear_tracking,
+    reset_history_tracking,
+    record_llm_usage_from_history,
+)
+from backend.core.cost_calculator import calculate_cost
 
 
 async def generate_story(
@@ -72,6 +80,10 @@ async def generate_story(
         # Initial progress update
         await tracker.update_async("outline", "Crafting your story outline...")
 
+        # Start cost tracking for this generation
+        start_tracking()
+        reset_history_tracking()
+
         # Get the LM for this generation
         lm = get_inference_lm()
 
@@ -117,8 +129,16 @@ async def generate_story(
             story = generator(goal, target_age_range)
             await tracker.update_async("spreads", "Story generation complete")
 
+        # Record LLM usage from DSPy history
+        record_llm_usage_from_history(lm)
+
+        # Get usage data and calculate cost
+        usage = get_current_usage()
+        usage_dict = usage.to_dict() if usage else None
+        cost = float(calculate_cost(usage_dict)) if usage_dict else None
+
         # Save to database and filesystem
-        await _save_story(story_id, story, pool)
+        await _save_story(story_id, story, pool, usage_dict, cost)
 
         # Log completion
         duration = time.time() - start_time
@@ -142,6 +162,7 @@ async def generate_story(
 
     finally:
         # Clean up resources
+        clear_tracking()
         await tracker.close()
         await pool.close()
 
@@ -150,6 +171,8 @@ async def _save_story(
     story_id: str,
     story,
     pool: asyncpg.Pool,
+    usage_dict: Optional[dict] = None,
+    cost_usd: Optional[float] = None,
 ) -> None:
     """Save generated story to database and filesystem."""
     # Create story directory for images if illustrated
@@ -236,6 +259,8 @@ async def _save_story(
             judgment_json=None,  # No longer using quality judge
             spreads=spreads_data,
             character_refs=char_refs_data,
+            usage_json=json.dumps(usage_dict) if usage_dict else None,
+            cost_usd=cost_usd,
         )
 
 

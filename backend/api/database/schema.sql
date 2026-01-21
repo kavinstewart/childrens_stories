@@ -17,6 +17,8 @@ CREATE TABLE IF NOT EXISTS stories (
     outline_json JSONB,
     judgment_json JSONB,
     progress_json JSONB,
+    usage_json JSONB,  -- Cost tracking: llm tokens, image count, models used
+    cost_usd DECIMAL(10,6),  -- Total cost in USD for this generation
     error_message TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     started_at TIMESTAMPTZ,
@@ -55,6 +57,8 @@ CREATE TABLE IF NOT EXISTS spread_regen_jobs (
     spread_number INTEGER NOT NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'pending',  -- pending/running/completed/failed
     progress_json JSONB,
+    usage_json JSONB,  -- Cost tracking: image generations and retries
+    cost_usd DECIMAL(10,6),  -- Cost in USD for this regeneration
     error_message TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     started_at TIMESTAMPTZ,

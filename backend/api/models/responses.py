@@ -80,6 +80,18 @@ class StoryProgressResponse(BaseModel):
     updated_at: Optional[datetime] = None
 
 
+class UsageResponse(BaseModel):
+    """Resource usage tracking for cost analysis."""
+
+    llm_input_tokens: int = 0
+    llm_output_tokens: int = 0
+    llm_model: str = ""
+    llm_calls: int = 0
+    image_count: int = 0
+    image_model: str = ""
+    image_retries: int = 0
+
+
 class StoryResponse(BaseModel):
     """Full story response with all data."""
 
@@ -105,6 +117,10 @@ class StoryResponse(BaseModel):
 
     # Progress tracking (populated while running)
     progress: Optional[StoryProgressResponse] = None
+
+    # Cost tracking (populated when completed)
+    usage: Optional[UsageResponse] = None
+    cost_usd: Optional[float] = None
 
     # Error info
     error_message: Optional[str] = None

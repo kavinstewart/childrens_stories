@@ -6,6 +6,7 @@ from ARQ worker. It handles its own database connections to avoid event loop
 conflicts with the main FastAPI thread.
 """
 
+import json
 import shutil
 import tempfile
 import time
@@ -18,6 +19,12 @@ import asyncpg
 from ..config import get_dsn, STORIES_DIR
 from ..logging import story_logger
 from ..database.repository import SpreadRegenJobRepository, StoryRepository
+from backend.core.cost_tracking import (
+    start_tracking,
+    get_current_usage,
+    clear_tracking,
+)
+from backend.core.cost_calculator import calculate_cost
 
 
 async def regenerate_spread(
@@ -115,6 +122,9 @@ async def regenerate_spread(
         # Load character reference sheets if available
         reference_sheets = await _load_character_refs(story_id, story)
 
+        # Start cost tracking for this regeneration
+        start_tracking()
+
         # Create illustrator and generate new image
         illustrator = SpreadIllustrator()
         image_bytes = illustrator.illustrate_spread(
@@ -125,16 +135,23 @@ async def regenerate_spread(
             custom_prompt=custom_prompt,
         )
 
+        # Get usage data and calculate cost
+        usage = get_current_usage()
+        usage_dict = usage.to_dict() if usage else None
+        cost = float(calculate_cost(usage_dict)) if usage_dict else None
+
         # Save new image atomically (write to temp, then rename)
         await _save_image_atomically(story_id, spread_number, image_bytes, pool)
 
-        # Update job status to completed
+        # Update job status to completed with cost data
         async with pool.acquire() as conn:
             regen_repo = SpreadRegenJobRepository(conn)
             await regen_repo.update_status(
                 job_id,
                 "completed",
                 completed_at=datetime.now(timezone.utc),
+                usage_json=json.dumps(usage_dict) if usage_dict else None,
+                cost_usd=cost,
             )
 
         # Log completion
@@ -157,6 +174,7 @@ async def regenerate_spread(
         raise
 
     finally:
+        clear_tracking()
         await pool.close()
 
 
