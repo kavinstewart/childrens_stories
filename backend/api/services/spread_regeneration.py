@@ -140,6 +140,12 @@ async def regenerate_spread(
         usage_dict = usage.to_dict() if usage else None
         cost = float(calculate_cost(usage_dict)) if usage_dict else None
 
+        # Before saving, verify story still exists (prevents orphaned files if deleted mid-regen)
+        async with pool.acquire() as conn:
+            repo = StoryRepository(conn)
+            if not await repo.get_story(story_id):
+                raise ValueError(f"Story {story_id} was deleted during regeneration")
+
         # Save new image atomically (write to temp, then rename)
         await _save_image_atomically(story_id, spread_number, image_bytes, pool)
 

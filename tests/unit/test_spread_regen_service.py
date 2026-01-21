@@ -292,3 +292,42 @@ class TestRegenerateSpreadService:
 
             with pytest.raises(ValueError, match="Spread.*not found"):
                 await regenerate_spread(TEST_JOB_ID, TEST_STORY_ID, 99)
+
+    @pytest.mark.asyncio
+    async def test_regenerate_spread_raises_if_story_deleted_during_generation(self):
+        """Regeneration raises ValueError if story is deleted mid-generation."""
+        from backend.api.services.spread_regeneration import regenerate_spread
+
+        mock_pool, mock_conn = create_mock_pool_and_conn()
+        mock_story = create_mock_story()
+
+        with patch("backend.api.services.spread_regeneration.asyncpg") as mock_asyncpg, \
+             patch("backend.api.services.spread_regeneration.StoryRepository") as mock_repo_class, \
+             patch("backend.api.services.spread_regeneration.SpreadRegenJobRepository") as mock_regen_repo_class, \
+             patch("backend.core.modules.spread_illustrator.SpreadIllustrator") as mock_illustrator_class, \
+             patch("backend.api.services.spread_regeneration._load_character_refs") as mock_load_refs:
+
+            mock_asyncpg.create_pool = AsyncMock(return_value=mock_pool)
+
+            mock_repo = AsyncMock()
+            mock_repo_class.return_value = mock_repo
+            # First call returns story (initial fetch), second call returns None (deleted)
+            mock_repo.get_story = AsyncMock(side_effect=[mock_story, None])
+
+            mock_regen_repo = AsyncMock()
+            mock_regen_repo_class.return_value = mock_regen_repo
+            mock_regen_repo.get_spread = AsyncMock(return_value={
+                "spread_number": 1,
+                "text": "Text",
+                "word_count": 1,
+                "illustration_prompt": "Prompt",
+            })
+
+            mock_load_refs.return_value = None
+
+            mock_illustrator = MagicMock()
+            mock_illustrator.illustrate_spread.return_value = b"image"
+            mock_illustrator_class.return_value = mock_illustrator
+
+            with pytest.raises(ValueError, match="deleted during regeneration"):
+                await regenerate_spread(TEST_JOB_ID, TEST_STORY_ID, 1)
