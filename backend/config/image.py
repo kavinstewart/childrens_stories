@@ -13,7 +13,7 @@ import os
 from dotenv import find_dotenv, load_dotenv
 from google import genai
 from google.genai.errors import ClientError, ServerError
-from google.genai.types import GenerateContentConfig, Modality
+from google.genai.types import GenerateContentConfig, HttpOptions, Modality
 from tenacity import (
     retry,
     stop_after_attempt,
@@ -70,6 +70,7 @@ IMAGE_CONSTANTS = {
     "model": "gemini-3-pro-image-preview",  # Nano Banana Pro
     "max_reference_images": 14,  # Nano Banana Pro supports up to 14
     "max_faces": 5,  # 5-face memory system
+    "request_timeout_ms": 90_000,  # 90s client-side timeout per API request
 }
 
 
@@ -78,12 +79,17 @@ def get_image_client() -> genai.Client:
     Get the Nano Banana Pro (Gemini 3 Pro Image) client for illustration generation.
 
     Uses GOOGLE_API_KEY from environment.
+
+    Configures a 90-second client-side timeout to prevent hung requests from
+    consuming the entire job timeout budget. If the API doesn't respond within
+    90s, the request fails fast and tenacity can retry.
     """
     api_key = os.getenv("GOOGLE_API_KEY")
     if not api_key:
         raise ValueError("GOOGLE_API_KEY not found in environment. Set it in .env file.")
 
-    return genai.Client(api_key=api_key)
+    http_options = HttpOptions(timeout=IMAGE_CONSTANTS["request_timeout_ms"])
+    return genai.Client(api_key=api_key, http_options=http_options)
 
 
 def get_image_model() -> str:
