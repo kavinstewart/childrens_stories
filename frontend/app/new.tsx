@@ -79,8 +79,8 @@ const VALID_FALLBACK_MESSAGES = new Set([
 export default function NewStory() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { fallback } = useLocalSearchParams<{ fallback?: string }>();
-  const [prompt, setPrompt] = useState('');
+  const { fallback, goal } = useLocalSearchParams<{ fallback?: string; goal?: string }>();
+  const [prompt, setPrompt] = useState(goal ?? '');
 
   // Only show banner if fallback is a valid whitelisted message
   const validFallbackMessage = fallback && VALID_FALLBACK_MESSAGES.has(fallback) ? fallback : null;

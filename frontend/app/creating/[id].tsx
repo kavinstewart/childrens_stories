@@ -388,7 +388,7 @@ export default function CreatingStory() {
                 </Text>
               </Pressable>
               <Pressable
-                onPress={() => router.replace('/new')}
+                onPress={() => router.replace(`/new?goal=${encodeURIComponent(story?.goal ?? '')}`)}
                 style={{
                   backgroundColor: 'white',
                   paddingHorizontal: 24,
