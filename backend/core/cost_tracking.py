@@ -27,6 +27,8 @@ class UsageData:
     image_count: int = 0
     image_model: str = ""
     image_retries: int = 0
+    llm_total_duration_ms: int = 0
+    llm_durations_ms: list[int] = field(default_factory=list)
 
     # Lock for thread-safe mutations (excluded from repr/compare/serialization)
     _lock: threading.Lock = field(
@@ -51,6 +53,8 @@ class UsageData:
             "image_count": self.image_count,
             "image_model": self.image_model,
             "image_retries": self.image_retries,
+            "llm_total_duration_ms": self.llm_total_duration_ms,
+            "llm_durations_ms": self.llm_durations_ms,
         }
 
     @classmethod
@@ -64,6 +68,8 @@ class UsageData:
             image_count=data.get("image_count", 0),
             image_model=data.get("image_model", ""),
             image_retries=data.get("image_retries", 0),
+            llm_total_duration_ms=data.get("llm_total_duration_ms", 0),
+            llm_durations_ms=data.get("llm_durations_ms", []),
         )
 
 
@@ -193,6 +199,12 @@ def record_llm_usage_from_history(lm) -> None:
             usage.llm_input_tokens += input_tokens or 0
             usage.llm_output_tokens += output_tokens or 0
             usage.llm_calls += 1
+
+        # Extract response duration from litellm's _response_ms attribute
+        if hasattr(response, "_response_ms"):
+            duration_ms = int(response._response_ms)
+            usage.llm_total_duration_ms += duration_ms
+            usage.llm_durations_ms.append(duration_ms)
 
     # Update model name from LM
     if hasattr(lm, "model"):

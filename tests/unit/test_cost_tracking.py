@@ -29,6 +29,8 @@ class TestUsageData:
         assert usage.image_count == 0
         assert usage.image_model == ""
         assert usage.image_retries == 0
+        assert usage.llm_total_duration_ms == 0
+        assert usage.llm_durations_ms == []
 
     def test_to_dict(self):
         """UsageData serializes to dict correctly."""
@@ -40,6 +42,8 @@ class TestUsageData:
             image_count=12,
             image_model="gemini-3-pro-image-preview",
             image_retries=2,
+            llm_total_duration_ms=15000,
+            llm_durations_ms=[5000, 4000, 6000],
         )
         result = usage.to_dict()
         assert result == {
@@ -50,6 +54,8 @@ class TestUsageData:
             "image_count": 12,
             "image_model": "gemini-3-pro-image-preview",
             "image_retries": 2,
+            "llm_total_duration_ms": 15000,
+            "llm_durations_ms": [5000, 4000, 6000],
         }
 
     def test_from_dict(self):
@@ -62,11 +68,32 @@ class TestUsageData:
             "image_count": 12,
             "image_model": "gemini-3-pro-image-preview",
             "image_retries": 2,
+            "llm_total_duration_ms": 15000,
+            "llm_durations_ms": [5000, 4000, 6000],
         }
         usage = UsageData.from_dict(data)
         assert usage.llm_input_tokens == 1000
         assert usage.llm_output_tokens == 500
         assert usage.llm_model == "gemini-3-pro-preview"
+        assert usage.llm_total_duration_ms == 15000
+        assert usage.llm_durations_ms == [5000, 4000, 6000]
+
+    def test_from_dict_backwards_compatible(self):
+        """UsageData.from_dict handles old data without duration fields."""
+        # Old data format without duration fields
+        data = {
+            "llm_input_tokens": 1000,
+            "llm_output_tokens": 500,
+            "llm_model": "gemini-3-pro-preview",
+            "llm_calls": 3,
+            "image_count": 12,
+            "image_model": "gemini-3-pro-image-preview",
+            "image_retries": 2,
+        }
+        usage = UsageData.from_dict(data)
+        # Should default to 0 and empty list
+        assert usage.llm_total_duration_ms == 0
+        assert usage.llm_durations_ms == []
 
 
 class TestContextVarTracking:
@@ -258,6 +285,82 @@ class TestDSPyHistoryTracking:
         record_llm_usage_from_history(NoHistoryLM())
         usage = get_current_usage()
         assert usage.llm_calls == 0
+
+    def test_record_duration_from_response_ms(self):
+        """Extract _response_ms from litellm response objects."""
+        start_tracking()
+        mock_lm = MockLM(
+            history=[
+                {"response": MockResponse(
+                    usage=MockUsage(prompt_tokens=100, completion_tokens=50),
+                    response_ms=5432.1
+                )}
+            ],
+            model="gpt-5.2"
+        )
+        record_llm_usage_from_history(mock_lm)
+        usage = get_current_usage()
+        assert usage.llm_total_duration_ms == 5432
+        assert usage.llm_durations_ms == [5432]
+
+    def test_record_duration_multiple_calls(self):
+        """Accumulate durations from multiple LLM calls."""
+        start_tracking()
+        mock_lm = MockLM(
+            history=[
+                {"response": MockResponse(
+                    usage=MockUsage(prompt_tokens=100, completion_tokens=50),
+                    response_ms=5000.0
+                )},
+                {"response": MockResponse(
+                    usage=MockUsage(prompt_tokens=200, completion_tokens=100),
+                    response_ms=7500.5
+                )},
+            ],
+            model="gpt-5.2"
+        )
+        record_llm_usage_from_history(mock_lm)
+        usage = get_current_usage()
+        assert usage.llm_total_duration_ms == 12500  # 5000 + 7500
+        assert usage.llm_durations_ms == [5000, 7500]
+
+    def test_record_duration_missing_response_ms(self):
+        """Handle responses without _response_ms gracefully."""
+        start_tracking()
+        mock_lm = MockLM(
+            history=[
+                {"response": MockResponse(
+                    usage=MockUsage(prompt_tokens=100, completion_tokens=50),
+                    response_ms=None  # No _response_ms attribute
+                )}
+            ],
+            model="gpt-5.2"
+        )
+        record_llm_usage_from_history(mock_lm)
+        usage = get_current_usage()
+        # Tokens should still be recorded
+        assert usage.llm_input_tokens == 100
+        assert usage.llm_output_tokens == 50
+        # Duration should remain at defaults
+        assert usage.llm_total_duration_ms == 0
+        assert usage.llm_durations_ms == []
+
+
+class MockResponse:
+    """Mock litellm response with _response_ms attribute."""
+
+    def __init__(self, usage=None, response_ms=None):
+        self.usage = usage
+        if response_ms is not None:
+            self._response_ms = response_ms
+
+
+class MockUsage:
+    """Mock usage object with token counts."""
+
+    def __init__(self, prompt_tokens=0, completion_tokens=0):
+        self.prompt_tokens = prompt_tokens
+        self.completion_tokens = completion_tokens
 
 
 class MockLM:
