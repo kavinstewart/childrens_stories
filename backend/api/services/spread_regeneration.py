@@ -2,8 +2,7 @@
 Standalone spread regeneration logic.
 
 This module contains the core spread regeneration function that can be called
-from ARQ worker. It handles its own database connections to avoid event loop
-conflicts with the main FastAPI thread.
+from ARQ worker. Uses a shared database pool passed from the caller.
 """
 
 import json
@@ -16,7 +15,7 @@ from typing import Optional
 
 import asyncpg
 
-from ..config import get_dsn, STORIES_DIR
+from ..config import STORIES_DIR
 from ..logging import story_logger
 from ..database.repository import SpreadRegenJobRepository, StoryRepository
 from backend.core.cost_tracking import (
@@ -32,11 +31,10 @@ async def regenerate_spread(
     story_id: str,
     spread_number: int,
     custom_prompt: Optional[str] = None,
+    pool: Optional[asyncpg.Pool] = None,
 ) -> None:
     """
     Regenerate a single spread illustration and update the story.
-
-    Creates its own database connections to avoid event loop conflicts.
 
     Args:
         job_id: ID of the regeneration job
@@ -44,17 +42,20 @@ async def regenerate_spread(
         spread_number: Which spread to regenerate (1-12)
         custom_prompt: Optional custom prompt to use instead of the default composed prompt.
                       If provided, bypasses the template and uses this prompt directly.
+        pool: Database connection pool (required)
+
+    Raises:
+        ValueError: If pool is not provided
     """
+    if pool is None:
+        raise ValueError("Database pool is required")
+
     # Import here to avoid circular imports and slow startup
     from backend.core.modules.spread_illustrator import SpreadIllustrator
     from backend.core.modules.illustration_styles import DEFAULT_FALLBACK_STYLE
     from backend.core.types import StorySpread, StoryMetadata, StoryReferenceSheets, StyleDefinition
 
     start_time = time.time()
-
-    # Create a dedicated connection pool for this task
-    dsn = get_dsn()
-    pool = await asyncpg.create_pool(dsn, min_size=1, max_size=2)
 
     try:
         # Log start
@@ -180,8 +181,8 @@ async def regenerate_spread(
         raise
 
     finally:
+        # Clean up cost tracking (pool is managed by caller)
         clear_tracking()
-        await pool.close()
 
 
 async def _load_character_refs(story_id: str, story) -> Optional["StoryReferenceSheets"]:

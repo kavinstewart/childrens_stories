@@ -213,14 +213,11 @@ class TestRegenerateSpreadCharacterBibles:
             captured_metadata = kwargs.get("outline")
             return b"fake_image"
 
-        with patch("backend.api.services.spread_regeneration.asyncpg") as mock_asyncpg, \
-             patch("backend.api.services.spread_regeneration.StoryRepository") as mock_repo_class, \
+        with patch("backend.api.services.spread_regeneration.StoryRepository") as mock_repo_class, \
              patch("backend.api.services.spread_regeneration.SpreadRegenJobRepository") as mock_regen_repo_class, \
              patch("backend.core.modules.spread_illustrator.SpreadIllustrator") as mock_illustrator_class, \
              patch("backend.api.services.spread_regeneration._load_character_refs") as mock_load_refs, \
              patch("backend.api.services.spread_regeneration._save_image_atomically") as mock_save:
-
-            mock_asyncpg.create_pool = AsyncMock(return_value=mock_pool)
 
             mock_repo = AsyncMock()
             mock_repo_class.return_value = mock_repo
@@ -242,7 +239,7 @@ class TestRegenerateSpreadCharacterBibles:
             mock_illustrator.illustrate_spread.side_effect = capture_illustrate_call
             mock_illustrator_class.return_value = mock_illustrator
 
-            await regenerate_spread(TEST_JOB_ID, TEST_STORY_ID, 5)
+            await regenerate_spread(TEST_JOB_ID, TEST_STORY_ID, 5, pool=mock_pool)
 
             # Verify entity_bibles was populated in StoryMetadata
             assert captured_metadata is not None, "Should have captured metadata"
@@ -282,14 +279,11 @@ class TestRegenerateSpreadCharacterBibles:
             captured_metadata = kwargs.get("outline")
             return b"fake_image"
 
-        with patch("backend.api.services.spread_regeneration.asyncpg") as mock_asyncpg, \
-             patch("backend.api.services.spread_regeneration.StoryRepository") as mock_repo_class, \
+        with patch("backend.api.services.spread_regeneration.StoryRepository") as mock_repo_class, \
              patch("backend.api.services.spread_regeneration.SpreadRegenJobRepository") as mock_regen_repo_class, \
              patch("backend.core.modules.spread_illustrator.SpreadIllustrator") as mock_illustrator_class, \
              patch("backend.api.services.spread_regeneration._load_character_refs") as mock_load_refs, \
              patch("backend.api.services.spread_regeneration._save_image_atomically") as mock_save:
-
-            mock_asyncpg.create_pool = AsyncMock(return_value=mock_pool)
 
             mock_repo = AsyncMock()
             mock_repo_class.return_value = mock_repo
@@ -311,7 +305,7 @@ class TestRegenerateSpreadCharacterBibles:
             mock_illustrator.illustrate_spread.side_effect = capture_illustrate_call
             mock_illustrator_class.return_value = mock_illustrator
 
-            await regenerate_spread(TEST_JOB_ID, TEST_STORY_ID, 1)
+            await regenerate_spread(TEST_JOB_ID, TEST_STORY_ID, 1, pool=mock_pool)
 
             # Should not crash, entity_bibles should be empty
             assert captured_metadata is not None

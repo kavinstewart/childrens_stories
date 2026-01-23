@@ -13,6 +13,41 @@ from ..config import DATABASE_URL, get_dsn
 _pool: Optional[asyncpg.Pool] = None
 
 
+async def create_db_pool(
+    min_size: int = 2,
+    max_size: int = 10,
+    command_timeout: int = 60,
+) -> asyncpg.Pool:
+    """Create a connection pool with standard settings.
+
+    This factory function can be used by both FastAPI (via init_pool) and
+    ARQ worker (directly) to create pools with consistent configuration.
+
+    Args:
+        min_size: Minimum connections to keep open
+        max_size: Maximum connections allowed
+        command_timeout: Query timeout in seconds
+
+    Returns:
+        Configured asyncpg connection pool
+
+    Raises:
+        RuntimeError: If DATABASE_URL is not configured
+    """
+    dsn = get_dsn()
+    if not dsn:
+        raise RuntimeError(
+            "Database not configured. Set DATABASE_URL environment variable "
+            "to a PostgreSQL connection string."
+        )
+    return await asyncpg.create_pool(
+        dsn,
+        min_size=min_size,
+        max_size=max_size,
+        command_timeout=command_timeout,
+    )
+
+
 def get_pool() -> asyncpg.Pool:
     """Get the connection pool. Raises if not initialized."""
     if _pool is None:
@@ -25,20 +60,7 @@ def get_pool() -> asyncpg.Pool:
 async def init_pool() -> asyncpg.Pool:
     """Create and store the connection pool. Call this in FastAPI lifespan."""
     global _pool
-    if not DATABASE_URL:
-        raise RuntimeError(
-            "Database not configured. Set DATABASE_URL environment variable "
-            "to a PostgreSQL connection string."
-        )
-
-    dsn = get_dsn()
-
-    _pool = await asyncpg.create_pool(
-        dsn,
-        min_size=2,
-        max_size=10,
-        command_timeout=60,
-    )
+    _pool = await create_db_pool(min_size=2, max_size=10)
     return _pool
 
 

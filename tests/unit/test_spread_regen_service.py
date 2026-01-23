@@ -24,7 +24,6 @@ def create_mock_pool_and_conn():
         yield mock_conn
 
     mock_pool.acquire = mock_acquire
-    mock_pool.close = AsyncMock()
 
     return mock_pool, mock_conn
 
@@ -46,6 +45,14 @@ class TestRegenerateSpreadService:
     """Tests for regenerate_spread function."""
 
     @pytest.mark.asyncio
+    async def test_regenerate_spread_raises_if_pool_is_none(self):
+        """Regeneration raises ValueError if pool is not provided."""
+        from backend.api.services.spread_regeneration import regenerate_spread
+
+        with pytest.raises(ValueError, match="Database pool is required"):
+            await regenerate_spread(TEST_JOB_ID, TEST_STORY_ID, 3, pool=None)
+
+    @pytest.mark.asyncio
     async def test_regenerate_spread_updates_job_status_to_running(self):
         """Regeneration updates job status to running at start."""
         from backend.api.services.spread_regeneration import regenerate_spread
@@ -53,14 +60,11 @@ class TestRegenerateSpreadService:
         mock_pool, mock_conn = create_mock_pool_and_conn()
         mock_story = create_mock_story()
 
-        with patch("backend.api.services.spread_regeneration.asyncpg") as mock_asyncpg, \
-             patch("backend.api.services.spread_regeneration.StoryRepository") as mock_repo_class, \
+        with patch("backend.api.services.spread_regeneration.StoryRepository") as mock_repo_class, \
              patch("backend.api.services.spread_regeneration.SpreadRegenJobRepository") as mock_regen_repo_class, \
              patch("backend.core.modules.spread_illustrator.SpreadIllustrator") as mock_illustrator_class, \
              patch("backend.api.services.spread_regeneration._load_character_refs") as mock_load_refs, \
              patch("backend.api.services.spread_regeneration._save_image_atomically") as mock_save:
-
-            mock_asyncpg.create_pool = AsyncMock(return_value=mock_pool)
 
             mock_repo = AsyncMock()
             mock_repo_class.return_value = mock_repo
@@ -82,7 +86,7 @@ class TestRegenerateSpreadService:
             mock_illustrator.illustrate_spread.return_value = b"fake_image_bytes"
             mock_illustrator_class.return_value = mock_illustrator
 
-            await regenerate_spread(TEST_JOB_ID, TEST_STORY_ID, 3)
+            await regenerate_spread(TEST_JOB_ID, TEST_STORY_ID, 3, pool=mock_pool)
 
             # Verify status was updated to running
             # update_status(job_id, status, started_at=...)
@@ -105,14 +109,11 @@ class TestRegenerateSpreadService:
         mock_story.outline.setting = ""
         mock_story.outline.plot_summary = ""
 
-        with patch("backend.api.services.spread_regeneration.asyncpg") as mock_asyncpg, \
-             patch("backend.api.services.spread_regeneration.StoryRepository") as mock_repo_class, \
+        with patch("backend.api.services.spread_regeneration.StoryRepository") as mock_repo_class, \
              patch("backend.api.services.spread_regeneration.SpreadRegenJobRepository") as mock_regen_repo_class, \
              patch("backend.core.modules.spread_illustrator.SpreadIllustrator") as mock_illustrator_class, \
              patch("backend.api.services.spread_regeneration._load_character_refs") as mock_load_refs, \
              patch("backend.api.services.spread_regeneration._save_image_atomically") as mock_save:
-
-            mock_asyncpg.create_pool = AsyncMock(return_value=mock_pool)
 
             mock_repo = AsyncMock()
             mock_repo_class.return_value = mock_repo
@@ -134,7 +135,7 @@ class TestRegenerateSpreadService:
             mock_illustrator.illustrate_spread.return_value = b"image"
             mock_illustrator_class.return_value = mock_illustrator
 
-            await regenerate_spread(TEST_JOB_ID, TEST_STORY_ID, 5)
+            await regenerate_spread(TEST_JOB_ID, TEST_STORY_ID, 5, pool=mock_pool)
 
             # Verify illustrator was called
             mock_illustrator.illustrate_spread.assert_called_once()
@@ -155,14 +156,11 @@ class TestRegenerateSpreadService:
         mock_story.outline.setting = ""
         mock_story.outline.plot_summary = ""
 
-        with patch("backend.api.services.spread_regeneration.asyncpg") as mock_asyncpg, \
-             patch("backend.api.services.spread_regeneration.StoryRepository") as mock_repo_class, \
+        with patch("backend.api.services.spread_regeneration.StoryRepository") as mock_repo_class, \
              patch("backend.api.services.spread_regeneration.SpreadRegenJobRepository") as mock_regen_repo_class, \
              patch("backend.core.modules.spread_illustrator.SpreadIllustrator") as mock_illustrator_class, \
              patch("backend.api.services.spread_regeneration._load_character_refs") as mock_load_refs, \
              patch("backend.api.services.spread_regeneration._save_image_atomically") as mock_save:
-
-            mock_asyncpg.create_pool = AsyncMock(return_value=mock_pool)
 
             mock_repo = AsyncMock()
             mock_repo_class.return_value = mock_repo
@@ -184,7 +182,7 @@ class TestRegenerateSpreadService:
             mock_illustrator.illustrate_spread.return_value = b"image"
             mock_illustrator_class.return_value = mock_illustrator
 
-            await regenerate_spread(TEST_JOB_ID, TEST_STORY_ID, 1)
+            await regenerate_spread(TEST_JOB_ID, TEST_STORY_ID, 1, pool=mock_pool)
 
             # Verify status was updated to completed
             # update_status(job_id, status, completed_at=...)
@@ -206,13 +204,10 @@ class TestRegenerateSpreadService:
         mock_story.outline.setting = ""
         mock_story.outline.plot_summary = ""
 
-        with patch("backend.api.services.spread_regeneration.asyncpg") as mock_asyncpg, \
-             patch("backend.api.services.spread_regeneration.StoryRepository") as mock_repo_class, \
+        with patch("backend.api.services.spread_regeneration.StoryRepository") as mock_repo_class, \
              patch("backend.api.services.spread_regeneration.SpreadRegenJobRepository") as mock_regen_repo_class, \
              patch("backend.core.modules.spread_illustrator.SpreadIllustrator") as mock_illustrator_class, \
              patch("backend.api.services.spread_regeneration._load_character_refs") as mock_load_refs:
-
-            mock_asyncpg.create_pool = AsyncMock(return_value=mock_pool)
 
             mock_repo = AsyncMock()
             mock_repo_class.return_value = mock_repo
@@ -235,7 +230,7 @@ class TestRegenerateSpreadService:
             mock_illustrator_class.return_value = mock_illustrator
 
             with pytest.raises(RuntimeError):
-                await regenerate_spread(TEST_JOB_ID, TEST_STORY_ID, 1)
+                await regenerate_spread(TEST_JOB_ID, TEST_STORY_ID, 1, pool=mock_pool)
 
             # Verify status was updated to failed
             # update_status(job_id, status, completed_at=..., error_message=...)
@@ -252,11 +247,8 @@ class TestRegenerateSpreadService:
 
         mock_pool, mock_conn = create_mock_pool_and_conn()
 
-        with patch("backend.api.services.spread_regeneration.asyncpg") as mock_asyncpg, \
-             patch("backend.api.services.spread_regeneration.StoryRepository") as mock_repo_class, \
+        with patch("backend.api.services.spread_regeneration.StoryRepository") as mock_repo_class, \
              patch("backend.api.services.spread_regeneration.SpreadRegenJobRepository") as mock_regen_repo_class:
-
-            mock_asyncpg.create_pool = AsyncMock(return_value=mock_pool)
 
             mock_repo = AsyncMock()
             mock_repo_class.return_value = mock_repo
@@ -266,7 +258,7 @@ class TestRegenerateSpreadService:
             mock_regen_repo_class.return_value = mock_regen_repo
 
             with pytest.raises(ValueError, match="not found"):
-                await regenerate_spread(TEST_JOB_ID, TEST_STORY_ID, 1)
+                await regenerate_spread(TEST_JOB_ID, TEST_STORY_ID, 1, pool=mock_pool)
 
     @pytest.mark.asyncio
     async def test_regenerate_spread_raises_for_missing_spread(self):
@@ -276,11 +268,8 @@ class TestRegenerateSpreadService:
         mock_pool, mock_conn = create_mock_pool_and_conn()
         mock_story = create_mock_story()
 
-        with patch("backend.api.services.spread_regeneration.asyncpg") as mock_asyncpg, \
-             patch("backend.api.services.spread_regeneration.StoryRepository") as mock_repo_class, \
+        with patch("backend.api.services.spread_regeneration.StoryRepository") as mock_repo_class, \
              patch("backend.api.services.spread_regeneration.SpreadRegenJobRepository") as mock_regen_repo_class:
-
-            mock_asyncpg.create_pool = AsyncMock(return_value=mock_pool)
 
             mock_repo = AsyncMock()
             mock_repo_class.return_value = mock_repo
@@ -291,7 +280,7 @@ class TestRegenerateSpreadService:
             mock_regen_repo.get_spread = AsyncMock(return_value=None)
 
             with pytest.raises(ValueError, match="Spread.*not found"):
-                await regenerate_spread(TEST_JOB_ID, TEST_STORY_ID, 99)
+                await regenerate_spread(TEST_JOB_ID, TEST_STORY_ID, 99, pool=mock_pool)
 
     @pytest.mark.asyncio
     async def test_regenerate_spread_raises_if_story_deleted_during_generation(self):
@@ -301,13 +290,10 @@ class TestRegenerateSpreadService:
         mock_pool, mock_conn = create_mock_pool_and_conn()
         mock_story = create_mock_story()
 
-        with patch("backend.api.services.spread_regeneration.asyncpg") as mock_asyncpg, \
-             patch("backend.api.services.spread_regeneration.StoryRepository") as mock_repo_class, \
+        with patch("backend.api.services.spread_regeneration.StoryRepository") as mock_repo_class, \
              patch("backend.api.services.spread_regeneration.SpreadRegenJobRepository") as mock_regen_repo_class, \
              patch("backend.core.modules.spread_illustrator.SpreadIllustrator") as mock_illustrator_class, \
              patch("backend.api.services.spread_regeneration._load_character_refs") as mock_load_refs:
-
-            mock_asyncpg.create_pool = AsyncMock(return_value=mock_pool)
 
             mock_repo = AsyncMock()
             mock_repo_class.return_value = mock_repo
@@ -330,4 +316,4 @@ class TestRegenerateSpreadService:
             mock_illustrator_class.return_value = mock_illustrator
 
             with pytest.raises(ValueError, match="deleted during regeneration"):
-                await regenerate_spread(TEST_JOB_ID, TEST_STORY_ID, 1)
+                await regenerate_spread(TEST_JOB_ID, TEST_STORY_ID, 1, pool=mock_pool)

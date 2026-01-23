@@ -5,10 +5,8 @@ Run with: arq backend.worker.WorkerSettings
 """
 
 import logging
-import os
 from typing import Any
 
-import asyncpg
 from arq import cron
 from arq.connections import RedisSettings
 from dotenv import load_dotenv
@@ -16,18 +14,12 @@ from dotenv import load_dotenv
 # Load environment variables before importing app modules
 load_dotenv()
 
+from backend.api.database.db import create_db_pool
 from backend.api.services.story_generation import generate_story
 from backend.api.services.spread_regeneration import regenerate_spread
 from backend.api.database.repository import SpreadRegenJobRepository, StoryRepository
 
 logger = logging.getLogger(__name__)
-
-
-def _get_database_dsn() -> str:
-    """Get PostgreSQL DSN from environment."""
-    dsn = os.getenv("DATABASE_URL", "")
-    # Convert SQLAlchemy-style URL to asyncpg format
-    return dsn.replace("+asyncpg", "")
 
 
 async def generate_story_task(
@@ -44,7 +36,7 @@ async def generate_story_task(
     The actual generation logic is in story_generation.py for portability.
 
     Args:
-        ctx: ARQ context (contains job_id, redis connection, etc.)
+        ctx: ARQ context (contains job_id, redis connection, pool, etc.)
         story_id: UUID of the story record
         goal: The learning goal or theme for the story
         target_age_range: Target reader age range
@@ -56,12 +48,18 @@ async def generate_story_task(
     job_id = ctx.get("job_id", "unknown")
     logger.info(f"Starting story generation job {job_id} for story {story_id}")
 
+    # Fail fast if pool unavailable
+    pool = ctx.get("pool")
+    if pool is None:
+        raise RuntimeError("Database pool not available in worker context")
+
     try:
         await generate_story(
             story_id=story_id,
             goal=goal,
             target_age_range=target_age_range,
             generation_type=generation_type,
+            pool=pool,
         )
         logger.info(f"Completed story generation job {job_id} for story {story_id}")
         return {"story_id": story_id, "status": "completed"}
@@ -85,7 +83,7 @@ async def regenerate_spread_task(
     This is a thin wrapper around the standalone regenerate_spread function.
 
     Args:
-        ctx: ARQ context (contains job_id, redis connection, etc.)
+        ctx: ARQ context (contains job_id, redis connection, pool, etc.)
         job_id: ID of the regeneration job record
         story_id: UUID of the story
         spread_number: Which spread to regenerate (1-12)
@@ -97,12 +95,18 @@ async def regenerate_spread_task(
     arq_job_id = ctx.get("job_id", "unknown")
     logger.info(f"Starting spread regeneration job {arq_job_id} for story {story_id} spread {spread_number}")
 
+    # Fail fast if pool unavailable
+    pool = ctx.get("pool")
+    if pool is None:
+        raise RuntimeError("Database pool not available in worker context")
+
     try:
         await regenerate_spread(
             job_id=job_id,
             story_id=story_id,
             spread_number=spread_number,
             custom_prompt=custom_prompt,
+            pool=pool,
         )
         logger.info(f"Completed spread regeneration job {arq_job_id}")
         return {"job_id": job_id, "status": "completed"}
@@ -122,14 +126,13 @@ async def cleanup_stale_jobs_task(ctx: dict[str, Any]) -> dict[str, Any]:
 
     Cleans up both stories and spread regeneration jobs.
     """
-    dsn = _get_database_dsn()
-    if not dsn:
-        logger.warning("DATABASE_URL not set, skipping stale job cleanup")
+    pool = ctx.get("pool")
+    if pool is None:
+        logger.warning("Database pool not available, skipping stale job cleanup")
         return {"cleaned_stories": 0, "cleaned_spreads": 0}
 
     try:
-        conn = await asyncpg.connect(dsn)
-        try:
+        async with pool.acquire() as conn:
             # Clean up stale stories
             story_repo = StoryRepository(conn)
             story_count = await story_repo.cleanup_stale_stories()
@@ -143,8 +146,6 @@ async def cleanup_stale_jobs_task(ctx: dict[str, Any]) -> dict[str, Any]:
                 logger.info(f"Cleaned up {spread_count} stale spread regeneration job(s)")
 
             return {"cleaned_stories": story_count, "cleaned_spreads": spread_count}
-        finally:
-            await conn.close()
     except Exception as e:
         logger.error(f"Failed to cleanup stale jobs: {e}")
         return {"cleaned_stories": 0, "cleaned_spreads": 0, "error": str(e)}
@@ -158,15 +159,18 @@ async def startup(ctx: dict[str, Any]) -> None:
     # This prevents ghost jobs from blocking the worker
     await _cleanup_stale_redis_keys(ctx)
 
-    # Cleanup any jobs left in bad state from previous crash
-    dsn = _get_database_dsn()
-    if not dsn:
-        logger.warning("DATABASE_URL not set, skipping startup cleanup")
-        return
-
+    # Create worker-scoped database pool
+    # Sized for concurrent story generation (2 tasks max) + cron cleanup
     try:
-        conn = await asyncpg.connect(dsn)
-        try:
+        ctx["pool"] = await create_db_pool(min_size=3, max_size=8)
+        logger.info("Database pool created successfully")
+    except RuntimeError as e:
+        logger.error(f"Failed to create database pool: {e}")
+        raise
+
+    # Use the pool for startup cleanup (jobs left in bad state from previous crash)
+    try:
+        async with ctx["pool"].acquire() as conn:
             # Clean up stale stories
             story_repo = StoryRepository(conn)
             story_count = await story_repo.cleanup_stale_stories()
@@ -178,8 +182,6 @@ async def startup(ctx: dict[str, Any]) -> None:
             spread_count = await regen_repo.cleanup_stale_jobs()
             if spread_count > 0:
                 logger.info(f"Startup cleanup: marked {spread_count} stale spread job(s) as failed")
-        finally:
-            await conn.close()
     except Exception as e:
         logger.error(f"Failed startup cleanup: {e}")
 
@@ -223,6 +225,14 @@ async def _cleanup_stale_redis_keys(ctx: dict[str, Any]) -> None:
 async def shutdown(ctx: dict[str, Any]) -> None:
     """Called when worker shuts down."""
     logger.info("ARQ worker shutting down")
+
+    # Close database pool (best-effort cleanup)
+    if pool := ctx.get("pool"):
+        try:
+            await pool.close()
+            logger.info("Database pool closed")
+        except Exception as e:
+            logger.error(f"Failed to close database pool: {e}")
 
 
 class WorkerSettings:

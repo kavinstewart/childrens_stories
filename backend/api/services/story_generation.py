@@ -2,8 +2,8 @@
 Standalone story generation logic.
 
 This module contains the core story generation function that can be called
-from any task runner (ARQ, Celery, or direct invocation). It handles its
-own database connections to avoid event loop conflicts.
+from any task runner (ARQ, Celery, or direct invocation). Uses a shared
+database pool passed from the caller.
 """
 
 import asyncio
@@ -15,7 +15,7 @@ from typing import Callable, Optional
 
 import asyncpg
 
-from ..config import get_dsn, STORIES_DIR
+from ..config import STORIES_DIR
 from ..logging import story_logger
 from ..database.repository import StoryRepository
 from .progress_tracker import ProgressTracker
@@ -35,13 +35,12 @@ async def generate_story(
     target_age_range: str = "4-7",
     generation_type: str = "illustrated",
     on_progress: Optional[Callable[[str, str, int, int], None]] = None,
+    pool: Optional[asyncpg.Pool] = None,
 ) -> None:
     """
     Generate a story and save it to the database.
 
-    This is the main entry point for story generation. It creates its own
-    database connections to avoid event loop conflicts when called from
-    background workers.
+    This is the main entry point for story generation.
 
     Args:
         story_id: UUID of the story record (must already exist in DB)
@@ -49,20 +48,22 @@ async def generate_story(
         target_age_range: Target reader age range (default "4-7")
         generation_type: "simple", "standard", or "illustrated"
         on_progress: Optional callback for progress updates
+        pool: Database connection pool (required)
+
+    Raises:
+        ValueError: If pool is not provided
     """
+    if pool is None:
+        raise ValueError("Database pool is required")
+
     # Import here to avoid circular imports and slow startup
     from backend.core.programs.story_generator import StoryGenerator
     from backend.config import get_inference_lm
 
     start_time = time.time()
 
-    # Create a dedicated connection pool for this task
-    # This avoids event loop conflicts with the main FastAPI thread
-    dsn = get_dsn()
-    pool = await asyncpg.create_pool(dsn, min_size=1, max_size=2)
-
-    # Create progress tracker
-    tracker = ProgressTracker(story_id)
+    # Create progress tracker with shared pool
+    tracker = ProgressTracker(story_id, pool=pool)
 
     try:
         # Log generation start
@@ -161,10 +162,8 @@ async def generate_story(
         raise
 
     finally:
-        # Clean up resources
+        # Clean up cost tracking (pool is managed by caller)
         clear_tracking()
-        await tracker.close()
-        await pool.close()
 
 
 async def _save_story(

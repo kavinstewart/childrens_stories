@@ -8,8 +8,6 @@ from typing import Optional
 
 import asyncpg
 
-from ..config import get_dsn
-
 logger = logging.getLogger(__name__)
 
 # Stage weight mapping for percentage calculation
@@ -32,19 +30,24 @@ class ProgressTracker:
     def __init__(
         self,
         story_id: str,
+        pool: asyncpg.Pool,
         min_update_interval: float = 0.5,
     ):
+        """
+        Initialize progress tracker.
+
+        Args:
+            story_id: UUID of the story being tracked
+            pool: Shared database connection pool
+            min_update_interval: Minimum seconds between DB writes (debouncing)
+        """
         self.story_id = story_id
+        self._pool = pool
         self.min_update_interval = min_update_interval
 
         self.last_update_time: Optional[float] = None
         self.last_stage: Optional[str] = None
         self.warnings: list[str] = []
-
-        # Create a dedicated pool for progress updates
-        # This avoids issues with sharing connections across threads
-        self._pool: Optional[asyncpg.Pool] = None
-        self._dsn = get_dsn()
 
     async def update_async(
         self,
@@ -149,12 +152,6 @@ class ProgressTracker:
         # Otherwise, just use stage start
         return start_pct
 
-    async def _get_pool(self) -> asyncpg.Pool:
-        """Get or create the connection pool."""
-        if self._pool is None:
-            self._pool = await asyncpg.create_pool(self._dsn, min_size=1, max_size=1)
-        return self._pool
-
     async def _write_progress_async(
         self,
         stage: str,
@@ -172,8 +169,7 @@ class ProgressTracker:
         }
 
         try:
-            pool = await self._get_pool()
-            async with pool.acquire() as conn:
+            async with self._pool.acquire() as conn:
                 await conn.execute(
                     "UPDATE stories SET progress_json = $1 WHERE id = $2",
                     json.dumps(progress_data),
@@ -182,9 +178,3 @@ class ProgressTracker:
         except Exception as e:
             # Log full exception for debugging - progress failures indicate DB issues
             logger.error(f"Failed to update progress for {self.story_id}: {e}", exc_info=True)
-
-    async def close(self) -> None:
-        """Close the dedicated pool."""
-        if self._pool is not None:
-            await self._pool.close()
-            self._pool = None

@@ -13,7 +13,8 @@ class TestGenerateStoryTask:
         with patch("backend.worker.generate_story", new_callable=AsyncMock) as mock_gen:
             from backend.worker import generate_story_task
 
-            ctx = {"job_id": "test-job-123"}
+            mock_pool = MagicMock()
+            ctx = {"job_id": "test-job-123", "pool": mock_pool}
             result = await generate_story_task(
                 ctx,
                 story_id="story-uuid-456",
@@ -27,6 +28,7 @@ class TestGenerateStoryTask:
                 goal="teach about sharing",
                 target_age_range="4-7",
                 generation_type="illustrated",
+                pool=mock_pool,
             )
             assert result["story_id"] == "story-uuid-456"
             assert result["status"] == "completed"
@@ -37,7 +39,8 @@ class TestGenerateStoryTask:
         with patch("backend.worker.generate_story", new_callable=AsyncMock) as mock_gen:
             from backend.worker import generate_story_task
 
-            ctx = {"job_id": "test-job"}
+            mock_pool = MagicMock()
+            ctx = {"job_id": "test-job", "pool": mock_pool}
             await generate_story_task(
                 ctx,
                 story_id="story-123",
@@ -48,6 +51,7 @@ class TestGenerateStoryTask:
             call_kwargs = mock_gen.call_args.kwargs
             assert call_kwargs["target_age_range"] == "4-7"
             assert call_kwargs["generation_type"] == "illustrated"
+            assert call_kwargs["pool"] is mock_pool
 
     @pytest.mark.asyncio
     async def test_task_reraises_exceptions(self):
@@ -57,7 +61,8 @@ class TestGenerateStoryTask:
 
             from backend.worker import generate_story_task
 
-            ctx = {"job_id": "test-job"}
+            mock_pool = MagicMock()
+            ctx = {"job_id": "test-job", "pool": mock_pool}
             with pytest.raises(ValueError, match="Generation failed"):
                 await generate_story_task(
                     ctx,
@@ -66,12 +71,26 @@ class TestGenerateStoryTask:
                 )
 
     @pytest.mark.asyncio
+    async def test_task_fails_fast_when_pool_missing(self):
+        """Task should raise RuntimeError immediately if pool not in context."""
+        from backend.worker import generate_story_task
+
+        ctx = {"job_id": "test-job"}  # No pool
+        with pytest.raises(RuntimeError, match="Database pool not available"):
+            await generate_story_task(
+                ctx,
+                story_id="story-123",
+                goal="test goal",
+            )
+
+    @pytest.mark.asyncio
     async def test_task_handles_missing_job_id_in_context(self):
-        """Task should handle missing job_id gracefully."""
+        """Task should handle missing job_id gracefully (pool is required)."""
         with patch("backend.worker.generate_story", new_callable=AsyncMock):
             from backend.worker import generate_story_task
 
-            ctx = {}  # No job_id
+            mock_pool = MagicMock()
+            ctx = {"pool": mock_pool}  # No job_id but has pool
             result = await generate_story_task(
                 ctx,
                 story_id="story-123",
@@ -79,6 +98,194 @@ class TestGenerateStoryTask:
             )
 
             assert result["status"] == "completed"
+
+
+class TestRegenerateSpreadTask:
+    """Tests for the regenerate_spread_task ARQ task."""
+
+    @pytest.mark.asyncio
+    async def test_task_calls_regenerate_spread_with_correct_params(self):
+        """Task should call regenerate_spread with all provided parameters."""
+        with patch("backend.worker.regenerate_spread", new_callable=AsyncMock) as mock_regen:
+            from backend.worker import regenerate_spread_task
+
+            mock_pool = MagicMock()
+            ctx = {"job_id": "arq-job-123", "pool": mock_pool}
+            result = await regenerate_spread_task(
+                ctx,
+                job_id="regen-job-456",
+                story_id="story-uuid-789",
+                spread_number=5,
+                custom_prompt="A friendly fox in a meadow",
+            )
+
+            mock_regen.assert_called_once_with(
+                job_id="regen-job-456",
+                story_id="story-uuid-789",
+                spread_number=5,
+                custom_prompt="A friendly fox in a meadow",
+                pool=mock_pool,
+            )
+            assert result["job_id"] == "regen-job-456"
+            assert result["status"] == "completed"
+
+    @pytest.mark.asyncio
+    async def test_task_fails_fast_when_pool_missing(self):
+        """Task should raise RuntimeError immediately if pool not in context."""
+        from backend.worker import regenerate_spread_task
+
+        ctx = {"job_id": "test-job"}  # No pool
+        with pytest.raises(RuntimeError, match="Database pool not available"):
+            await regenerate_spread_task(
+                ctx,
+                job_id="regen-123",
+                story_id="story-123",
+                spread_number=1,
+            )
+
+    @pytest.mark.asyncio
+    async def test_task_reraises_exceptions(self):
+        """Task should re-raise exceptions so ARQ marks job as failed."""
+        with patch("backend.worker.regenerate_spread", new_callable=AsyncMock) as mock_regen:
+            mock_regen.side_effect = ValueError("Story not found")
+
+            from backend.worker import regenerate_spread_task
+
+            mock_pool = MagicMock()
+            ctx = {"job_id": "test-job", "pool": mock_pool}
+            with pytest.raises(ValueError, match="Story not found"):
+                await regenerate_spread_task(
+                    ctx,
+                    job_id="regen-123",
+                    story_id="story-123",
+                    spread_number=1,
+                )
+
+
+class TestWorkerPoolLifecycle:
+    """Tests for worker startup/shutdown pool management."""
+
+    @pytest.mark.asyncio
+    async def test_startup_creates_pool_in_context(self):
+        """startup() should create a database pool and store in ctx['pool']."""
+        with patch("backend.worker.create_db_pool", new_callable=AsyncMock) as mock_create, \
+             patch("backend.worker._cleanup_stale_redis_keys", new_callable=AsyncMock), \
+             patch("backend.worker.StoryRepository") as mock_story_repo_cls, \
+             patch("backend.worker.SpreadRegenJobRepository") as mock_regen_repo_cls:
+            mock_pool = MagicMock()
+            mock_pool.acquire = MagicMock(return_value=AsyncMock())
+            mock_create.return_value = mock_pool
+
+            # Configure mock repos
+            mock_story_repo = AsyncMock()
+            mock_story_repo.cleanup_stale_stories = AsyncMock(return_value=0)
+            mock_story_repo_cls.return_value = mock_story_repo
+            mock_regen_repo = AsyncMock()
+            mock_regen_repo.cleanup_stale_jobs = AsyncMock(return_value=0)
+            mock_regen_repo_cls.return_value = mock_regen_repo
+
+            from backend.worker import startup
+
+            ctx = {"redis": MagicMock()}
+            await startup(ctx)
+
+            mock_create.assert_called_once_with(min_size=3, max_size=8)
+            assert ctx["pool"] is mock_pool
+
+    @pytest.mark.asyncio
+    async def test_startup_raises_if_pool_creation_fails(self):
+        """startup() should propagate RuntimeError if DATABASE_URL not configured."""
+        with patch("backend.worker.create_db_pool", new_callable=AsyncMock) as mock_create, \
+             patch("backend.worker._cleanup_stale_redis_keys", new_callable=AsyncMock):
+            mock_create.side_effect = RuntimeError("DATABASE_URL not configured")
+
+            from backend.worker import startup
+
+            ctx = {"redis": MagicMock()}
+            with pytest.raises(RuntimeError, match="DATABASE_URL"):
+                await startup(ctx)
+
+    @pytest.mark.asyncio
+    async def test_shutdown_closes_pool_with_error_handling(self):
+        """shutdown() should close pool and handle errors gracefully."""
+        from backend.worker import shutdown
+
+        mock_pool = AsyncMock()
+        ctx = {"pool": mock_pool}
+
+        await shutdown(ctx)
+
+        mock_pool.close.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_shutdown_handles_close_error(self):
+        """shutdown() should not raise if pool.close() fails."""
+        from backend.worker import shutdown
+
+        mock_pool = AsyncMock()
+        mock_pool.close.side_effect = Exception("Connection already closed")
+        ctx = {"pool": mock_pool}
+
+        # Should not raise
+        await shutdown(ctx)
+
+    @pytest.mark.asyncio
+    async def test_shutdown_handles_missing_pool(self):
+        """shutdown() should handle missing pool gracefully."""
+        from backend.worker import shutdown
+
+        ctx = {}  # No pool
+        # Should not raise
+        await shutdown(ctx)
+
+
+class TestCleanupStaleJobsTask:
+    """Tests for cleanup_stale_jobs_task using shared pool."""
+
+    @pytest.mark.asyncio
+    async def test_cleanup_uses_pool_from_context(self):
+        """cleanup_stale_jobs_task should use ctx['pool'] instead of creating connection."""
+        from backend.worker import cleanup_stale_jobs_task
+        from contextlib import asynccontextmanager
+
+        # Create mock pool with acquire context manager
+        mock_conn = AsyncMock()
+        mock_pool = MagicMock()
+
+        @asynccontextmanager
+        async def mock_acquire():
+            yield mock_conn
+
+        mock_pool.acquire = mock_acquire
+
+        with patch("backend.worker.StoryRepository") as mock_story_repo_cls, \
+             patch("backend.worker.SpreadRegenJobRepository") as mock_regen_repo_cls:
+            mock_story_repo = AsyncMock()
+            mock_story_repo.cleanup_stale_stories = AsyncMock(return_value=2)
+            mock_story_repo_cls.return_value = mock_story_repo
+            mock_regen_repo = AsyncMock()
+            mock_regen_repo.cleanup_stale_jobs = AsyncMock(return_value=1)
+            mock_regen_repo_cls.return_value = mock_regen_repo
+
+            ctx = {"pool": mock_pool}
+            result = await cleanup_stale_jobs_task(ctx)
+
+            assert result["cleaned_stories"] == 2
+            assert result["cleaned_spreads"] == 1
+            # Repos should be instantiated with the connection from pool
+            mock_story_repo_cls.assert_called_with(mock_conn)
+            mock_regen_repo_cls.assert_called_with(mock_conn)
+
+    @pytest.mark.asyncio
+    async def test_cleanup_skips_if_pool_missing(self):
+        """cleanup_stale_jobs_task should skip gracefully if pool not in context."""
+        from backend.worker import cleanup_stale_jobs_task
+
+        ctx = {}  # No pool
+        result = await cleanup_stale_jobs_task(ctx)
+
+        assert result["cleaned_stories"] == 0
+        assert result["cleaned_spreads"] == 0
 
 
 class TestWorkerSettings:
@@ -89,6 +296,12 @@ class TestWorkerSettings:
         from backend.worker import WorkerSettings, generate_story_task
 
         assert generate_story_task in WorkerSettings.functions
+
+    def test_worker_settings_has_regenerate_spread_task(self):
+        """WorkerSettings should register the regenerate_spread_task function."""
+        from backend.worker import WorkerSettings, regenerate_spread_task
+
+        assert regenerate_spread_task in WorkerSettings.functions
 
     def test_worker_settings_has_lifecycle_hooks(self):
         """WorkerSettings should have startup and shutdown hooks."""
