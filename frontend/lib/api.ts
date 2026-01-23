@@ -248,6 +248,7 @@ export const api = {
   // Regenerate a spread illustration
   // Optional prompt parameter allows overriding the default composed prompt
   regenerateSpread: async (storyId: string, spreadNumber: number, prompt?: string): Promise<RegenerateSpreadResponse> => {
+    console.info(`[Regenerate] Starting regeneration for story=${storyId} spread=${spreadNumber} customPrompt=${prompt ? `"${prompt.substring(0, 100)}${prompt.length > 100 ? '...' : ''}"` : 'none'}`);
     return fetchApi(`/stories/${storyId}/spreads/${spreadNumber}/regenerate`, {
       method: 'POST',
       body: JSON.stringify(prompt ? { prompt } : {}),
