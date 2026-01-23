@@ -7,6 +7,7 @@ to make data flow explicit and avoid circular imports.
 
 from dataclasses import dataclass, field
 from typing import Optional, TYPE_CHECKING
+import json
 import re
 from io import BytesIO
 
@@ -487,6 +488,11 @@ class StorySpread:
         Returns:
             StorySpread instance with all fields populated from record
         """
+        # Parse present_entity_ids - asyncpg returns JSONB as string
+        present_entity_ids = record.get("present_entity_ids")
+        if isinstance(present_entity_ids, str):
+            present_entity_ids = json.loads(present_entity_ids)
+
         return cls(
             spread_number=record["spread_number"],
             text=record["text"],
@@ -494,7 +500,7 @@ class StorySpread:
             was_revised=record.get("was_revised", False) or False,
             page_turn_note=record.get("page_turn_note", "") or "",
             illustration_prompt=record.get("illustration_prompt", "") or "",
-            present_entity_ids=record.get("present_entity_ids"),
+            present_entity_ids=present_entity_ids,
         )
 
     @property
