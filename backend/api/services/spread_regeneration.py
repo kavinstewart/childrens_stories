@@ -18,12 +18,7 @@ import asyncpg
 from ..config import STORIES_DIR
 from ..logging import story_logger
 from ..database.repository import SpreadRegenJobRepository, StoryRepository
-from backend.core.cost_tracking import (
-    start_tracking,
-    get_current_usage,
-    clear_tracking,
-)
-from backend.core.cost_calculator import calculate_cost
+from backend.core.cost_tracking import track_costs
 
 
 async def regenerate_spread(
@@ -123,23 +118,17 @@ async def regenerate_spread(
         # Load character reference sheets if available
         reference_sheets = await _load_character_refs(story_id, story)
 
-        # Start cost tracking for this regeneration
-        start_tracking()
-
-        # Create illustrator and generate new image
-        illustrator = SpreadIllustrator()
-        image_bytes = illustrator.illustrate_spread(
-            spread=spread,
-            outline=metadata,
-            reference_sheets=reference_sheets,
-            debug=True,
-            custom_prompt=custom_prompt,
-        )
-
-        # Get usage data and calculate cost
-        usage = get_current_usage()
-        usage_dict = usage.to_dict() if usage else None
-        cost = float(calculate_cost(usage_dict)) if usage_dict else None
+        # Track costs during illustration (handles start/clear lifecycle)
+        with track_costs() as costs:
+            # Create illustrator and generate new image
+            illustrator = SpreadIllustrator()
+            image_bytes = illustrator.illustrate_spread(
+                spread=spread,
+                outline=metadata,
+                reference_sheets=reference_sheets,
+                debug=True,
+                custom_prompt=custom_prompt,
+            )
 
         # Before saving, verify story still exists (prevents orphaned files if deleted mid-regen)
         async with pool.acquire() as conn:
@@ -150,15 +139,15 @@ async def regenerate_spread(
         # Save new image atomically (write to temp, then rename)
         await _save_image_atomically(story_id, spread_number, image_bytes, pool)
 
-        # Update job status to completed with cost data
+        # Update job status to completed with cost data (captured after context exit)
         async with pool.acquire() as conn:
             regen_repo = SpreadRegenJobRepository(conn)
             await regen_repo.update_status(
                 job_id,
                 "completed",
                 completed_at=datetime.now(timezone.utc),
-                usage_json=json.dumps(usage_dict) if usage_dict else None,
-                cost_usd=cost,
+                usage_json=json.dumps(costs.usage_dict) if costs.usage_dict else None,
+                cost_usd=costs.cost_usd,
             )
 
         # Log completion
@@ -179,10 +168,6 @@ async def regenerate_spread(
                 error_message=str(e),
             )
         raise
-
-    finally:
-        # Clean up cost tracking (pool is managed by caller)
-        clear_tracking()
 
 
 async def _load_character_refs(story_id: str, story) -> Optional["StoryReferenceSheets"]:

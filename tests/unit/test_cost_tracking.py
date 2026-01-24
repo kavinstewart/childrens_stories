@@ -13,6 +13,8 @@ from backend.core.cost_tracking import (
     record_llm_usage_from_history,
     reset_history_tracking,
     clear_tracking,
+    track_costs,
+    CostTrackingResult,
 )
 
 
@@ -547,3 +549,101 @@ class TestUsageDataThreadSafety:
         repr_str = repr(usage)
         assert "_lock" not in repr_str
         assert "Lock" not in repr_str
+
+
+class TestTrackCostsContextManager:
+    """Tests for track_costs context manager."""
+
+    def setup_method(self):
+        """Clear tracking before each test."""
+        clear_tracking()
+        reset_history_tracking()
+
+    def teardown_method(self):
+        """Clear tracking after each test."""
+        clear_tracking()
+        reset_history_tracking()
+
+    def test_starts_and_clears_tracking(self):
+        """Context manager starts tracking on enter and clears on exit."""
+        assert get_current_usage() is None
+
+        with track_costs() as result:
+            assert get_current_usage() is not None
+
+        assert get_current_usage() is None
+
+    def test_captures_usage_dict_and_cost(self):
+        """Context manager captures usage data and calculates cost."""
+        with track_costs() as costs:
+            record_image_generation(model="gemini-3-pro-image-preview")
+            record_image_generation(model="gemini-3-pro-image-preview")
+
+        assert costs.usage_dict is not None
+        assert costs.usage_dict["image_count"] == 2
+        assert costs.usage_dict["image_model"] == "gemini-3-pro-image-preview"
+        assert costs.cost_usd is not None
+        assert costs.cost_usd > 0
+
+    def test_resets_history_when_requested(self):
+        """reset_history=True resets the history tracking index."""
+        # Simulate prior history tracking state (index advanced)
+        mock_lm = MockLM(
+            history=[{"response": {"usage": {"prompt_tokens": 100, "completion_tokens": 50}}}],
+            model="test"
+        )
+        start_tracking()
+        record_llm_usage_from_history(mock_lm)  # Advances index to 1
+        clear_tracking()
+
+        # Without reset_history, the index stays at 1, so only new entries are processed
+        # With reset_history=True, index resets to 0, so ALL history is processed
+        with track_costs(reset_history=True) as costs:
+            # Add a new entry
+            mock_lm.history.append(
+                {"response": {"usage": {"prompt_tokens": 200, "completion_tokens": 100}}}
+            )
+            record_llm_usage_from_history(mock_lm)
+
+        # With reset, processes from index 0: both entries (100+200=300, 50+100=150)
+        assert costs.usage_dict["llm_input_tokens"] == 300
+        assert costs.usage_dict["llm_output_tokens"] == 150
+        assert costs.usage_dict["llm_calls"] == 2
+
+    def test_clears_tracking_on_exception(self):
+        """Context manager clears tracking even when exception raised."""
+        assert get_current_usage() is None
+
+        with pytest.raises(ValueError):
+            with track_costs() as costs:
+                record_image_generation(model="test")
+                raise ValueError("test error")
+
+        assert get_current_usage() is None
+
+    def test_captures_usage_before_exception(self):
+        """Context manager captures usage data even when exception raised."""
+        with pytest.raises(ValueError):
+            with track_costs() as costs:
+                record_image_generation(model="test")
+                raise ValueError("test error")
+
+        # Usage should still be captured
+        assert costs.usage_dict is not None
+        assert costs.usage_dict["image_count"] == 1
+
+    def test_result_object_initially_empty(self):
+        """CostTrackingResult starts with None values."""
+        result = CostTrackingResult()
+        assert result.usage_dict is None
+        assert result.cost_usd is None
+
+    def test_no_usage_recorded_returns_none_cost(self):
+        """When no usage recorded, cost_usd should be calculated as 0."""
+        with track_costs() as costs:
+            pass  # No operations
+
+        # Empty usage still gets serialized
+        assert costs.usage_dict is not None
+        assert costs.usage_dict["image_count"] == 0
+        assert costs.cost_usd == 0.0

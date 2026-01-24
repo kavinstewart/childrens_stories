@@ -7,9 +7,12 @@ for computing costs from usage data.
 """
 
 import threading
+from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, Generator
+
+from backend.core.cost_calculator import calculate_cost
 
 
 @dataclass
@@ -219,3 +222,52 @@ def record_llm_usage_from_history(lm) -> None:
 def reset_history_tracking() -> None:
     """Reset the history tracking index (call when starting a new job)."""
     _last_history_index.set(0)
+
+
+class CostTrackingResult:
+    """Result object yielded by track_costs context manager.
+
+    Access usage_dict and cost_usd after the context manager exits.
+    """
+
+    def __init__(self) -> None:
+        self.usage_dict: Optional[dict] = None
+        self.cost_usd: Optional[float] = None
+
+    def _finalize(self) -> None:
+        """Capture usage data before tracking is cleared."""
+        usage = get_current_usage()
+        if usage:
+            self.usage_dict = usage.to_dict()
+            self.cost_usd = float(calculate_cost(self.usage_dict))
+
+
+@contextmanager
+def track_costs(reset_history: bool = False) -> Generator[CostTrackingResult, None, None]:
+    """Context manager for cost tracking lifecycle.
+
+    Handles start_tracking(), optional reset_history_tracking(), and
+    clear_tracking() automatically. Captures usage data before cleanup.
+
+    Args:
+        reset_history: If True, also calls reset_history_tracking() on entry.
+                      Use this for jobs that use DSPy LM history tracking.
+
+    Yields:
+        CostTrackingResult with usage_dict and cost_usd populated after exit.
+
+    Example:
+        with track_costs(reset_history=True) as costs:
+            # ... do work that generates costs ...
+        # After context exits:
+        save_to_db(usage_json=costs.usage_dict, cost_usd=costs.cost_usd)
+    """
+    start_tracking()
+    if reset_history:
+        reset_history_tracking()
+    result = CostTrackingResult()
+    try:
+        yield result
+    finally:
+        result._finalize()
+        clear_tracking()

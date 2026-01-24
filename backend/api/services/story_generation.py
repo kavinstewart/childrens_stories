@@ -20,13 +20,9 @@ from ..logging import story_logger
 from ..database.repository import StoryRepository
 from .progress_tracker import ProgressTracker
 from backend.core.cost_tracking import (
-    start_tracking,
-    get_current_usage,
-    clear_tracking,
-    reset_history_tracking,
+    track_costs,
     record_llm_usage_from_history,
 )
-from backend.core.cost_calculator import calculate_cost
 
 
 async def generate_story(
@@ -81,65 +77,58 @@ async def generate_story(
         # Initial progress update
         await tracker.update_async("outline", "Crafting your story outline...")
 
-        # Start cost tracking for this generation
-        start_tracking()
-        reset_history_tracking()
-
         # Get the LM for this generation
         lm = get_inference_lm()
 
         # Create generator with explicit LM
         generator = StoryGenerator(lm=lm)
 
-        # Generate based on type
-        if generation_type == "simple":
-            await tracker.update_async("outline", "Crafting your story outline...")
-            story = generator(goal)
-            await tracker.update_async("spreads", "Story complete", completed=1, total=1)
+        # Track costs during generation (handles start/clear lifecycle)
+        with track_costs(reset_history=True) as costs:
+            # Generate based on type
+            if generation_type == "simple":
+                await tracker.update_async("outline", "Crafting your story outline...")
+                story = generator(goal)
+                await tracker.update_async("spreads", "Story complete", completed=1, total=1)
 
-        elif generation_type == "illustrated":
-            # Get reference to running event loop for thread-safe scheduling
-            loop = asyncio.get_running_loop()
+            elif generation_type == "illustrated":
+                # Get reference to running event loop for thread-safe scheduling
+                loop = asyncio.get_running_loop()
 
-            # Create progress callback that updates the tracker
-            # Uses run_coroutine_threadsafe since the callback is called from
-            # within a sync function running in a thread pool
-            def progress_callback(stage: str, detail: str, completed: int, total: int):
-                asyncio.run_coroutine_threadsafe(
-                    tracker.update_async(stage, detail, completed, total),
-                    loop
+                # Create progress callback that updates the tracker
+                # Uses run_coroutine_threadsafe since the callback is called from
+                # within a sync function running in a thread pool
+                def progress_callback(stage: str, detail: str, completed: int, total: int):
+                    asyncio.run_coroutine_threadsafe(
+                        tracker.update_async(stage, detail, completed, total),
+                        loop
+                    )
+                    # Also call user callback if provided
+                    if on_progress:
+                        on_progress(stage, detail, completed, total)
+
+                # Run the blocking generate_illustrated in a thread pool so the
+                # event loop stays responsive and can process progress updates
+                story = await asyncio.to_thread(
+                    generator.generate_illustrated,
+                    goal,
+                    target_age_range,
+                    use_image_qa=False,  # Disabled: manual regeneration approach preferred
+                    max_image_attempts=3,
+                    debug=True,
+                    on_progress=progress_callback,
                 )
-                # Also call user callback if provided
-                if on_progress:
-                    on_progress(stage, detail, completed, total)
 
-            # Run the blocking generate_illustrated in a thread pool so the
-            # event loop stays responsive and can process progress updates
-            story = await asyncio.to_thread(
-                generator.generate_illustrated,
-                goal,
-                target_age_range,
-                use_image_qa=False,  # Disabled: manual regeneration approach preferred
-                max_image_attempts=3,
-                debug=True,
-                on_progress=progress_callback,
-            )
+            else:  # standard
+                await tracker.update_async("outline", "Crafting your story outline...")
+                story = generator(goal, target_age_range)
+                await tracker.update_async("spreads", "Story generation complete")
 
-        else:  # standard
-            await tracker.update_async("outline", "Crafting your story outline...")
-            story = generator(goal, target_age_range)
-            await tracker.update_async("spreads", "Story generation complete")
+            # Record LLM usage from DSPy history before context exits
+            record_llm_usage_from_history(lm)
 
-        # Record LLM usage from DSPy history
-        record_llm_usage_from_history(lm)
-
-        # Get usage data and calculate cost
-        usage = get_current_usage()
-        usage_dict = usage.to_dict() if usage else None
-        cost = float(calculate_cost(usage_dict)) if usage_dict else None
-
-        # Save to database and filesystem
-        await _save_story(story_id, story, pool, usage_dict, cost)
+        # Save to database and filesystem (costs captured after context exit)
+        await _save_story(story_id, story, pool, costs.usage_dict, costs.cost_usd)
 
         # Log completion
         duration = time.time() - start_time
@@ -160,10 +149,6 @@ async def generate_story(
                 error_message=str(e),
             )
         raise
-
-    finally:
-        # Clean up cost tracking (pool is managed by caller)
-        clear_tracking()
 
 
 async def _save_story(
