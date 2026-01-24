@@ -13,8 +13,7 @@ from backend.core.cost_tracking import (
     record_llm_usage_from_history,
     reset_history_tracking,
     clear_tracking,
-    track_costs,
-    CostTrackingResult,
+    CostTracker,
 )
 
 
@@ -551,8 +550,8 @@ class TestUsageDataThreadSafety:
         assert "Lock" not in repr_str
 
 
-class TestTrackCostsContextManager:
-    """Tests for track_costs context manager."""
+class TestCostTracker:
+    """Tests for CostTracker context manager."""
 
     def setup_method(self):
         """Clear tracking before each test."""
@@ -568,14 +567,14 @@ class TestTrackCostsContextManager:
         """Context manager starts tracking on enter and clears on exit."""
         assert get_current_usage() is None
 
-        with track_costs() as result:
+        with CostTracker() as result:
             assert get_current_usage() is not None
 
         assert get_current_usage() is None
 
     def test_captures_usage_dict_and_cost(self):
         """Context manager captures usage data and calculates cost."""
-        with track_costs() as costs:
+        with CostTracker() as costs:
             record_image_generation(model="gemini-3-pro-image-preview")
             record_image_generation(model="gemini-3-pro-image-preview")
 
@@ -598,7 +597,7 @@ class TestTrackCostsContextManager:
 
         # Without reset_history, the index stays at 1, so only new entries are processed
         # With reset_history=True, index resets to 0, so ALL history is processed
-        with track_costs(reset_history=True) as costs:
+        with CostTracker(reset_history=True) as costs:
             # Add a new entry
             mock_lm.history.append(
                 {"response": {"usage": {"prompt_tokens": 200, "completion_tokens": 100}}}
@@ -615,7 +614,7 @@ class TestTrackCostsContextManager:
         assert get_current_usage() is None
 
         with pytest.raises(ValueError):
-            with track_costs() as costs:
+            with CostTracker() as costs:
                 record_image_generation(model="test")
                 raise ValueError("test error")
 
@@ -624,7 +623,7 @@ class TestTrackCostsContextManager:
     def test_captures_usage_before_exception(self):
         """Context manager captures usage data even when exception raised."""
         with pytest.raises(ValueError):
-            with track_costs() as costs:
+            with CostTracker() as costs:
                 record_image_generation(model="test")
                 raise ValueError("test error")
 
@@ -632,15 +631,15 @@ class TestTrackCostsContextManager:
         assert costs.usage_dict is not None
         assert costs.usage_dict["image_count"] == 1
 
-    def test_result_object_initially_empty(self):
-        """CostTrackingResult starts with None values."""
-        result = CostTrackingResult()
-        assert result.usage_dict is None
-        assert result.cost_usd is None
+    def test_instance_initially_empty(self):
+        """CostTracker starts with None values before context entry."""
+        tracker = CostTracker()
+        assert tracker.usage_dict is None
+        assert tracker.cost_usd is None
 
     def test_no_usage_recorded_returns_none_cost(self):
         """When no usage recorded, cost_usd should be calculated as 0."""
-        with track_costs() as costs:
+        with CostTracker() as costs:
             pass  # No operations
 
         # Empty usage still gets serialized

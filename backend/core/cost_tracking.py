@@ -7,10 +7,10 @@ for computing costs from usage data.
 """
 
 import threading
-from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from typing import Optional, Generator
+from types import TracebackType
+from typing import Optional
 
 from backend.core.cost_calculator import calculate_cost
 
@@ -224,50 +224,47 @@ def reset_history_tracking() -> None:
     _last_history_index.set(0)
 
 
-class CostTrackingResult:
-    """Result object yielded by track_costs context manager.
-
-    Access usage_dict and cost_usd after the context manager exits.
-    """
-
-    def __init__(self) -> None:
-        self.usage_dict: Optional[dict] = None
-        self.cost_usd: Optional[float] = None
-
-    def _finalize(self) -> None:
-        """Capture usage data before tracking is cleared."""
-        usage = get_current_usage()
-        if usage:
-            self.usage_dict = usage.to_dict()
-            self.cost_usd = float(calculate_cost(self.usage_dict))
-
-
-@contextmanager
-def track_costs(reset_history: bool = False) -> Generator[CostTrackingResult, None, None]:
+class CostTracker:
     """Context manager for cost tracking lifecycle.
 
     Handles start_tracking(), optional reset_history_tracking(), and
     clear_tracking() automatically. Captures usage data before cleanup.
 
+    The usage_dict and cost_usd attributes are populated when the context
+    exits, and can be accessed after the with block completes.
+
     Args:
         reset_history: If True, also calls reset_history_tracking() on entry.
                       Use this for jobs that use DSPy LM history tracking.
 
-    Yields:
-        CostTrackingResult with usage_dict and cost_usd populated after exit.
-
     Example:
-        with track_costs(reset_history=True) as costs:
+        with CostTracker(reset_history=True) as costs:
             # ... do work that generates costs ...
         # After context exits:
         save_to_db(usage_json=costs.usage_dict, cost_usd=costs.cost_usd)
     """
-    start_tracking()
-    if reset_history:
-        reset_history_tracking()
-    result = CostTrackingResult()
-    try:
-        yield result
-    finally:
-        result._finalize()
+
+    def __init__(self, reset_history: bool = False) -> None:
+        self._reset_history = reset_history
+        self.usage_dict: Optional[dict] = None
+        self.cost_usd: Optional[float] = None
+
+    def __enter__(self) -> "CostTracker":
+        start_tracking()
+        if self._reset_history:
+            reset_history_tracking()
+        return self
+
+    def __exit__(
+        self,
+        exc_type: Optional[type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType],
+    ) -> bool:
+        """Capture usage data and clear tracking."""
+        usage = get_current_usage()
+        if usage:
+            self.usage_dict = usage.to_dict()
+            self.cost_usd = float(calculate_cost(self.usage_dict))
         clear_tracking()
+        return False  # Don't suppress exceptions

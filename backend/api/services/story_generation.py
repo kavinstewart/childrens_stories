@@ -20,7 +20,7 @@ from ..logging import story_logger
 from ..database.repository import StoryRepository
 from .progress_tracker import ProgressTracker
 from backend.core.cost_tracking import (
-    track_costs,
+    CostTracker,
     record_llm_usage_from_history,
 )
 
@@ -84,7 +84,7 @@ async def generate_story(
         generator = StoryGenerator(lm=lm)
 
         # Track costs during generation (handles start/clear lifecycle)
-        with track_costs(reset_history=True) as costs:
+        with CostTracker(reset_history=True) as costs:
             # Generate based on type
             if generation_type == "simple":
                 await tracker.update_async("outline", "Crafting your story outline...")

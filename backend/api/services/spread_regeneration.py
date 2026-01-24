@@ -18,7 +18,7 @@ import asyncpg
 from ..config import STORIES_DIR
 from ..logging import story_logger
 from ..database.repository import SpreadRegenJobRepository, StoryRepository
-from backend.core.cost_tracking import track_costs
+from backend.core.cost_tracking import CostTracker
 
 
 async def regenerate_spread(
@@ -119,7 +119,7 @@ async def regenerate_spread(
         reference_sheets = await _load_character_refs(story_id, story)
 
         # Track costs during illustration (handles start/clear lifecycle)
-        with track_costs() as costs:
+        with CostTracker() as costs:
             # Create illustrator and generate new image
             illustrator = SpreadIllustrator()
             image_bytes = illustrator.illustrate_spread(
